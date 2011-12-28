@@ -1,0 +1,1935 @@
+SET search_path TO xml;
+SET
+CREATE TABLE STATES ( 
+	id int not null,
+	data doc not null
+);
+CREATE TABLE
+CREATE TABLE PATHS (
+	id int,
+	name varchar(32),
+	path xml.path not null
+);
+CREATE TABLE
+CREATE TABLE DOCS_OTHER (
+	id int,
+	data doc not null
+);
+CREATE TABLE
+INSERT INTO STATES VALUES(1,  '<?xml version="1.0" encoding="UTF-8"?>
+	<state name="Česká republika" area="78866" population="10674947" tld="cz">
+	<!-- Resource: http://en.wikipedia.org/wiki/Czech_Republic -->
+	<city name="Praha" capital="true"/>
+	<city name="Plzeň"><part name="Doubravka"/></city>
+	<city name="Čerčany"/>
+	<region name="Šumava"><destination name="Lipno"><![CDATA[http://en.wikipedia.org/wiki/Lipno_Dam]]></destination></region>
+	<languages><language>Cestina</language></languages>
+</state>');
+INSERT 0 1
+INSERT INTO STATES VALUES(2,  '<?xml version="1.0" encoding="UTF-8"?><state name="Bundesrepublik Deutschland" area="357021" population="81757600" tld="de">
+	<!-- Resource: http://en.wikipedia.org/wiki/Deutschland -->
+	<city name="Berlin" capital="true"/>
+	<region name="Baden-Württemberg"><city name="Stuttgart" capital="true"/></region>
+	<region name="Bayern"><city name="Munchen" capital="true"/></region>
+	<region name="Thüringen"><city name="Erfurt" capital="true"/></region>
+	<languages><language official="true">Deutsch</language></languages>
+</state>');
+INSERT 0 1
+INSERT INTO STATES VALUES(3,  '<?xml version="1.0" encoding="UTF-8" ?><state name="Österreich" area="83872" population="8356707" tld="at">
+	<!-- Resource: http://en.wikipedia.org/wiki/Oesterreich -->
+	<city name="Wien" capital="true"/>
+	<region name="Tirol"><city name="Innsbruck" capital="true"/></region>
+	<region name="Steiermark"><city name="Graz" capital="true"/></region>
+	<region name="Vorarlberg"><city name="Bregenz" capital="true"/></region>
+	<languages><language official="true">Deutsch</language></languages>
+</state>');
+INSERT 0 1
+update states set data=xml.add(data, '/state/languages', '<region name="Brandenburg"><city name="Potsdam" capital="true"/></region>', 'b') where id=2;
+UPDATE 1
+update states set data=add(data, '/state/languages', '<region name="Saarland" area="2569" population="1056000"/>', 'b') where id=2;
+UPDATE 1
+update states set data=add(data, '/state/region[@name="Saarland"]', '<city name="Saarbrücken" capital="true"/>', 'i') where id=2;
+UPDATE 1
+update states set data=add(data, '/state/region[@name="Saarland"]', '<city name="Ottweiler"/>', 'i') where id=2;
+UPDATE 1
+update states set data=add(data, '/state/region[@name="Saarland"]/city[@name="Saarbrücken"]', '<city name="Neunkirchen"/>', 'a') where id=2;
+UPDATE 1
+select *
+from states
+order by id;
+ id |                                                                                                                                                       data                                                                                                                                                        
+----+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+  1 | <?xml version="1.0" encoding="UTF8"?><state name="Česká republika" area="78866" population="10674947" tld="cz">                                                                                                                                                                                                  +
+    |         <!-- Resource: http://en.wikipedia.org/wiki/Czech_Republic -->                                                                                                                                                                                                                                           +
+    |         <city name="Praha" capital="true"/>                                                                                                                                                                                                                                                                      +
+    |         <city name="Plzeň"><part name="Doubravka"/></city>                                                                                                                                                                                                                                                       +
+    |         <city name="Čerčany"/>                                                                                                                                                                                                                                                                                   +
+    |         <region name="Šumava"><destination name="Lipno">http://en.wikipedia.org/wiki/Lipno_Dam</destination></region>                                                                                                                                                                                            +
+    |         <languages><language>Cestina</language></languages>                                                                                                                                                                                                                                                      +
+    | </state>
+  2 | <?xml version="1.0" encoding="UTF8"?><state name="Bundesrepublik Deutschland" area="357021" population="81757600" tld="de">                                                                                                                                                                                      +
+    |         <!-- Resource: http://en.wikipedia.org/wiki/Deutschland -->                                                                                                                                                                                                                                              +
+    |         <city name="Berlin" capital="true"/>                                                                                                                                                                                                                                                                     +
+    |         <region name="Baden-Württemberg"><city name="Stuttgart" capital="true"/></region>                                                                                                                                                                                                                        +
+    |         <region name="Bayern"><city name="Munchen" capital="true"/></region>                                                                                                                                                                                                                                     +
+    |         <region name="Thüringen"><city name="Erfurt" capital="true"/></region>                                                                                                                                                                                                                                   +
+    |         <region name="Brandenburg"><city name="Potsdam" capital="true"/></region><region name="Saarland" area="2569" population="1056000"><city name="Saarbrücken" capital="true"/><city name="Neunkirchen"/><city name="Ottweiler"/></region><languages><language official="true">Deutsch</language></languages>+
+    | </state>
+  3 | <?xml version="1.0" encoding="UTF8"?><state name="Österreich" area="83872" population="8356707" tld="at">                                                                                                                                                                                                        +
+    |         <!-- Resource: http://en.wikipedia.org/wiki/Oesterreich -->                                                                                                                                                                                                                                              +
+    |         <city name="Wien" capital="true"/>                                                                                                                                                                                                                                                                       +
+    |         <region name="Tirol"><city name="Innsbruck" capital="true"/></region>                                                                                                                                                                                                                                    +
+    |         <region name="Steiermark"><city name="Graz" capital="true"/></region>                                                                                                                                                                                                                                    +
+    |         <region name="Vorarlberg"><city name="Bregenz" capital="true"/></region>                                                                                                                                                                                                                                 +
+    |         <languages><language official="true">Deutsch</language></languages>                                                                                                                                                                                                                                      +
+    | </state>
+(3 rows)
+
+select path('/state/@name', data) as state, path('/state/@tld', data) as domain,
+path('/state/languages/language/text()', data) as language
+from states
+order by id;
+           state            | domain | language 
+----------------------------+--------+----------
+ Česká republika            | cz     | Cestina
+ Bundesrepublik Deutschland | de     | Deutsch
+ Österreich                 | at     | Deutsch
+(3 rows)
+
+with paths(name, area, population)
+as (select '/state/@name'::xml.path, '/state/@area'::xml.path, '/state/@population'::xml.path)
+select  id, path(p.name, data) as name, path(p.area, data) as area,
+path(p.population, data) as population
+from states s, paths p
+order by s.id;
+ id |            name            |  area  | population 
+----+----------------------------+--------+------------
+  1 | Česká republika            | 78866  | 10674947
+  2 | Bundesrepublik Deutschland | 357021 | 81757600
+  3 | Österreich                 | 83872  | 8356707
+(3 rows)
+
+insert into paths (name, path) values ('names', '/state/@name'), ('capitals', '/state/city[@capital="true"]/@name'), ('regions', '/state/region'), ('region_capitals', '/region/city[@capital="true"]/@name');
+INSERT 0 4
+select path(pn.path, s.data) as name, path(pc.path, s.data) as capital
+from states s
+join paths pn on (pn.name='names') 
+join paths pc on (pc.name='capitals')
+order by s.id;
+            name            | capital 
+----------------------------+---------
+ Česká republika            | Praha
+ Bundesrepublik Deutschland | Berlin
+ Österreich                 | Wien
+(3 rows)
+
+select s.id, path(p.path, data)
+from states s
+join paths p on (p.name='regions')
+order by s.id;
+ id |                                                                                                                                                                                                                               path                                                                                                                                                                                                                                
+----+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+  1 | <region name="Šumava"><destination name="Lipno">http://en.wikipedia.org/wiki/Lipno_Dam</destination></region>
+  2 | <region name="Baden-Württemberg"><city name="Stuttgart" capital="true"/></region><region name="Bayern"><city name="Munchen" capital="true"/></region><region name="Thüringen"><city name="Erfurt" capital="true"/></region><region name="Brandenburg"><city name="Potsdam" capital="true"/></region><region name="Saarland" area="2569" population="1056000"><city name="Saarbrücken" capital="true"/><city name="Neunkirchen"/><city name="Ottweiler"/></region>
+  3 | <region name="Tirol"><city name="Innsbruck" capital="true"/></region><region name="Steiermark"><city name="Graz" capital="true"/></region><region name="Vorarlberg"><city name="Bregenz" capital="true"/></region>
+(3 rows)
+
+select id, path('/state', '{"region/city", "@area", "@population", "@tld"}', data) as state_info
+from states
+order by id;
+ id |                                                                                                                                           state_info                                                                                                                                            
+----+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+  1 | {NULL,78866,10674947,cz}
+  2 | {"<city name=\"Stuttgart\" capital=\"true\"/><city name=\"Munchen\" capital=\"true\"/><city name=\"Erfurt\" capital=\"true\"/><city name=\"Potsdam\" capital=\"true\"/><city name=\"Saarbrücken\" capital=\"true\"/><city name=\"Neunkirchen\"/><city name=\"Ottweiler\"/>",357021,81757600,de}
+  3 | {"<city name=\"Innsbruck\" capital=\"true\"/><city name=\"Graz\" capital=\"true\"/><city name=\"Bregenz\" capital=\"true\"/>",83872,8356707,at}
+(3 rows)
+
+update states set data=add(data, '/state/region[@name="Šumava"]/destination', '<destination name="Boubín"/>', 'r') where id=1;
+UPDATE 1
+update states set data=add(data, '/state/languages', '<city name="České Budějovice" population="95071"/><city name="Kroměříž"/>', 'b') where id=1;
+UPDATE 1
+update states set data=add(data, '/state/city[@name="Praha"]', '<city name="Uherské Hradiště"/><city name="Františkovy Lázně"/>', 'a') where id=1;
+UPDATE 1
+update states set data=add(data, '/state/city[@name="Praha"]', '<city name="Žižkov"/><city name="Břevnov"/>', 'i') where id=1;
+UPDATE 1
+update states set data=add(data, '/state', '<people/>', 'i') where id=1;
+UPDATE 1
+update states set data=add(data, '/state/people', '<person first_name="Antonín" last_name="Dvořák"/><person first_name="Václav" last_name="Havel"/>', 'i') where id=1;
+UPDATE 1
+update states set data=add(data, '/state/languages/language', '<language official="true">Čeština</language><language>Hantec</language>', 'r') where id=1;
+UPDATE 1
+select data
+from states
+where id=1
+order by id;
+                                                                                      data                                                                                       
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ <?xml version="1.0" encoding="UTF8"?><state name="Česká republika" area="78866" population="10674947" tld="cz">                                                                +
+         <!-- Resource: http://en.wikipedia.org/wiki/Czech_Republic -->                                                                                                         +
+         <city name="Praha" capital="true"><city name="Žižkov"/><city name="Břevnov"/></city><city name="Uherské Hradiště"/><city name="Františkovy Lázně"/>                    +
+         <city name="Plzeň"><part name="Doubravka"/></city>                                                                                                                     +
+         <city name="Čerčany"/>                                                                                                                                                 +
+         <region name="Šumava"><destination name="Boubín"/></region>                                                                                                            +
+         <city name="České Budějovice" population="95071"/><city name="Kroměříž"/><languages><language official="true">Čeština</language><language>Hantec</language></languages>+
+ <people><person first_name="Antonín" last_name="Dvořák"/><person first_name="Václav" last_name="Havel"/></people></state>
+(1 row)
+
+update states set data=remove(data, '/state/city[@name="Kroměříž"]') where id=1;
+UPDATE 1
+update states set data=remove(data, '/state/city[@name="Plzeň"]/part[@name="Doubravka"]') where id=1;
+UPDATE 1
+select data
+from states
+where id=1
+order by id;
+                                                                            data                                                                             
+-------------------------------------------------------------------------------------------------------------------------------------------------------------
+ <?xml version="1.0" encoding="UTF8"?><state name="Česká republika" area="78866" population="10674947" tld="cz">                                            +
+         <!-- Resource: http://en.wikipedia.org/wiki/Czech_Republic -->                                                                                     +
+         <city name="Praha" capital="true"><city name="Žižkov"/><city name="Břevnov"/></city><city name="Uherské Hradiště"/><city name="Františkovy Lázně"/>+
+         <city name="Plzeň"/>                                                                                                                               +
+         <city name="Čerčany"/>                                                                                                                             +
+         <region name="Šumava"><destination name="Boubín"/></region>                                                                                        +
+         <city name="České Budějovice" population="95071"/><languages><language official="true">Čeština</language><language>Hantec</language></languages>   +
+ <people><person first_name="Antonín" last_name="Dvořák"/><person first_name="Václav" last_name="Havel"/></people></state>
+(1 row)
+
+update states set data=remove(data, '/state/text()');
+UPDATE 3
+select data
+from states
+order by id;
+                                                                                                                                                                                                                                                                                                                                                                                  data                                                                                                                                                                                                                                                                                                                                                                                  
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ <?xml version="1.0" encoding="UTF8"?><state name="Česká republika" area="78866" population="10674947" tld="cz"><!-- Resource: http://en.wikipedia.org/wiki/Czech_Republic --><city name="Praha" capital="true"><city name="Žižkov"/><city name="Břevnov"/></city><city name="Uherské Hradiště"/><city name="Františkovy Lázně"/><city name="Plzeň"/><city name="Čerčany"/><region name="Šumava"><destination name="Boubín"/></region><city name="České Budějovice" population="95071"/><languages><language official="true">Čeština</language><language>Hantec</language></languages><people><person first_name="Antonín" last_name="Dvořák"/><person first_name="Václav" last_name="Havel"/></people></state>
+ <?xml version="1.0" encoding="UTF8"?><state name="Bundesrepublik Deutschland" area="357021" population="81757600" tld="de"><!-- Resource: http://en.wikipedia.org/wiki/Deutschland --><city name="Berlin" capital="true"/><region name="Baden-Württemberg"><city name="Stuttgart" capital="true"/></region><region name="Bayern"><city name="Munchen" capital="true"/></region><region name="Thüringen"><city name="Erfurt" capital="true"/></region><region name="Brandenburg"><city name="Potsdam" capital="true"/></region><region name="Saarland" area="2569" population="1056000"><city name="Saarbrücken" capital="true"/><city name="Neunkirchen"/><city name="Ottweiler"/></region><languages><language official="true">Deutsch</language></languages></state>
+ <?xml version="1.0" encoding="UTF8"?><state name="Österreich" area="83872" population="8356707" tld="at"><!-- Resource: http://en.wikipedia.org/wiki/Oesterreich --><city name="Wien" capital="true"/><region name="Tirol"><city name="Innsbruck" capital="true"/></region><region name="Steiermark"><city name="Graz" capital="true"/></region><region name="Vorarlberg"><city name="Bregenz" capital="true"/></region><languages><language official="true">Deutsch</language></languages></state>
+(3 rows)
+
+select add('<a><b/><b/></a>', '/a/b', '<x><y/></x>', 'b');
+                  add                  
+---------------------------------------
+ <a><x><y/></x><b/><x><y/></x><b/></a>
+(1 row)
+
+select add('<a><b/><b/></a>', '/a/b', '<x><y/></x>', 'a');
+                  add                  
+---------------------------------------
+ <a><b/><x><y/></x><b/><x><y/></x></a>
+(1 row)
+
+select add('<a><b/><b/></a>', '/a/b', '<x><y/></x>', 'r');
+              add              
+-------------------------------
+ <a><x><y/></x><x><y/></x></a>
+(1 row)
+
+select add('<a><b/><b/></a>', '/a/b', '<x><y/></x>', 'i');
+                     add                     
+---------------------------------------------
+ <a><b><x><y/></x></b><b><x><y/></x></b></a>
+(1 row)
+
+select add('<a><b><d/></b><b><d/></b></a>', '/a/b', '<x><y/></x>', 'i');
+                         add                         
+-----------------------------------------------------
+ <a><b><d/><x><y/></x></b><b><d/><x><y/></x></b></a>
+(1 row)
+
+select add('<a><b id="1"/><b id="2"/></a>', '/a/b', '<x><y/></x>', 'i');
+                            add                            
+-----------------------------------------------------------
+ <a><b id="1"><x><y/></x></b><b id="2"><x><y/></x></b></a>
+(1 row)
+
+select add('<a><b/><b/></a>', '/a/b', '<x><y/></x><!--no comment-->', 'b');
+                                   add                                   
+-------------------------------------------------------------------------
+ <a><x><y/></x><!--no comment--><b/><x><y/></x><!--no comment--><b/></a>
+(1 row)
+
+select add('<a><b/><b/></a>', '/a/b', '<x><y/></x><!--no comment-->', 'a');
+                                   add                                   
+-------------------------------------------------------------------------
+ <a><b/><x><y/></x><!--no comment--><b/><x><y/></x><!--no comment--></a>
+(1 row)
+
+select add('<a><b/><b/></a>', '/a/b', '<x><y/></x><!--no comment-->', 'r');
+                               add                               
+-----------------------------------------------------------------
+ <a><x><y/></x><!--no comment--><x><y/></x><!--no comment--></a>
+(1 row)
+
+select add('<a><b/><b/></a>', '/a/b', '<x><y/></x><!--no comment-->', 'i');
+                                      add                                      
+-------------------------------------------------------------------------------
+ <a><b><x><y/></x><!--no comment--></b><b><x><y/></x><!--no comment--></b></a>
+(1 row)
+
+select add('<a><b><d/></b><b><d/></b></a>', '/a/b', '<x><y/></x><!--no comment-->', 'i');
+                                          add                                          
+---------------------------------------------------------------------------------------
+ <a><b><d/><x><y/></x><!--no comment--></b><b><d/><x><y/></x><!--no comment--></b></a>
+(1 row)
+
+select add('<a><b id="1"/><b id="2"/></a>', '/a/b', '<x><y/></x><!--no comment-->', 'i');
+                                             add                                             
+---------------------------------------------------------------------------------------------
+ <a><b id="1"><x><y/></x><!--no comment--></b><b id="2"><x><y/></x><!--no comment--></b></a>
+(1 row)
+
+select remove('<a><b id="1" d="1"/><b id="2" d="2"/></a>', '/a/b/@id');
+           remove            
+-----------------------------
+ <a><b d="1"/><b d="2"/></a>
+(1 row)
+
+select remove('<a><b id="1"/><b id="2"/></a>', '/a/b/@id');
+     remove      
+-----------------
+ <a><b/><b/></a>
+(1 row)
+
+select remove('<a><b/><b/></a>', '/a/b');
+ remove 
+--------
+ <a/>
+(1 row)
+
+delete from paths;
+DELETE 4
+insert into paths (id, path) values (0, '/c[@cd != @e != "a" and @b and @c or @f]/@g'),
+(1, '/a[@a or @cd != @e != "a" and @b=@k=@l or @s]/b/text()'),
+(2, '/state[@tld or "cz" = "cz" and @tld and @a or @b]'),
+(3, '/state[@tld="de" or @area="78866" and @population="1067494"]'),
+(4, '/a[(@b  != "a" and @k or @l)]/b/text()'),
+(5, '/a[(@b  != "a" and (@k or @l))]/b/text()'),
+(6, '/a[(( @cd and @e)  != "a" and @k)]/b[(@a > @c<=@g=@h)=i and @k=l]/text()'),
+(7, '/a[@a or ((@e)  != "a" = @k or @l)]/b/text()'),
+
+(8, '/a[ab/cd/@a!=b=c/a[@a=@b=a[@c and (@b or @c)]] = @a]'),
+
+(9, '/a[@a and @b or (@c=a[@e=@f])]'),
+(10, '/a[@a and @b or (@c=a[@e=f])]'),
+(11, '/a[@a and @b or @c=a[@e=@f]]'),
+(12, '/a[@a and @b or @c=a[@e=f]]'),
+
+(13, '//root[/a and //b or c]'),
+
+(14, '/root/a[position()=position()]'),
+(15, '/root/b[count(a)>=count(c)]'),
+(16, '/root[contains("", a)]');
+INSERT 0 17
+select id, path
+from paths
+order by id asc;
+ id |                                path                                
+----+--------------------------------------------------------------------
+  0 | /c[@cd!=@e!="a" and @b and @c or @f]/@g
+  1 | /a[@a or @cd!=@e!="a" and @b=@k=@l or @s]/b/text()
+  2 | /state[@tld or "cz"="cz" and @tld and @a or @b]
+  3 | /state[@tld="de" or @area="78866" and @population="1067494"]
+  4 | /a[(@b!="a" and @k or @l)]/b/text()
+  5 | /a[(@b!="a" and (@k or @l))]/b/text()
+  6 | /a[((@cd and @e)!="a" and @k)]/b[(@a>@c<=@g=@h)=i and @k=l]/text()
+  7 | /a[@a or ((@e)!="a"=@k or @l)]/b/text()
+  8 | /a[ab/cd/@a!=b=c/a[@a=@b=a[@c and (@b or @c)]]=@a]
+  9 | /a[@a and @b or (@c=a[@e=@f])]
+ 10 | /a[@a and @b or (@c=a[@e=f])]
+ 11 | /a[@a and @b or @c=a[@e=@f]]
+ 12 | /a[@a and @b or @c=a[@e=f]]
+ 13 | //root[/a and //b or c]
+ 14 | /root/a[position()=position()]
+ 15 | /root/b[count(a)>=count(c)]
+ 16 | /root[contains("",a)]
+(17 rows)
+
+select id, path_debug_print(path)
+from paths
+order by id asc;
+ id |             path_debug_print              
+----+-------------------------------------------
+  0 | main expr.: (paths / funcs: 1 / 0)       +
+    |     <path 0>                             +
+    |   variables:                             +
+    |     path: 0                              +
+    |                                          +
+    |                                          +
+    | <path 0>                                 +
+    |                                          +
+    | absolute xpath                           +
+    |                                          +
+    | node test:      c                        +
+    |   predicate expr.: (paths / funcs: 0 / 0)+
+    |     subexpr. implicit: (val. type: 0)    +
+    |       subexpr. implicit: (val. type: 0)  +
+    |         @cd                              +
+    |         !=                               +
+    |         @e                               +
+    |         !=                               +
+    |         "a"                              +
+    |       and                                +
+    |       @b                                 +
+    |       and                                +
+    |       @c                                 +
+    |     or                                   +
+    |     @f                                   +
+    |   variables:                             +
+    |     attribute: cd                        +
+    |     attribute: e                         +
+    |     attribute: b                         +
+    |     attribute: c                         +
+    |     attribute: f                         +
+    | attr. test:     @g                       +
+    | 
+  1 | main expr.: (paths / funcs: 1 / 0)       +
+    |     <path 0>                             +
+    |   variables:                             +
+    |     path: 0                              +
+    |                                          +
+    |                                          +
+    | <path 0>                                 +
+    |                                          +
+    | absolute xpath                           +
+    |                                          +
+    | node test:      a                        +
+    |   predicate expr.: (paths / funcs: 0 / 0)+
+    |     @a                                   +
+    |     or                                   +
+    |     subexpr. implicit: (val. type: 0)    +
+    |       subexpr. implicit: (val. type: 0)  +
+    |         @cd                              +
+    |         !=                               +
+    |         @e                               +
+    |         !=                               +
+    |         "a"                              +
+    |       and                                +
+    |       subexpr. implicit: (val. type: 0)  +
+    |         @b                               +
+    |         =                                +
+    |         @k                               +
+    |         =                                +
+    |         @l                               +
+    |     or                                   +
+    |     @s                                   +
+    |   variables:                             +
+    |     attribute: a                         +
+    |     attribute: cd                        +
+    |     attribute: e                         +
+    |     attribute: b                         +
+    |     attribute: k                         +
+    |     attribute: l                         +
+    |     attribute: s                         +
+    | node test:      b                        +
+    | node test:      text()                   +
+    | 
+  2 | main expr.: (paths / funcs: 1 / 0)       +
+    |     <path 0>                             +
+    |   variables:                             +
+    |     path: 0                              +
+    |                                          +
+    |                                          +
+    | <path 0>                                 +
+    |                                          +
+    | absolute xpath                           +
+    |                                          +
+    | node test:      state                    +
+    |   predicate expr.: (paths / funcs: 0 / 0)+
+    |     @tld                                 +
+    |     or                                   +
+    |     subexpr. implicit: (val. type: 0)    +
+    |       subexpr. implicit: (val. type: 0)  +
+    |         "cz"                             +
+    |         =                                +
+    |         "cz"                             +
+    |       and                                +
+    |       @tld                               +
+    |       and                                +
+    |       @a                                 +
+    |     or                                   +
+    |     @b                                   +
+    |   variables:                             +
+    |     attribute: tld                       +
+    |     attribute: tld                       +
+    |     attribute: a                         +
+    |     attribute: b                         +
+    | 
+  3 | main expr.: (paths / funcs: 1 / 0)       +
+    |     <path 0>                             +
+    |   variables:                             +
+    |     path: 0                              +
+    |                                          +
+    |                                          +
+    | <path 0>                                 +
+    |                                          +
+    | absolute xpath                           +
+    |                                          +
+    | node test:      state                    +
+    |   predicate expr.: (paths / funcs: 0 / 0)+
+    |     subexpr. implicit: (val. type: 0)    +
+    |       @tld                               +
+    |       =                                  +
+    |       "de"                               +
+    |     or                                   +
+    |     subexpr. implicit: (val. type: 0)    +
+    |       subexpr. implicit: (val. type: 0)  +
+    |         @area                            +
+    |         =                                +
+    |         "78866"                          +
+    |       and                                +
+    |       subexpr. implicit: (val. type: 0)  +
+    |         @population                      +
+    |         =                                +
+    |         "1067494"                        +
+    |   variables:                             +
+    |     attribute: tld                       +
+    |     attribute: area                      +
+    |     attribute: population                +
+    | 
+  4 | main expr.: (paths / funcs: 1 / 0)       +
+    |     <path 0>                             +
+    |   variables:                             +
+    |     path: 0                              +
+    |                                          +
+    |                                          +
+    | <path 0>                                 +
+    |                                          +
+    | absolute xpath                           +
+    |                                          +
+    | node test:      a                        +
+    |   predicate expr.: (paths / funcs: 0 / 0)+
+    |     subexpr. explicit: (val. type: 0)    +
+    |       subexpr. implicit: (val. type: 0)  +
+    |         subexpr. implicit: (val. type: 0)+
+    |           @b                             +
+    |           !=                             +
+    |           "a"                            +
+    |         and                              +
+    |         @k                               +
+    |       or                                 +
+    |       @l                                 +
+    |   variables:                             +
+    |     attribute: b                         +
+    |     attribute: k                         +
+    |     attribute: l                         +
+    | node test:      b                        +
+    | node test:      text()                   +
+    | 
+  5 | main expr.: (paths / funcs: 1 / 0)       +
+    |     <path 0>                             +
+    |   variables:                             +
+    |     path: 0                              +
+    |                                          +
+    |                                          +
+    | <path 0>                                 +
+    |                                          +
+    | absolute xpath                           +
+    |                                          +
+    | node test:      a                        +
+    |   predicate expr.: (paths / funcs: 0 / 0)+
+    |     subexpr. explicit: (val. type: 0)    +
+    |       subexpr. implicit: (val. type: 0)  +
+    |         @b                               +
+    |         !=                               +
+    |         "a"                              +
+    |       and                                +
+    |       subexpr. explicit: (val. type: 0)  +
+    |         @k                               +
+    |         or                               +
+    |         @l                               +
+    |   variables:                             +
+    |     attribute: b                         +
+    |     attribute: k                         +
+    |     attribute: l                         +
+    | node test:      b                        +
+    | node test:      text()                   +
+    | 
+  6 | main expr.: (paths / funcs: 1 / 0)       +
+    |     <path 2>                             +
+    |   variables:                             +
+    |     path: 2                              +
+    |                                          +
+    |                                          +
+    | <path 0>                                 +
+    |                                          +
+    | relative xpath                           +
+    |                                          +
+    | node test:      i                        +
+    |                                          +
+    |                                          +
+    | <path 1>                                 +
+    |                                          +
+    | relative xpath                           +
+    |                                          +
+    | node test:      l                        +
+    |                                          +
+    |                                          +
+    | <path 2>                                 +
+    |                                          +
+    | absolute xpath                           +
+    |                                          +
+    | node test:      a                        +
+    |   predicate expr.: (paths / funcs: 0 / 0)+
+    |     subexpr. explicit: (val. type: 0)    +
+    |       subexpr. implicit: (val. type: 0)  +
+    |         subexpr. explicit: (val. type: 0)+
+    |           @cd                            +
+    |           and                            +
+    |           @e                             +
+    |         !=                               +
+    |         "a"                              +
+    |       and                                +
+    |       @k                                 +
+    |   variables:                             +
+    |     attribute: cd                        +
+    |     attribute: e                         +
+    |     attribute: k                         +
+    | node test:      b                        +
+    |   predicate expr.: (paths / funcs: 2 / 0)+
+    |     subexpr. implicit: (val. type: 0)    +
+    |       subexpr. explicit: (val. type: 0)  +
+    |         subexpr. implicit: (val. type: 0)+
+    |           @a                             +
+    |           >                              +
+    |           @c                             +
+    |           <=                             +
+    |           @g                             +
+    |         =                                +
+    |         @h                               +
+    |       =                                  +
+    |       <path 0>                           +
+    |     and                                  +
+    |     subexpr. implicit: (val. type: 0)    +
+    |       @k                                 +
+    |       =                                  +
+    |       <path 1>                           +
+    |   variables:                             +
+    |     attribute: a                         +
+    |     attribute: c                         +
+    |     attribute: g                         +
+    |     attribute: h                         +
+    |     path: 0                              +
+    |     attribute: k                         +
+    |     path: 1                              +
+    | node test:      text()                   +
+    | 
+  7 | main expr.: (paths / funcs: 1 / 0)       +
+    |     <path 0>                             +
+    |   variables:                             +
+    |     path: 0                              +
+    |                                          +
+    |                                          +
+    | <path 0>                                 +
+    |                                          +
+    | absolute xpath                           +
+    |                                          +
+    | node test:      a                        +
+    |   predicate expr.: (paths / funcs: 0 / 0)+
+    |     @a                                   +
+    |     or                                   +
+    |     subexpr. explicit: (val. type: 0)    +
+    |       subexpr. implicit: (val. type: 0)  +
+    |         subexpr. explicit: (val. type: 2)+
+    |           @e                             +
+    |         !=                               +
+    |         "a"                              +
+    |         =                                +
+    |         @k                               +
+    |       or                                 +
+    |       @l                                 +
+    |   variables:                             +
+    |     attribute: a                         +
+    |     attribute: e                         +
+    |     attribute: k                         +
+    |     attribute: l                         +
+    | node test:      b                        +
+    | node test:      text()                   +
+    | 
+  8 | main expr.: (paths / funcs: 1 / 0)       +
+    |     <path 4>                             +
+    |   variables:                             +
+    |     path: 4                              +
+    |                                          +
+    |                                          +
+    | <path 0>                                 +
+    |                                          +
+    | relative xpath                           +
+    |                                          +
+    | node test:      ab                       +
+    | node test:      cd                       +
+    | attr. test:     @a                       +
+    |                                          +
+    |                                          +
+    | <path 1>                                 +
+    |                                          +
+    | relative xpath                           +
+    |                                          +
+    | node test:      b                        +
+    |                                          +
+    |                                          +
+    | <path 2>                                 +
+    |                                          +
+    | relative xpath                           +
+    |                                          +
+    | node test:      a                        +
+    |   predicate expr.: (paths / funcs: 0 / 0)+
+    |     @c                                   +
+    |     and                                  +
+    |     subexpr. explicit: (val. type: 0)    +
+    |       @b                                 +
+    |       or                                 +
+    |       @c                                 +
+    |   variables:                             +
+    |     attribute: c                         +
+    |     attribute: b                         +
+    |     attribute: c                         +
+    |                                          +
+    |                                          +
+    | <path 3>                                 +
+    |                                          +
+    | relative xpath                           +
+    |                                          +
+    | node test:      c                        +
+    | node test:      a                        +
+    |   predicate expr.: (paths / funcs: 1 / 0)+
+    |     @a                                   +
+    |     =                                    +
+    |     @b                                   +
+    |     =                                    +
+    |     <path 2>                             +
+    |   variables:                             +
+    |     attribute: a                         +
+    |     attribute: b                         +
+    |     path: 2                              +
+    |                                          +
+    |                                          +
+    | <path 4>                                 +
+    |                                          +
+    | absolute xpath                           +
+    |                                          +
+    | node test:      a                        +
+    |   predicate expr.: (paths / funcs: 3 / 0)+
+    |     <path 0>                             +
+    |     !=                                   +
+    |     <path 1>                             +
+    |     =                                    +
+    |     <path 3>                             +
+    |     =                                    +
+    |     @a                                   +
+    |   variables:                             +
+    |     path: 0                              +
+    |     path: 1                              +
+    |     path: 3                              +
+    |     attribute: a                         +
+    | 
+  9 | main expr.: (paths / funcs: 1 / 0)       +
+    |     <path 1>                             +
+    |   variables:                             +
+    |     path: 1                              +
+    |                                          +
+    |                                          +
+    | <path 0>                                 +
+    |                                          +
+    | relative xpath                           +
+    |                                          +
+    | node test:      a                        +
+    |   predicate expr.: (paths / funcs: 0 / 0)+
+    |     @e                                   +
+    |     =                                    +
+    |     @f                                   +
+    |   variables:                             +
+    |     attribute: e                         +
+    |     attribute: f                         +
+    |                                          +
+    |                                          +
+    | <path 1>                                 +
+    |                                          +
+    | absolute xpath                           +
+    |                                          +
+    | node test:      a                        +
+    |   predicate expr.: (paths / funcs: 1 / 0)+
+    |     subexpr. implicit: (val. type: 0)    +
+    |       @a                                 +
+    |       and                                +
+    |       @b                                 +
+    |     or                                   +
+    |     subexpr. explicit: (val. type: 0)    +
+    |       @c                                 +
+    |       =                                  +
+    |       <path 0>                           +
+    |   variables:                             +
+    |     attribute: a                         +
+    |     attribute: b                         +
+    |     attribute: c                         +
+    |     path: 0                              +
+    | 
+ 10 | main expr.: (paths / funcs: 1 / 0)       +
+    |     <path 2>                             +
+    |   variables:                             +
+    |     path: 2                              +
+    |                                          +
+    |                                          +
+    | <path 0>                                 +
+    |                                          +
+    | relative xpath                           +
+    |                                          +
+    | node test:      f                        +
+    |                                          +
+    |                                          +
+    | <path 1>                                 +
+    |                                          +
+    | relative xpath                           +
+    |                                          +
+    | node test:      a                        +
+    |   predicate expr.: (paths / funcs: 1 / 0)+
+    |     @e                                   +
+    |     =                                    +
+    |     <path 0>                             +
+    |   variables:                             +
+    |     attribute: e                         +
+    |     path: 0                              +
+    |                                          +
+    |                                          +
+    | <path 2>                                 +
+    |                                          +
+    | absolute xpath                           +
+    |                                          +
+    | node test:      a                        +
+    |   predicate expr.: (paths / funcs: 1 / 0)+
+    |     subexpr. implicit: (val. type: 0)    +
+    |       @a                                 +
+    |       and                                +
+    |       @b                                 +
+    |     or                                   +
+    |     subexpr. explicit: (val. type: 0)    +
+    |       @c                                 +
+    |       =                                  +
+    |       <path 1>                           +
+    |   variables:                             +
+    |     attribute: a                         +
+    |     attribute: b                         +
+    |     attribute: c                         +
+    |     path: 1                              +
+    | 
+ 11 | main expr.: (paths / funcs: 1 / 0)       +
+    |     <path 1>                             +
+    |   variables:                             +
+    |     path: 1                              +
+    |                                          +
+    |                                          +
+    | <path 0>                                 +
+    |                                          +
+    | relative xpath                           +
+    |                                          +
+    | node test:      a                        +
+    |   predicate expr.: (paths / funcs: 0 / 0)+
+    |     @e                                   +
+    |     =                                    +
+    |     @f                                   +
+    |   variables:                             +
+    |     attribute: e                         +
+    |     attribute: f                         +
+    |                                          +
+    |                                          +
+    | <path 1>                                 +
+    |                                          +
+    | absolute xpath                           +
+    |                                          +
+    | node test:      a                        +
+    |   predicate expr.: (paths / funcs: 1 / 0)+
+    |     subexpr. implicit: (val. type: 0)    +
+    |       @a                                 +
+    |       and                                +
+    |       @b                                 +
+    |     or                                   +
+    |     subexpr. implicit: (val. type: 0)    +
+    |       @c                                 +
+    |       =                                  +
+    |       <path 0>                           +
+    |   variables:                             +
+    |     attribute: a                         +
+    |     attribute: b                         +
+    |     attribute: c                         +
+    |     path: 0                              +
+    | 
+ 12 | main expr.: (paths / funcs: 1 / 0)       +
+    |     <path 2>                             +
+    |   variables:                             +
+    |     path: 2                              +
+    |                                          +
+    |                                          +
+    | <path 0>                                 +
+    |                                          +
+    | relative xpath                           +
+    |                                          +
+    | node test:      f                        +
+    |                                          +
+    |                                          +
+    | <path 1>                                 +
+    |                                          +
+    | relative xpath                           +
+    |                                          +
+    | node test:      a                        +
+    |   predicate expr.: (paths / funcs: 1 / 0)+
+    |     @e                                   +
+    |     =                                    +
+    |     <path 0>                             +
+    |   variables:                             +
+    |     attribute: e                         +
+    |     path: 0                              +
+    |                                          +
+    |                                          +
+    | <path 2>                                 +
+    |                                          +
+    | absolute xpath                           +
+    |                                          +
+    | node test:      a                        +
+    |   predicate expr.: (paths / funcs: 1 / 0)+
+    |     subexpr. implicit: (val. type: 0)    +
+    |       @a                                 +
+    |       and                                +
+    |       @b                                 +
+    |     or                                   +
+    |     subexpr. implicit: (val. type: 0)    +
+    |       @c                                 +
+    |       =                                  +
+    |       <path 1>                           +
+    |   variables:                             +
+    |     attribute: a                         +
+    |     attribute: b                         +
+    |     attribute: c                         +
+    |     path: 1                              +
+    | 
+ 13 | main expr.: (paths / funcs: 1 / 0)       +
+    |     <path 3>                             +
+    |   variables:                             +
+    |     path: 3                              +
+    |                                          +
+    |                                          +
+    | <path 0>                                 +
+    |                                          +
+    | absolute xpath                           +
+    |                                          +
+    | node test:      a                        +
+    |                                          +
+    |                                          +
+    | <path 1>                                 +
+    |                                          +
+    | absolute xpath                           +
+    |                                          +
+    | node test:      b (desc.)                +
+    |                                          +
+    |                                          +
+    | <path 2>                                 +
+    |                                          +
+    | relative xpath                           +
+    |                                          +
+    | node test:      c                        +
+    |                                          +
+    |                                          +
+    | <path 3>                                 +
+    |                                          +
+    | absolute xpath                           +
+    |                                          +
+    | node test:      root (desc.)             +
+    |   predicate expr.: (paths / funcs: 3 / 0)+
+    |     subexpr. implicit: (val. type: 0)    +
+    |       <path 0>                           +
+    |       and                                +
+    |       <path 1>                           +
+    |     or                                   +
+    |     <path 2>                             +
+    |   variables:                             +
+    |     path: 0                              +
+    |     path: 1                              +
+    |     path: 2                              +
+    | 
+ 14 | main expr.: (paths / funcs: 1 / 0)       +
+    |     <path 0>                             +
+    |   variables:                             +
+    |     path: 0                              +
+    |                                          +
+    |                                          +
+    | <path 0>                                 +
+    |                                          +
+    | absolute xpath                           +
+    |                                          +
+    | node test:      root                     +
+    | node test:      a                        +
+    |   predicate expr.: (paths / funcs: 0 / 2)+
+    |     position()                           +
+    |     =                                    +
+    |     position()                           +
+    |   variables:                             +
+    |     function: position()                 +
+    |     function: position()                 +
+    | 
+ 15 | main expr.: (paths / funcs: 1 / 0)       +
+    |     <path 2>                             +
+    |   variables:                             +
+    |     path: 2                              +
+    |                                          +
+    |                                          +
+    | <path 0>                                 +
+    |                                          +
+    | relative xpath                           +
+    |                                          +
+    | node test:      a                        +
+    |                                          +
+    |                                          +
+    | <path 1>                                 +
+    |                                          +
+    | relative xpath                           +
+    |                                          +
+    | node test:      c                        +
+    |                                          +
+    |                                          +
+    | <path 2>                                 +
+    |                                          +
+    | absolute xpath                           +
+    |                                          +
+    | node test:      root                     +
+    | node test:      b                        +
+    |   predicate expr.: (paths / funcs: 2 / 2)+
+    |     count(                               +
+    |       <path 0>                           +
+    |     )                                    +
+    |     >=                                   +
+    |     count(                               +
+    |       <path 1>                           +
+    |     )                                    +
+    |   variables:                             +
+    |     path: 0                              +
+    |     path: 1                              +
+    | 
+ 16 | main expr.: (paths / funcs: 1 / 0)       +
+    |     <path 1>                             +
+    |   variables:                             +
+    |     path: 1                              +
+    |                                          +
+    |                                          +
+    | <path 0>                                 +
+    |                                          +
+    | relative xpath                           +
+    |                                          +
+    | node test:      a                        +
+    |                                          +
+    |                                          +
+    | <path 1>                                 +
+    |                                          +
+    | absolute xpath                           +
+    |                                          +
+    | node test:      root                     +
+    |   predicate expr.: (paths / funcs: 1 / 1)+
+    |     contains(                            +
+    |       ""                                 +
+    |       ,                                  +
+    |       <path 0>                           +
+    |     )                                    +
+    |   variables:                             +
+    |     path: 0                              +
+    | 
+(17 rows)
+
+select path('/state[@tld="at" or @area="78866"]/@name', data) from states;
+      path       
+-----------------
+ Österreich
+ 
+ Česká republika
+(3 rows)
+
+select path('/state[@tld="de" or @area="78866" and @population="0"]/@tld', data) from states;
+ path 
+------
+ 
+ de
+ 
+(3 rows)
+
+select path('/state[@tld="de" or @area="78866" and @population="10674947"]/@tld', data) from states;
+ path 
+------
+ 
+ de
+ cz
+(3 rows)
+
+select path('/doc/a[(@b="1" or @b="2") and @c="3"]', '<doc><a b="1" c="2"/><a b="2" c="3"/></doc>');
+       path       
+------------------
+ <a b="2" c="3"/>
+(1 row)
+
+with paths(id, path) as (
+values
+((0), ('/dům/střecha'::xml.path)),
+((1), ('/dům/poschodí[@číslo="2"]'::xml.path)),
+((2), ('/dům/poschodí[@cislo="1"]'::xml.path)),
+((3), ('/dům/přízemí'::xml.path))
+)
+select id, path(path, '<dům><střecha/><poschodí číslo="2"/><poschodí číslo="1"/><poschodi/><přízemí/><sklep/></dům>')
+from paths
+order by id;
+ id |         path          
+----+-----------------------
+  0 | <střecha/>
+  1 | <poschodí číslo="2"/>
+  2 | 
+  3 | <přízemí/>
+(4 rows)
+
+insert into docs_other(id, data)
+values (1, '<root b="xxyy"><a>x<c/>y</a><b>x<c/>y</b></root>'), 
+(2, '<root b="xxyy"><a>xx<c/>yy</a><b>x<c/></b></root>'),
+(3, '<root><a i="1">x<c/>y1<d>z1<e/>z2</d>y2</a><b>x<c/>y</b><b i="1"></b></root>');
+INSERT 0 3
+select id, path('/root[a!=@b]', data)
+from docs_other
+order by id;
+ id |                       path                       
+----+--------------------------------------------------
+  1 | <root b="xxyy"><a>x<c/>y</a><b>x<c/>y</b></root>
+  2 | 
+  3 | 
+(3 rows)
+
+select id, path('/root[a=@b]', data)
+from docs_other
+order by id;
+ id |                       path                        
+----+---------------------------------------------------
+  1 | 
+  2 | <root b="xxyy"><a>xx<c/>yy</a><b>x<c/></b></root>
+  3 | 
+(3 rows)
+
+select id, path('/root[b="xy"]', data)
+from docs_other
+order by id;
+ id |                                   path                                    
+----+---------------------------------------------------------------------------
+  1 | <root b="xxyy"><a>x<c/>y</a><b>x<c/>y</b></root>
+  2 | 
+  3 | <root><a i="1">x<c/>y1<d>z1<e/>z2</d>y2</a><b>x<c/>y</b><b i="1"/></root>
+(3 rows)
+
+select id, path('/root[a="xy1z1z2y2"]', data)
+from docs_other
+order by id;
+ id |                                   path                                    
+----+---------------------------------------------------------------------------
+  1 | 
+  2 | 
+  3 | <root><a i="1">x<c/>y1<d>z1<e/>z2</d>y2</a><b>x<c/>y</b><b i="1"/></root>
+(3 rows)
+
+select id, path('/root[a="xy1z1z2y"]', data)
+from docs_other
+order by id;
+ id | path 
+----+------
+  1 | 
+  2 | 
+  3 | 
+(3 rows)
+
+select id, path('/root[a="xy1z1z2y23"]', data)
+from docs_other
+order by id;
+ id | path 
+----+------
+  1 | 
+  2 | 
+  3 | 
+(3 rows)
+
+select id, path('/root[a=""]', data)
+from docs_other
+order by id;
+ id | path 
+----+------
+  1 | 
+  2 | 
+  3 | 
+(3 rows)
+
+select id, path('/root[a!=""]', data)
+from docs_other
+order by id;
+ id |                                   path                                    
+----+---------------------------------------------------------------------------
+  1 | <root b="xxyy"><a>x<c/>y</a><b>x<c/>y</b></root>
+  2 | <root b="xxyy"><a>xx<c/>yy</a><b>x<c/></b></root>
+  3 | <root><a i="1">x<c/>y1<d>z1<e/>z2</d>y2</a><b>x<c/>y</b><b i="1"/></root>
+(3 rows)
+
+select id, path('/root[b=""]', data)
+from docs_other
+order by id;
+ id |                                   path                                    
+----+---------------------------------------------------------------------------
+  1 | 
+  2 | 
+  3 | <root><a i="1">x<c/>y1<d>z1<e/>z2</d>y2</a><b>x<c/>y</b><b i="1"/></root>
+(3 rows)
+
+select id, path('/root[b!=""]', data)
+from docs_other
+order by id;
+ id |                                   path                                    
+----+---------------------------------------------------------------------------
+  1 | <root b="xxyy"><a>x<c/>y</a><b>x<c/>y</b></root>
+  2 | <root b="xxyy"><a>xx<c/>yy</a><b>x<c/></b></root>
+  3 | <root><a i="1">x<c/>y1<d>z1<e/>z2</d>y2</a><b>x<c/>y</b><b i="1"/></root>
+(3 rows)
+
+select id, path('/root[f=""]', data)
+from docs_other
+order by id;
+ id | path 
+----+------
+  1 | 
+  2 | 
+  3 | 
+(3 rows)
+
+select id, path('/root[f!=""]', data)
+from docs_other
+order by id;
+ id | path 
+----+------
+  1 | 
+  2 | 
+  3 | 
+(3 rows)
+
+select id, path('/root[b="xy1z1z2y2"]', data)
+from docs_other
+order by id;
+ id | path 
+----+------
+  1 | 
+  2 | 
+  3 | 
+(3 rows)
+
+select id, path('/root[b!="xy1z1z2y2"]', data)
+from docs_other
+order by id;
+ id |                                   path                                    
+----+---------------------------------------------------------------------------
+  1 | <root b="xxyy"><a>x<c/>y</a><b>x<c/>y</b></root>
+  2 | <root b="xxyy"><a>xx<c/>yy</a><b>x<c/></b></root>
+  3 | <root><a i="1">x<c/>y1<d>z1<e/>z2</d>y2</a><b>x<c/>y</b><b i="1"/></root>
+(3 rows)
+
+select id, path('/root[f="xy1z1z2y2"]', data)
+from docs_other
+order by id;
+ id | path 
+----+------
+  1 | 
+  2 | 
+  3 | 
+(3 rows)
+
+select id, path('/root[f!="xy1z1z2y2"]', data)
+from docs_other
+order by id;
+ id | path 
+----+------
+  1 | 
+  2 | 
+  3 | 
+(3 rows)
+
+select id, path('/root[a=@t]', data)
+from docs_other
+order by id;
+ id | path 
+----+------
+  1 | 
+  2 | 
+  3 | 
+(3 rows)
+
+select id, path('/root[a!=@t]', data)
+from docs_other
+order by id;
+ id | path 
+----+------
+  1 | 
+  2 | 
+  3 | 
+(3 rows)
+
+select id, path('/root[b=@t]', data)
+from docs_other
+order by id;
+ id | path 
+----+------
+  1 | 
+  2 | 
+  3 | 
+(3 rows)
+
+select id, path('/root[b!=@t]', data)
+from docs_other
+order by id;
+ id | path 
+----+------
+  1 | 
+  2 | 
+  3 | 
+(3 rows)
+
+select id, path('/root[f=@t]', data)
+from docs_other
+order by id;
+ id | path 
+----+------
+  1 | 
+  2 | 
+  3 | 
+(3 rows)
+
+select id, path('/root[f!=@t]', data)
+from docs_other
+order by id;
+ id | path 
+----+------
+  1 | 
+  2 | 
+  3 | 
+(3 rows)
+
+select path('/root[@i=a/text()]', '<root i="x"><a>y</a></root>');
+ path 
+------
+ 
+(1 row)
+
+select path('/root[@i!=a/text()]', '<root i="x"><a>x</a></root>');
+ path 
+------
+ 
+(1 row)
+
+select path('/root[@i=a/text()]', '<root i="x"><a>x</a><a>y</a></root>');
+                path                 
+-------------------------------------
+ <root i="x"><a>x</a><a>y</a></root>
+(1 row)
+
+select path('/root[@i!=a/text()]', '<root i="x"><a>x</a><a>y</a></root>');
+                path                 
+-------------------------------------
+ <root i="x"><a>x</a><a>y</a></root>
+(1 row)
+
+select path('/root[a=b]', '<root><a i="1"/><b i="1"/></root>');
+               path                
+-----------------------------------
+ <root><a i="1"/><b i="1"/></root>
+(1 row)
+
+select path('/root[a=b]', '<root><a i="1">x1<c/>x2</a><b i="1">x1<c/>x2</b></root>');
+                          path                           
+---------------------------------------------------------
+ <root><a i="1">x1<c/>x2</a><b i="1">x1<c/>x2</b></root>
+(1 row)
+
+select path('/root[a=b]', '<root><a i="1">x1<c>y1<d>z1</d>y3</c>x2</a><b i="1">x1y1<c/>z1y3x2</b></root>');
+                                     path                                      
+-------------------------------------------------------------------------------
+ <root><a i="1">x1<c>y1<d>z1</d>y3</c>x2</a><b i="1">x1y1<c/>z1y3x2</b></root>
+(1 row)
+
+select path('/root[a=b]', '<root><a i="1">x1<c>y1<d>z1</d>y3</c>x2x3</a><b i="1">x1y1<c/>z1y3x2</b></root>');
+ path 
+------
+ 
+(1 row)
+
+select path('/root[a=b]', '<root><a i="1">x1</a><a i="2">x2</a><b i="1">x2</b></root>');
+                            path                            
+------------------------------------------------------------
+ <root><a i="1">x1</a><a i="2">x2</a><b i="1">x2</b></root>
+(1 row)
+
+select path('/root[a!=b]', '<root><a i="1">x1</a><a i="2">x2</a><b i="1">x2</b></root>');
+                            path                            
+------------------------------------------------------------
+ <root><a i="1">x1</a><a i="2">x2</a><b i="1">x2</b></root>
+(1 row)
+
+select path('/root[a=a/b]', '<root i="x"><a>y</a></root>');
+ path 
+------
+ 
+(1 row)
+
+select path('/root[a!=a/b]', '<root i="x"><a>y</a></root>');
+ path 
+------
+ 
+(1 row)
+
+select path('/root[a=a/@a]', '<root i="x"><a a="y">y</a></root>');
+               path                
+-----------------------------------
+ <root i="x"><a a="y">y</a></root>
+(1 row)
+
+select path('/root[a!=a/@a]', '<root i="x"><a a="y">y</a></root>');
+ path 
+------
+ 
+(1 row)
+
+select path('/root[a!=a/@*]', '<root><a a="x" b="y">x</a></root>');
+               path                
+-----------------------------------
+ <root><a a="x" b="y">x</a></root>
+(1 row)
+
+select path('/root[a/@*=a]', '<root><a a="x" b="y">x</a></root>');
+               path                
+-----------------------------------
+ <root><a a="x" b="y">x</a></root>
+(1 row)
+
+select path('/root[a=comment()]', '<root><a>x</a><!--x--></root>');
+             path              
+-------------------------------
+ <root><a>x</a><!--x--></root>
+(1 row)
+
+select path('/root[a!=comment()]', '<root><a>x</a><!--x--></root>');
+ path 
+------
+ 
+(1 row)
+
+select path('/root[a=b/node()]', '<root><a>x</a><b><![CDATA[y]]></b></root>');
+ path 
+------
+ 
+(1 row)
+
+select path('/root[a!=b/node()]', '<root><a>x</a><b><![CDATA[y]]></b></root>');
+             path              
+-------------------------------
+ <root><a>x</a><b>y</b></root>
+(1 row)
+
+select path('/root[a=b/processing-instruction("abc")]', '<root><a>def</a><b><?abc def?></b></root>');
+                   path                    
+-------------------------------------------
+ <root><a>def</a><b><?abc def?></b></root>
+(1 row)
+
+select path('/root[a!=b/processing-instruction("abc")]', '<root><a>def</a><b><?abc def?></b></root>');
+ path 
+------
+ 
+(1 row)
+
+select path('/root[node()=node()]', '<root><![CDATA[x]]></root>');
+      path      
+----------------
+ <root>x</root>
+(1 row)
+
+select path('/root[node()!=node()]', '<root><!--x--></root>');
+ path 
+------
+ 
+(1 row)
+
+select path('/root[@b=1.5 and @c=1.1000000]', '<root b="1.50" c="1.1"/>');
+           path           
+--------------------------
+ <root b="1.50" c="1.1"/>
+(1 row)
+
+select path('/root[@b!=1.5]', '<root b="1.50" c="1.1"/>');
+ path 
+------
+ 
+(1 row)
+
+select path('/root[b=0.1]', '<root><b> 0.<c/>1<d/> </b></root>');
+               path                
+-----------------------------------
+ <root><b> 0.<c/>1<d/> </b></root>
+(1 row)
+
+select path('/root[b!=0.1]', '<root><b> 0.<c/>1<d/> </b></root>');
+ path 
+------
+ 
+(1 row)
+
+select path('/root[comment()=1.551]', '<root><!-- 1.5510 --></root>');
+             path             
+------------------------------
+ <root><!-- 1.5510 --></root>
+(1 row)
+
+select path('/root[comment()=1.551]', '<root><!----></root>');
+ path 
+------
+ 
+(1 row)
+
+select path('/root[comment()!=1.551]', '<root><!----></root>');
+         path         
+----------------------
+ <root><!----></root>
+(1 row)
+
+select path('/root[@b>1.01]', '<root b="1.1"/>');
+      path       
+-----------------
+ <root b="1.1"/>
+(1 row)
+
+select path('/root[@b<1.01]', '<root b="1.1"/>');
+ path 
+------
+ 
+(1 row)
+
+select path('/root[1.01<@b]', '<root b="1.1"/>');
+      path       
+-----------------
+ <root b="1.1"/>
+(1 row)
+
+select path('/root[1.01>@b]', '<root b="1.1"/>');
+ path 
+------
+ 
+(1 row)
+
+select path('/root[b<1]', '<root><b>1.5</b></root>');
+ path 
+------
+ 
+(1 row)
+
+select path('/root[b>1]', '<root><b>1.5</b></root>');
+          path           
+-------------------------
+ <root><b>1.5</b></root>
+(1 row)
+
+select path('/root[1<b]', '<root><b>1.5</b></root>');
+          path           
+-------------------------
+ <root><b>1.5</b></root>
+(1 row)
+
+select path('/root[1>b]', '<root><b>1.5</b></root>');
+ path 
+------
+ 
+(1 row)
+
+select path('/root[@b>1.1]', '<root b="1.o1"><b/></root>');
+ path 
+------
+ 
+(1 row)
+
+select path('/root[@b<1.1]', '<root b="1.o1"><b/></root>');
+ path 
+------
+ 
+(1 row)
+
+select path('/root[@b<"a"]', '<root b="1.1"><b/></root>');
+ path 
+------
+ 
+(1 row)
+
+select path('/root[@b>"a"]', '<root b="1.1"><b/></root>');
+ path 
+------
+ 
+(1 row)
+
+select path('/root[@b>b]', '<root b="abc"><b>def</b></root>');
+ path 
+------
+ 
+(1 row)
+
+select path('/root[@b<b]', '<root b="abc"><b>def</b></root>');
+ path 
+------
+ 
+(1 row)
+
+select path('/root["a"]', '<root/>');
+  path   
+---------
+ <root/>
+(1 row)
+
+select path('/root[@a or a]', '<root/>');
+ path 
+------
+ 
+(1 row)
+
+select path('/root[/root/a=x]', '<root><a>c</a><x>c</x></root>');
+ path 
+------
+ 
+(1 row)
+
+select path('/root[/root/a=/x]', '<root><a>c</a><x>c</x></root>');
+ path 
+------
+ 
+(1 row)
+
+select path('/root[//a=x]', '<root><a>c</a><x>c</x></root>');
+             path              
+-------------------------------
+ <root><a>c</a><x>c</x></root>
+(1 row)
+
+select path('/root[/=/]', '<root/>');
+  path   
+---------
+ <root/>
+(1 row)
+
+select path('/root[/!=/]', '<root/>');
+ path 
+------
+ 
+(1 row)
+
+select path('/root[/=1]', '<root/>');
+ path 
+------
+ 
+(1 row)
+
+select path('/root[/>1]', '<root/>');
+ path 
+------
+ 
+(1 row)
+
+select path('/root[/=a]', '<root><a/></root>');
+       path        
+-------------------
+ <root><a/></root>
+(1 row)
+
+select path('/root[/!=a]', '<root><a/></root>');
+ path 
+------
+ 
+(1 row)
+
+select path('/root/a[position()=@i]', '<root><a i="2"/><a i="1"/><a i="3.0"/></root>');
+     path     
+--------------
+ <a i="3.0"/>
+(1 row)
+
+select path('/root/a[position()=1 or position()=2]', '<root><a i="1"/><a i="2"/></root>');
+         path         
+----------------------
+ <a i="1"/><a i="2"/>
+(1 row)
+
+select path('/state/city[6]/@name', data) from states where id=1;
+       path       
+------------------
+ České Budějovice
+(1 row)
+
+select path('/state/region[5]/city[1]/@name', data) from states where id=2;
+    path     
+-------------
+ Saarbrücken
+(1 row)
+
+select id, path('/state/comment()', data)
+from states
+order by id;
+ id |                              path                              
+----+----------------------------------------------------------------
+  1 | <!-- Resource: http://en.wikipedia.org/wiki/Czech_Republic -->
+  2 | <!-- Resource: http://en.wikipedia.org/wiki/Deutschland -->
+  3 | <!-- Resource: http://en.wikipedia.org/wiki/Oesterreich -->
+(3 rows)
+
+select path('/a/node()', '<a i="1" j="2"><b/><c/><d i="1"/><e j="2"/><!--no comment--></a>');
+                     path                      
+-----------------------------------------------
+ <b/><c/><d i="1"/><e j="2"/><!--no comment-->
+(1 row)
+
+select path('/a/@*', '<a i="1" j="2" k="3"><b/><c/><d i="4"/><e j="5"/></a>');
+ path 
+------
+ 123
+(1 row)
+
+select path('/a//b', '<a><b/><x><b i="3"/><a><b i="2"/></a></x></a>');
+           path           
+--------------------------
+ <b/><b i="3"/><b i="2"/>
+(1 row)
+
+select path('//x/b', '<root><x><b><test1/><x><b><test2/></b></x></b><a><b><test3/></b><d/></a></x></root>');
+                         path                         
+------------------------------------------------------
+ <b><test1/><x><b><test2/></b></x></b><b><test2/></b>
+(1 row)
+
+select path('//x//b', '<root><x><b><test1/><x><b><test2/></b></x></b><a><b><test3/></b><d/></a></x></root>');
+                                path                                 
+---------------------------------------------------------------------
+ <b><test1/><x><b><test2/></b></x></b><b><test2/></b><b><test3/></b>
+(1 row)
+
+select add('<root><x><b><test1/><x><b><test2/></b></x></b><a><b><test3/></b><d/></a></x></root>', '/root//x/b', '<new/>', 'r');
+                         add                          
+------------------------------------------------------
+ <root><x><new/><a><b><test3/></b><d/></a></x></root>
+(1 row)
+
+select add('<root><x><c><test1/><x><b><test2/></b></x></c><a><b><test3/></b><d/></a></x></root>', '/root//x/b', '<new/>', 'b');
+                                            add                                            
+-------------------------------------------------------------------------------------------
+ <root><x><c><test1/><x><new/><b><test2/></b></x></c><a><b><test3/></b><d/></a></x></root>
+(1 row)
+
+select add('<root><x><b><test1/><x><b><test2/></b></x></b><a><b><test3/></b><d/></a></x></root>', '/root//x/b', '<new/>', 'a');
+                                               add                                               
+-------------------------------------------------------------------------------------------------
+ <root><x><b><test1/><x><b><test2/></b><new/></x></b><new/><a><b><test3/></b><d/></a></x></root>
+(1 row)
+
+select add('<root><x><b><test1/><x><b><test2/></b></x></b><a><b><test3/></b><d/></a></x></root>', '/root//x//b', '<new/>', 'r');
+                     add                     
+---------------------------------------------
+ <root><x><new/><a><new/><d/></a></x></root>
+(1 row)
+
+select add('<root><x><b><test1/><x><b><test2/></b></x></b><a><b><test3/></b><d/></a></x></root>', '/root//x//b', '<new/>', 'a');
+                                                  add                                                  
+-------------------------------------------------------------------------------------------------------
+ <root><x><b><test1/><x><b><test2/></b><new/></x></b><new/><a><b><test3/></b><new/><d/></a></x></root>
+(1 row)
+
+select add('<root><x><b><test1/><x><b><test2/></b></x></b><a><b><test3/></b><d/></a></x></root>', '//x//b', '<new/>', 'r');
+                     add                     
+---------------------------------------------
+ <root><x><new/><a><new/><d/></a></x></root>
+(1 row)
+
+select add('<root><x><b><test1/><x><b><test2/></b></x></b><a><b><test3/></b><d/></a></x></root>', '//x//b', '<new/>', 'a');
+                                                  add                                                  
+-------------------------------------------------------------------------------------------------------
+ <root><x><b><test1/><x><b><test2/></b><new/></x></b><new/><a><b><test3/></b><new/><d/></a></x></root>
+(1 row)
+
+select add('<root><x><c><test1/><x><b><test2/></b></x></c><a><b><test3/></b><d/></a></x></root>', '/root//x/b', '<new/>', 'i');
+                                            add                                            
+-------------------------------------------------------------------------------------------
+ <root><x><c><test1/><x><b><test2/><new/></b></x></c><a><b><test3/></b><d/></a></x></root>
+(1 row)
+
+select remove('<root><x><b><test1/><x><b><test2/></b></x></b><a><b><test3/></b><d/></a></x></root>', '/root/x/b');
+                     remove                     
+------------------------------------------------
+ <root><x><a><b><test3/></b><d/></a></x></root>
+(1 row)
+
+select remove('<root><x><b><test1/><x><b><test2/></b></x></b><a><b><test3/></b><d/></a></x></root>', '/root//x/b');
+                     remove                     
+------------------------------------------------
+ <root><x><a><b><test3/></b><d/></a></x></root>
+(1 row)
+
+select remove('<root><x><c><test1/><x><b><test2/></b></x></c><a><b><test3/></b><d/></a></x></root>', '/root//x/b');
+                              remove                               
+-------------------------------------------------------------------
+ <root><x><c><test1/><x/></c><a><b><test3/></b><d/></a></x></root>
+(1 row)
+
+select remove('<root><x><c><test1/><b><test2/></b></c><a><b><test3/></b><d/></a><b/></x></root>', '/root//x//b');
+                     remove                     
+------------------------------------------------
+ <root><x><c><test1/></c><a><d/></a></x></root>
+(1 row)
+
+select remove('<root><x><c><test1/><b><test2/></b></c><a><b><test3/></b><d/></a><b/><b/></x></root>', '/root//x//b');
+                     remove                     
+------------------------------------------------
+ <root><x><c><test1/></c><a><d/></a></x></root>
+(1 row)
+
+select remove('<root><x><c><test1/><b><test2/></b></c><a><b><test3/></b><d/></a><b i="1"/><b/></x></root>', '/root//x//b');
+                     remove                     
+------------------------------------------------
+ <root><x><c><test1/></c><a><d/></a></x></root>
+(1 row)
+
+select remove('<root><x><c><test1/><b><test2/></b></c><a><b><test3/></b><d/></a><b i="1"/><b i="2"/></x></root>', '/root//x//b');
+                     remove                     
+------------------------------------------------
+ <root><x><c><test1/></c><a><d/></a></x></root>
+(1 row)
+
+select remove('<root><x><c><test1/><b><test2/></b></c><a><b><test3/></b><d/></a><b><c/></b><b><c/></b></x></root>', '/root//x//b');
+                     remove                     
+------------------------------------------------
+ <root><x><c><test1/></c><a><d/></a></x></root>
+(1 row)
+
+select remove('<a><b d="1" id="1" /><b d="2" id="2"/></a>', '/a/b//@id');
+           remove            
+-----------------------------
+ <a><b d="1"/><b d="2"/></a>
+(1 row)
+
+select remove('<a><b d="1" id="1" /><b d="2" id="2"/></a>', '//@id');
+           remove            
+-----------------------------
+ <a><b d="1"/><b d="2"/></a>
+(1 row)
+
+select remove('<a><b d="1" id="1" /><b d="2" id="2"/></a>', '//@*');
+     remove      
+-----------------
+ <a><b/><b/></a>
+(1 row)
+
+select add('<root><x><c><test1/><x><b><test2/></b></x></c><a><b><test3/></b><d/></a></x></root>', '/root//x//b', '<new/>', 'b');
+                                               add                                               
+-------------------------------------------------------------------------------------------------
+ <root><x><c><test1/><x><new/><b><test2/></b></x></c><a><new/><b><test3/></b><d/></a></x></root>
+(1 row)
+
+select add('<root><x><b><test1/><x><b><test2/></b></x></b><a><b><test3/></b><d/></a></x></root>', '/root//x//b', '<new/>', 'i');
+                                                  add                                                  
+-------------------------------------------------------------------------------------------------------
+ <root><x><b><test1/><x><b><test2/><new/></b></x><new/></b><a><b><test3/><new/></b><d/></a></x></root>
+(1 row)
+
+select add('<root><x><c><test1/><x><b><test2/></b></x></c><a><b><test3/></b><d/></a></x></root>', '//x//b', '<new/>', 'b');
+                                               add                                               
+-------------------------------------------------------------------------------------------------
+ <root><x><c><test1/><x><new/><b><test2/></b></x></c><a><new/><b><test3/></b><d/></a></x></root>
+(1 row)
+
+select add('<root><x><b><test1/><x><b><test2/></b></x></b><a><b><test3/></b><d/></a></x></root>', '//x//b', '<new/>', 'i');
+                                                  add                                                  
+-------------------------------------------------------------------------------------------------------
+ <root><x><b><test1/><x><b><test2/><new/></b></x><new/></b><a><b><test3/><new/></b><d/></a></x></root>
+(1 row)
+
+select add('<root><x><a/><b/><b><c/></b><x><b i="1"/></x><b/></x></root>', '/root//x//b', '<n/>', 'i');
+                                          add                                          
+---------------------------------------------------------------------------------------
+ <root><x><a/><b><n/></b><b><c/><n/></b><x><b i="1"><n/></b></x><b><n/></b></x></root>
+(1 row)
+
+select path('/root/b[count(a)>1]', '<root><a i="1"><b/></a><a i="2"><b/><b/></a></root>');
+ path 
+------
+ 
+(1 row)
+
+select path('/root/b[count(c)=0]', '<root><a i="1"><b/></a><a i="2"><b/><b/></a></root>');
+ path 
+------
+ 
+(1 row)
+
+select path('/root[contains(a, "x")]', '<root><a>xy</a><a>z</a></root>');
+              path              
+--------------------------------
+ <root><a>xy</a><a>z</a></root>
+(1 row)
+
+select path('/root[contains(a, "z")]', '<root><a>xy</a><a>z</a></root>');
+ path 
+------
+ 
+(1 row)
+
+select path('/root[contains(a, "")]', '<root><a>xy</a><a>z</a></root>');
+              path              
+--------------------------------
+ <root><a>xy</a><a>z</a></root>
+(1 row)
+
+select path('/root[contains("", a)]', '<root><a>xy</a><a>z</a></root>');
+ path 
+------
+ 
+(1 row)
+
+select path('/root[contains("", a)]', '<root><a>xy</a><a>z</a></root>');
+ path 
+------
+ 
+(1 row)
+
+select path('/root[contains(b, a)]', '<root><a>xy</a><a>z</a></root>');
+ path 
+------
+ 
+(1 row)
+
+select path('/root[contains(a, b)]', '<root><a>xy</a><a>z</a></root>');
+              path              
+--------------------------------
+ <root><a>xy</a><a>z</a></root>
+(1 row)
+
+select path('/root[contains(b, c)]', '<root><a>xy</a><a>z</a></root>');
+              path              
+--------------------------------
+ <root><a>xy</a><a>z</a></root>
+(1 row)
+
+select path('/state[contains(@name, "rep") and (@area<=100000 or @population>11000000)]', '{@name, @area, @population}', data) 
+from states
+order by id;
+                      path                      
+------------------------------------------------
+ {"Česká republika",78866,10674947}
+ {"Bundesrepublik Deutschland",357021,81757600}
+(2 rows)
+
+select id, path('count(/state/region)', data)
+from states
+order by id;
+ id |   path   
+----+----------
+  1 | 1.000000
+  2 | 5.000000
+  3 | 3.000000
+(3 rows)
+
+drop table states;
+DROP TABLE
+drop table paths;
+DROP TABLE
+drop table docs_other;
+DROP TABLE

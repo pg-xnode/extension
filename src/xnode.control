@@ -1,0 +1,6 @@
+# pg_xnode extension
+comment = 'Implementation of XML using DOM.'
+default_version = '0.5.9'
+module_pathname = '$libdir/xnode'
+schema = 'xml'
+relocatable = false

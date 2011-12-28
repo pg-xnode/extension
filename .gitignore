@@ -1,0 +1,7 @@
+*.o
+*.so
+
+#Eclipse IDE
+.cproject
+.project
+.settings/
