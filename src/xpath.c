@@ -20,7 +20,7 @@ static char nodeTypes[][XPATH_NODE_TYPE_MAX_LEN + 1] = {
 
 static char *ensureSpace(unsigned int sizeNeeded, XPathParserState state);
 static ArrayType *getResultArray(XMLScanContext ctx, XMLNodeOffset baseNodeOff);
-static xpathval getXPathExprValue(xmldoc document, bool * notNull, XPathExprOperandValue res);
+static xpathval getXPathExprValue(xmldoc document, bool *notNull, XPathExprOperandValue res);
 static void utilizeSpaceForVars(char *output, unsigned short *outPos);
 static void nextChar(XPathParserState state, bool endAllowed);
 static XPathExprOperand readExpressionOperand(XPathExpression exprTop,
@@ -994,7 +994,7 @@ getResultArray(XMLScanContext ctx, XMLNodeOffset baseNodeOff)
 }
 
 static xpathval
-getXPathExprValue(xmldoc document, bool * notNull, XPathExprOperandValue res)
+getXPathExprValue(xmldoc document, bool *notNull, XPathExprOperandValue res)
 {
 	xpathval	retValue = NULL;
 	XPathValue	xpval = NULL;
@@ -1897,7 +1897,7 @@ parseXPathExpression(XPathExpression exprCurrent, XPathParserState state, char t
 				 * The last operator we've read doesn't belong to the
 				 * (implicit) subexpression
 				 */
-				exprCurrent->size = *outPos - firstMembOff + shift -sizeof(XPathExprOperatorData);
+				exprCurrent->size = *outPos - firstMembOff + shift - sizeof(XPathExprOperatorData);
 
 				return operator;
 			}

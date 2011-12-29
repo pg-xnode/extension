@@ -120,8 +120,8 @@ static void readDTD_CP(XMLParserState state);
 static void readDTD_ChoiceOrSeq(XMLParserState state, bool started);
 static void readDTDExternalID(XMLParserState state);
 static void readDTDEntityValue(XMLParserState state);
-static char *readAttValue(XMLParserState state, bool output, bool * refs);
-static bool readReference(XMLParserState state, pg_wchar * value);
+static char *readAttValue(XMLParserState state, bool output, bool *refs);
+static bool readReference(XMLParserState state, pg_wchar *value);
 static bool isPredefinedEntity(char *refStart, char *value);
 static void readDTD(XMLParserState state);
 static void processDTDNode(XMLParserState state);
@@ -1572,7 +1572,8 @@ readDTDEntityValue(XMLParserState state)
 		if (*state->c == XNODE_CHAR_PCT)
 		{
 			/*
-			 * http://www.w3.org/TR/2008/REC-xml-20081126/#NT-PERef erence */
+			 * http://www.w3.org/TR/2008/REC-xml-20081126/#NT-PERef erence
+			 */
 			nextChar(state, false);
 			readName(state, false);
 			if (*state->c != XNODE_CHAR_SEMICOLON)
@@ -1597,7 +1598,7 @@ readDTDEntityValue(XMLParserState state)
  * returns atribute value (NULL-terminated)
  */
 static char *
-readAttValue(XMLParserState state, bool output, bool * refs)
+readAttValue(XMLParserState state, bool output, bool *refs)
 {
 	char		qMark;
 	char	   *value = state->tree + state->dstPos;
@@ -1684,7 +1685,7 @@ readAttValue(XMLParserState state, bool output, bool * refs)
  * http://www.w3.org/TR/2008/REC-xml-20081126/#NT-Reference
  */
 static bool
-readReference(XMLParserState state, pg_wchar * value)
+readReference(XMLParserState state, pg_wchar *value)
 {
 	bool		charRef = false;
 
@@ -1799,7 +1800,8 @@ readDTD(XMLParserState state)
 			if (*state->c == XNODE_CHAR_PCT)
 			{
 				/*
-				 * http://www.w3.org/TR/2008/REC-xml-20081126/# NT-PEReference */
+				 * http://www.w3.org/TR/2008/REC-xml-20081126/# NT-PEReference
+				 */
 				nextChar(state, false);
 				if (!XNODE_VALID_NAME_START(state->c))
 				{
@@ -1870,7 +1872,8 @@ processDTDNode(XMLParserState state)
 					{
 						/*
 						 * http://www.w3.org/TR/2008/RE
-						 * C-xml-20081126/#NT-Mixed */
+						 * C-xml-20081126/#NT-Mixed
+						 */
 						unsigned int names = 0;
 
 						readWhitespace(state, true);
@@ -1903,7 +1906,8 @@ processDTDNode(XMLParserState state)
 					{
 						/*
 						 * http://www.w3.org/TR/2008/RE
-						 * C-xml-20081126/#NT-children */
+						 * C-xml-20081126/#NT-children
+						 */
 						readDTD_ChoiceOrSeq(state, true);
 						if (*state->c == XNODE_CHAR_QUESTMARK || *state->c == XNODE_CHAR_ASTERISK ||
 							*state->c == XNODE_CHAR_PLUS)
@@ -1941,7 +1945,8 @@ processDTDNode(XMLParserState state)
 				if (XNODE_VALID_NAME_START(state->c))
 				{
 					/*
-					 * http://www.w3.org/TR/2008/REC-xml-20 081126/#NT-AttDef */
+					 * http://www.w3.org/TR/2008/REC-xml-20 081126/#NT-AttDef
+					 */
 					unsigned int i,
 								j,
 								len;
@@ -1969,7 +1974,8 @@ processDTDNode(XMLParserState state)
 						{
 							/*
 							 * http://www.w3.org/TR /2008/REC-xml-20081
-							 * 126/#NT-NotationTyp e */
+							 * 126/#NT-NotationTyp e
+							 */
 							readWhitespace(state, false);
 							if (*state->c != XNODE_CHAR_LBRKT_RND)
 							{
@@ -1997,7 +2003,8 @@ processDTDNode(XMLParserState state)
 						{
 							/*
 							 * http://www.w3.org/TR /2008/REC-xml-20081
-							 * 126/#NT-Enumeration */
+							 * 126/#NT-Enumeration
+							 */
 							unsigned int cnt;
 
 							nextChar(state, false);
@@ -2031,7 +2038,8 @@ processDTDNode(XMLParserState state)
 
 					/*
 					 * http://www.w3.org/TR/2008/REC-xml-20
-					 * 081126/#NT-DefaultDecl */
+					 * 081126/#NT-DefaultDecl
+					 */
 					if (!readSpecialString(specStringsDTD, XNODE_STR_DTD_REQUIRED, state) &&
 						!readSpecialString(specStringsDTD, XNODE_STR_DTD_IMPLIED, state))
 					{
@@ -2057,7 +2065,8 @@ processDTDNode(XMLParserState state)
 			if (*state->c == XNODE_CHAR_PCT)
 			{
 				/*
-				 * http://www.w3.org/TR/2008/REC-xml-20081126/# NT-PEDecl */
+				 * http://www.w3.org/TR/2008/REC-xml-20081126/# NT-PEDecl
+				 */
 				nextChar(state, false);
 				readWhitespace(state, false);
 				readName(state, true);
@@ -2080,8 +2089,10 @@ processDTDNode(XMLParserState state)
 			else
 			{
 				readName(state, true);
+
 				/*
-				 * http://www.w3.org/TR/2008/REC-xml-20081126/# NT-EntityDef */
+				 * http://www.w3.org/TR/2008/REC-xml-20081126/# NT-EntityDef
+				 */
 				if (*state->c == XNODE_CHAR_QUOTMARK || *state->c == XNODE_CHAR_APOSTR)
 				{
 					readDTDEntityValue(state);
@@ -3017,7 +3028,7 @@ xmlnodeWriteReference(XMLNodeOffset ref, char *output, unsigned char bytes)
 		*output = (d >> shift);
 		output++;
 		mask <<= 8;
-		shift	  +=8;
+		shift += 8;
 	}
 }
 
@@ -3040,7 +3051,7 @@ xmlnodeReadReference(char **input, unsigned char bytes, bool step)
 
 		result += (posValue << shift);
 		inpTmp++;
-		shift	  +=8;
+		shift += 8;
 	}
 	if (step)
 	{

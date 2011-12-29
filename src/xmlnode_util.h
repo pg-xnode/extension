@@ -22,7 +22,7 @@ void initXMLScan(XMLScan xscan, XMLScan parent, XPath xpath, XPathHeader xpHdr, 
 extern void finalizeXMLScan(XMLScan xscan);
 
 extern XMLNodeHeader getNextXMLNode(XMLScan xscan, bool removed);
-extern		xmldoc xmlnodeAdd(xmldoc doc, XMLScan xscan, XMLNodeHeader targNode, XMLNodeHeader newNode,
+extern xmldoc xmlnodeAdd(xmldoc doc, XMLScan xscan, XMLNodeHeader targNode, XMLNodeHeader newNode,
 		   XMLAddMode mode, bool freeSrc);
 extern xmldoc xmlnodeRemove(xmldoc doc, XMLScan xscan, XMLNodeHeader targNode, bool freeSrc);
 extern void checkXMLWellFormedness(XMLElementHeader root);

@@ -386,9 +386,9 @@ typedef enum XPathNodeType
 }	XPathNodeType;
 
 
-extern		XPath parseLocationPath(XPath * subpaths, bool isSubPath, unsigned short *subpathCnt, char **xpathPtr,
+extern XPath parseLocationPath(XPath * subpaths, bool isSubPath, unsigned short *subpathCnt, char **xpathPtr,
 				  unsigned short *pos);
-extern		XPathExprOperator parseXPathExpression(XPathExpression exprCurrent, XPathParserState state,
+extern XPathExprOperator parseXPathExpression(XPathExpression exprCurrent, XPathParserState state,
 					 char term, XPathExprOperator firstOperator, char *output, unsigned short *outPos, bool isSubExpr,
   bool argList, XPath * subpaths, unsigned short *subpathCnt, bool mainExpr);
 
@@ -432,7 +432,7 @@ typedef struct XMLScanData
 	bool		subtreeDone;
 
 	bool		descsProcessed;
-	bool done;
+	bool		done;
 
 	/* The document is needed for absolute sub-paths. */
 	xmldoc		document;
@@ -467,7 +467,7 @@ typedef struct XMLScanContextData
 
 typedef struct XMLScanContextData *XMLScanContext;
 
-extern		XPathExpression prepareXPathExpression(XPathExpression exprOrig, XMLElementHeader ctxElem,
+extern XPathExpression prepareXPathExpression(XPathExpression exprOrig, XMLElementHeader ctxElem,
 					   xmldoc document, XPathHeader xpHdr, XMLScan xscan);
 extern void evaluateXPathExpression(XPathExpression expr, XMLScanOneLevel scan,
 						XMLElementHeader element, unsigned short recursionLevel, XPathExprOperandValue result);

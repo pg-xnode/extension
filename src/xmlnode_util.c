@@ -829,7 +829,7 @@ xmlnodeAdd(xmldoc doc, XMLScan xscan, XMLNodeHeader targNode, XMLNodeHeader newN
 	char	   *newNdRoot = NULL;
 	char	  **newNdRoots = NULL;
 	int			hdrSizeIncr = 0;
-	int shift;
+	int			shift;
 	XMLNodeOffset refSrc,
 				refTarg,
 				newRootOff;
@@ -1143,7 +1143,7 @@ xmlnodeAdd(xmldoc doc, XMLScan xscan, XMLNodeHeader targNode, XMLNodeHeader newN
 		if (intoHdrSzIncr > 0)
 		{
 			adjustTempResult(xscan, (XMLNodeOffset) (srcCursor - inputTree + shift), false, intoHdrSzIncr);
-			shift	  +=intoHdrSzIncr;
+			shift += intoHdrSzIncr;
 		}
 	}
 	else
@@ -1453,7 +1453,7 @@ xmlnodeAdd(xmldoc doc, XMLScan xscan, XMLNodeHeader targNode, XMLNodeHeader newN
 	 * to be adjusted to additional shift 'hdrSizeIncr'
 	 */
 	adjustTempResult(xscan, (XMLNodeOffset) (srcCursor - inputTree + shift), true, hdrSizeIncr);
-	shift	  +=hdrSizeIncr;
+	shift += hdrSizeIncr;
 
 	if (newNode->kind != XMLNODE_ATTRIBUTE && (parentTarg->common.flags & XNODE_ELEMENT_EMPTY) &&
 		mode != XMLADD_REPLACE)
@@ -1507,7 +1507,7 @@ xmlnodeRemove(xmldoc doc, XMLScan xscan, XMLNodeHeader targNode, bool freeSrc)
 	unsigned char bwidthSrc,
 				bwidthTarg;
 	int			hdrSizeIncr;
-	int shift;
+	int			shift;
 	unsigned short int i;
 	XMLNodeOffset refSrc,
 				newRootOff,
@@ -1637,7 +1637,7 @@ xmlnodeRemove(xmldoc doc, XMLScan xscan, XMLNodeHeader targNode, bool freeSrc)
 		levelScan->nodeRef = NULL;
 	}
 
-	shift	  +=hdrSizeIncr;
+	shift += hdrSizeIncr;
 
 	if (parentSrc->common.kind == XMLNODE_ELEMENT)
 	{
@@ -1839,7 +1839,7 @@ xmlnode_add(PG_FUNCTION_ARGS)
 
 PG_FUNCTION_INFO_V1(xmlnode_remove);
 
-extern		Datum
+extern Datum
 xmlnode_remove(PG_FUNCTION_ARGS)
 {
 	xmldoc		doc = (xmldoc) PG_GETARG_VARLENA_P(0);
@@ -2067,7 +2067,7 @@ propagateChange(XMLScanOneLevel levelScan, int *shift, int *hdrSizeIncr,
 		 * is added to the shift.
 		 */
 		*hdrSizeIncr = parentTarg->children * bwidthTarg - parentSrc->children * bwidthSrc;
-		*shift	  +=*hdrSizeIncr;
+		*shift += *hdrSizeIncr;
 
 		/*
 		 * Adjust the scan state so that it's usable for the document
@@ -2977,7 +2977,7 @@ compareElements(XMLElementHeader elLeft, XMLElementHeader elRight)
 			   *textRight;
 	unsigned int lengthLeft,
 				lengthRight;
-	bool done = false;
+	bool		done = false;
 	bool		match = false;
 
 	initScanForTextNodes(&scanLeft, elLeft);
