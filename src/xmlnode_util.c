@@ -1174,11 +1174,12 @@ xmlnodeAdd(xmldoc doc, XMLScan xscan, XMLNodeHeader targNode, XMLNodeHeader newN
 	srcCursor += srcIncr;
 	resCursor += srcIncr;
 
-	/*
-	 * 'srcCursor' is now at the first reference
-	 */
 	if (parentSrc->children > 0)
 	{
+		/*
+		 * Copy the existing references and add the new one. 'srcCursor' is
+		 * now at the first reference
+		 */
 		unsigned int i = 0;
 		unsigned short int refSrcCount = 1;
 
@@ -1190,10 +1191,6 @@ xmlnodeAdd(xmldoc doc, XMLScan xscan, XMLNodeHeader targNode, XMLNodeHeader newN
 		 * be added to the maximum reference range and not the whole
 		 * 'newNdSize'
 		 */
-
-		/*
-		 * TODO 'newNdSize', 'newNdSize - targNdSize' -> 'shift' ?
-		 */
 		if (mode != XMLADD_REPLACE)
 		{
 			bwidthTarg = getXMLNodeOffsetByteWidth(refSrc + newNdSize) + 1;
@@ -1203,55 +1200,28 @@ xmlnodeAdd(xmldoc doc, XMLScan xscan, XMLNodeHeader targNode, XMLNodeHeader newN
 			bwidthTarg = getXMLNodeOffsetByteWidth(refSrc + newNdSize - targNdSize) + 1;
 		}
 
+
 		/*
 		 * Determine index (order) of the new node. If document fragment is
 		 * being added, this is the index of the first child of the fragment.
 		 */
+		switch (mode)
+		{
+			case XMLADD_AFTER:
+				newNdIndex = parentSrc->children - levelScan->siblingsLeft + 1;
+				break;
 
-		/*
-		 * TODO switch() or simplify
-		 */
-		if (mode == XMLADD_BEFORE || mode == XMLADD_REPLACE)
-		{
-			newNdIndex = parentSrc->children - levelScan->siblingsLeft;
-		}
-		else if (mode == XMLADD_AFTER)
-		{
-			newNdIndex = parentSrc->children - levelScan->siblingsLeft + 1;
-		}
-		else if (mode == XMLADD_INTO)
-		{
-			newNdIndex = parentSrc->children - levelScan->siblingsLeft;
+			case XMLADD_BEFORE:
+			case XMLADD_REPLACE:
+			case XMLADD_INTO:
+				newNdIndex = parentSrc->children - levelScan->siblingsLeft;
+				break;
+
+			default:
+				elog(ERROR, "unknown addition mode: %u", mode);
+				break;
 		}
 
-		/*
-		 * 'lastInd' is the index that should be considered the last processed
-		 * when scan is going to continue in the result that this function
-		 * returns.
-		 */
-
-		/*
-		 * TODO switch()
-		 */
-
-		/*
-		 * TODO move bellow, where 'lastInd' is used.
-		 */
-		if (mode == XMLADD_BEFORE)
-		{
-			lastInd = newNdIndex + ((newNode->kind != XMLNODE_DOC_FRAGMENT) ? 1 :
-									((XMLElementHeader) newNode)->children);
-		}
-		else if (mode == XMLADD_REPLACE)
-		{
-			lastInd = (newNode->kind != XMLNODE_DOC_FRAGMENT) ? newNdIndex :
-				newNdIndex + ((XMLElementHeader) newNode)->children - 1;
-		}
-		else if (mode == XMLADD_AFTER)
-		{
-			lastInd = (newNode->kind != XMLNODE_DOC_FRAGMENT) ? newNdIndex :
-				newNdIndex + ((XMLElementHeader) newNode)->children - 1;
-		}
 		parentTarg->children = parentSrc->children;
 
 		if (mode != XMLADD_INTO)
@@ -1265,6 +1235,7 @@ xmlnodeAdd(xmldoc doc, XMLScan xscan, XMLNodeHeader targNode, XMLNodeHeader newN
 				parentTarg->children += ((XMLElementHeader) newNode)->children - 1;
 			}
 		}
+
 		if (mode != XMLADD_INTO)
 		{
 			for (i = 0; i < parentTarg->children; i++)
@@ -1323,11 +1294,13 @@ xmlnodeAdd(xmldoc doc, XMLScan xscan, XMLNodeHeader targNode, XMLNodeHeader newN
 				}
 				if (nextSrcRef)
 				{
-					/*
-					 * TODO set 'skip' to 'true' in xmlnodeReadReference()
-					 * instead
-					 */
 					srcCursor += bwidthSrc;
+
+					/*
+					 * If the following condition is not met, all references
+					 * have been read and it makes no sense trying to
+					 * 'decipher' next value from the stream.
+					 */
 					if (refSrcCount < parentSrc->children)
 					{
 						refSrc = xmlnodeReadReference(&srcCursor, bwidthSrc, false);
@@ -1338,6 +1311,13 @@ xmlnodeAdd(xmldoc doc, XMLScan xscan, XMLNodeHeader targNode, XMLNodeHeader newN
 		}
 		else
 		{
+			/*
+			 * parentSrc->children > 0 && mode == XMLADD_INTO
+			 *
+			 * The XMLADD_INTO mode is specific: only size increment of the
+			 * target node affects the references. The new node itself has no
+			 * impact here, as it was added one level lower.
+			 */
 			for (i = 0; i < parentTarg->children; i++)
 			{
 				refSrc = xmlnodeReadReference(&srcCursor, bwidthSrc, true);
@@ -1417,6 +1397,25 @@ xmlnodeAdd(xmldoc doc, XMLScan xscan, XMLNodeHeader targNode, XMLNodeHeader newN
 	 * returned
 	 */
 	levelScan->parent = parentTarg;
+
+	/*
+	 * 'lastInd' is the index that should be considered the last processed
+	 * when scan is going to continue in the result that this function
+	 * returns.
+	 */
+
+	if (mode == XMLADD_AFTER || mode == XMLADD_REPLACE)
+	{
+		lastInd = (newNode->kind != XMLNODE_DOC_FRAGMENT) ? newNdIndex :
+			newNdIndex + ((XMLElementHeader) newNode)->children - 1;
+	}
+	else if (mode == XMLADD_BEFORE)
+	{
+		lastInd = newNdIndex + ((newNode->kind != XMLNODE_DOC_FRAGMENT) ? 1 :
+								((XMLElementHeader) newNode)->children);
+	}
+
+
 	if (mode != XMLADD_INTO)
 	{
 		if (parentSrc->children > 0)
