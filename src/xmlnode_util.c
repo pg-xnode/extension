@@ -48,6 +48,7 @@ static bool isNodeUnique(XMLNodeHeader node, XMLScan scan);
 static void rememberResult(XMLNodeHeader node, XMLScan scan);
 static void dumpNodeDebug(StringInfo output, char *data, XMLNodeOffset rootOff, unsigned short level);
 static void dumpXScanDebug(StringInfo output, XMLScan scan, char *docData, XMLNodeOffset docRootOff);
+static bool considerSubScan(XPathElement xpEl, XMLNodeHeader node, XMLScan xscan);
 
 void
 xmlnodeContainerInit(XMLNodeContainer cont)
@@ -442,10 +443,20 @@ finalizeXMLScan(XMLScan xscan)
 }
 
 /*
- * 'removed' requires special behaviour: when the previous call returned
- * valid node and it has been removed, scan has to stay at the same position
- * as opposed to moving forward. Due to the removal, another node appears at
- * the position of the removed one.
+ * Find the next matching node.
+ *
+ * 'xscan' - scan status. It remembers where the last scan ended. If used for consequent call, the function
+ * will continue right after that position.
+ * If caller changes the document between calls to this function, he is responsible for adjusting the
+ * scan status and - if some exist - state of any sub-scan. In addition, 'xscan->document' of the scan and
+ * sub-scans has to point to the new (modified) document.
+ *
+ * 'removed' indicates that requires special behaviour is required: when the previous call returned
+ * a valid node for removal, scan has to stay at the same position when it resumes, as opposed to moving
+ * forward. Due to the removal, another node appears at the position of the removed one.
+ *
+ * Returns a pointer to the matching node. This points to inside 'xscan->document' and therefore
+ * must not be pfree'd.
  */
 XMLNodeHeader
 getNextXMLNode(XMLScan xscan, bool removed)
@@ -524,27 +535,22 @@ getNextXMLNode(XMLScan xscan, bool removed)
 				 * The current node is already processed, but the possible
 				 * descendant axe hasn't been considered yet.
 				 *
-				 * The following snippet is there twice, almost identical
-				 * (second one at the end of the loop). It is possible to use
-				 * it only once, at the very top of the loop, but thus the
-				 * descendants would be returned before the element itself.
+				 * considerSubScan() is used twice in the loop It would be
+				 * possible to call it just once, at the beginning. But thus
+				 * the descendants would be returned before the element
+				 * itself.
+				 *
+				 * If 'removed' is true, sub-scan makes no sense because the
+				 * node the last scan ended at no longer exists.
 				 */
-				if (!removed && xpEl->descendant && currentNode->kind == XMLNODE_ELEMENT && !xscan->descsProcessed
-				/* &&!XPATH_LAST_LEVEL(xscan) */
-					)
+				if (!removed)
 				{
-					XMLElementHeader el = (XMLElementHeader) currentNode;
-
-					if (el->children > 0)
+					if (considerSubScan(xpEl, currentNode, xscan))
 					{
-						xscan->subScan = (XMLScan) palloc(sizeof(XMLScanData));
-						initXMLScan(xscan->subScan, xscan, xscan->xpath, xscan->xpathHeader, el, xscan->document,
-									xscan->resTmp != NULL);
-						xscan->subScan->xpathRoot = xscan->xpathRoot + xscan->currentDepth;
-						xscan->descsProcessed = false;
 						continue;
 					}
 				}
+
 				xscan->skip = false;
 				/* This applies to the next node. */
 				xscan->descsProcessed = false;
@@ -733,24 +739,12 @@ getNextXMLNode(XMLScan xscan, bool removed)
 			}
 
 			/*
-			 * No match found. The current path element however might require
-			 * descendants.
+			 * No match found. The current path element however might be
+			 * interested in descendants.
 			 */
-			if (xpEl->descendant && currentNode->kind == XMLNODE_ELEMENT && !xscan->descsProcessed
-			/* &&!XPATH_LAST_LEVEL(xscan) */
-				)
+			if (considerSubScan(xpEl, currentNode, xscan))
 			{
-				XMLElementHeader el = (XMLElementHeader) currentNode;
-
-				if (el->children > 0)
-				{
-					xscan->subScan = (XMLScan) palloc(sizeof(XMLScanData));
-					initXMLScan(xscan->subScan, xscan, xscan->xpath, xscan->xpathHeader, el, xscan->document,
-								xscan->resTmp != NULL);
-					xscan->subScan->xpathRoot = xscan->xpathRoot + xscan->currentDepth;
-					xscan->descsProcessed = false;
-					continue;
-				}
+				continue;
 			}
 
 			/*
@@ -3660,4 +3654,29 @@ dumpXScanDebug(StringInfo output, XMLScan scan, char *docData, XMLNodeOffset doc
 		appendStringInfoString(output, "]\n");
 		level++;
 	}
+}
+
+/*
+ * Sub-scans are used to search for descendants recursively.
+ * It takes the current node as the root, so it in fact scans children of the current node.
+ * If any of those children has children, new sub-scan is initiated, etc.
+ */
+static bool
+considerSubScan(XPathElement xpEl, XMLNodeHeader node, XMLScan xscan)
+{
+	if (xpEl->descendant && node->kind == XMLNODE_ELEMENT && !xscan->descsProcessed)
+	{
+		XMLElementHeader el = (XMLElementHeader) node;
+
+		if (el->children > 0)
+		{
+			xscan->subScan = (XMLScan) palloc(sizeof(XMLScanData));
+			initXMLScan(xscan->subScan, xscan, xscan->xpath, xscan->xpathHeader, el, xscan->document,
+						xscan->resTmp != NULL);
+			xscan->subScan->xpathRoot = xscan->xpathRoot + xscan->currentDepth;
+			xscan->descsProcessed = false;
+			return true;
+		}
+	}
+	return false;
 }
