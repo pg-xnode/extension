@@ -2441,7 +2441,7 @@ saveReferences(XMLParserState state, XMLNodeInternal nodeInfo,
 		 */
 		dist = nodeInfo->nodeOut - childOffset;
 
-		xmlnodeWriteReference(dist, childOffTarg, bwidth + 1);
+		writeXMLNodeOffset(dist, &childOffTarg, bwidth + 1, false);
 		childOffTarg = XNODE_PREV_REF(childOffTarg, element);
 	}
 	state->dstPos += refsTotal;
@@ -2546,9 +2546,8 @@ saveRootNodeHeader(XMLParserState state, XMLNodeKind kind)
 	{
 		XMLNodeOffset dist = rootNodeOff - *rootOffSrc;
 
-		xmlnodeWriteReference(dist, rootOffTarg, bwidth + 1);
+		writeXMLNodeOffset(dist, &rootOffTarg, bwidth + 1, true);
 		rootOffSrc++;
-		rootOffTarg = XNODE_NEXT_REF(rootOffTarg, rootNode);
 	}
 	state->dstPos += refsTotal;
 
@@ -2655,7 +2654,7 @@ xmlnodeDumpNode(char *input, XMLNodeOffset nodeOff, char **output, unsigned int 
 
 					while (childOffPtr <= lastChild)
 					{
-						xmlnodeDumpNode(input, nodeOff - xmlnodeReadReference(&childOffPtr,
+						xmlnodeDumpNode(input, nodeOff - readXMLNodeOffset(&childOffPtr,
 						XNODE_ELEMENT_GET_REF_BWIDTH(eh), true), output, pos);
 					}
 
@@ -2687,7 +2686,7 @@ xmlnodeDumpNode(char *input, XMLNodeOffset nodeOff, char **output, unsigned int 
 				while (childOffPtr <= lastChild)
 				{
 					xmlnodeDumpNode(input, nodeOff -
-									xmlnodeReadReference(&childOffPtr, XNODE_ELEMENT_GET_REF_BWIDTH((XMLElementHeader) node), true),
+									readXMLNodeOffset(&childOffPtr, XNODE_ELEMENT_GET_REF_BWIDTH((XMLElementHeader) node), true),
 									output, pos);
 				}
 			}
@@ -2814,7 +2813,7 @@ xmlnodeDumpNode(char *input, XMLNodeOffset nodeOff, char **output, unsigned int 
 			{
 				XMLElementHeader eh = (XMLElementHeader) node;
 
-				xmlnodeDumpNode(input, nodeOff - xmlnodeReadReference(&childOffPtr, XNODE_ELEMENT_GET_REF_BWIDTH(eh), true),
+				xmlnodeDumpNode(input, nodeOff - readXMLNodeOffset(&childOffPtr, XNODE_ELEMENT_GET_REF_BWIDTH(eh), true),
 								output, pos);
 			}
 			break;
@@ -2837,7 +2836,7 @@ dumpAttributes(XMLElementHeader element, char *input,
 	while (childOffPtr <= lastChild)
 	{
 		XMLNodeHeader attrNode = (XMLNodeHeader) ((char *) element
-												  - xmlnodeReadReference(&childOffPtr, XNODE_ELEMENT_GET_REF_BWIDTH(element), true));
+												  - readXMLNodeOffset(&childOffPtr, XNODE_ELEMENT_GET_REF_BWIDTH(element), true));
 		char	   *attrName,
 				   *attrValue;
 		unsigned int attrNameLen,
@@ -3008,27 +3007,35 @@ dumpSpecString(char **output, char *outNew, unsigned int *outPos, unsigned int *
  * Write node offset into a character array. Little-endian byte ordering is
  * used, regardless the actual platform endianness.
  *
- * 'ref' is the value to be written. 'output' - where the value should be
- * written 'bytes' - how many bytes the value takes. This could be computed
- * from 'ref', however all references within a particular node must have the
- * same 'byte width'. Thus we need to determine this value outside.
+ * ref - the value to be written.
+ * outPtr - where pointer to the current position in the output stream is stored.
+ * bytes - how many bytes the value takes. This could be computed for each 'ref' value again,
+ * however all references within a particular node must have the same 'byte width'.
+ * Thus we need to determine this value outside.
+ * step - whether '*outPtr' should be moved so that it's ready for the next write.
  */
 
 void
-xmlnodeWriteReference(XMLNodeOffset ref, char *output, unsigned char bytes)
+writeXMLNodeOffset(XMLNodeOffset ref, char **outPtr, unsigned char bytes, bool step)
 {
 	unsigned int mask = 0xFF;
 	unsigned short int shift = 0;
 	unsigned char i;
+	char	   *out = *outPtr;
 
 	for (i = 0; i < bytes; i++)
 	{
 		unsigned int d = (ref & mask);
 
-		*output = (d >> shift);
-		output++;
+		*out = (d >> shift);
+		out++;
 		mask <<= 8;
 		shift += 8;
+	}
+
+	if (step)
+	{
+		*outPtr += bytes;
 	}
 }
 
@@ -3038,7 +3045,7 @@ xmlnodeWriteReference(XMLNodeOffset ref, char *output, unsigned char bytes)
  * the next value can be retrieved.
  */
 XMLNodeOffset
-xmlnodeReadReference(char **input, unsigned char bytes, bool step)
+readXMLNodeOffset(char **input, unsigned char bytes, bool step)
 {
 	char	   *inpTmp = *input;
 	unsigned char i;

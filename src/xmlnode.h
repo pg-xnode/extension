@@ -170,8 +170,8 @@ extern Datum xmlnode_to_xmldoc(PG_FUNCTION_ARGS);
  */
 #define XNODE_ROOT(raw) ((XMLNodeHeader) ((char *) VARDATA(raw) + XNODE_ROOT_OFFSET(raw)))
 
-extern XMLNodeOffset xmlnodeReadReference(char **input, unsigned char bytes, bool step);
-extern void xmlnodeWriteReference(XMLNodeOffset ref, char *output, unsigned char bytes);
+extern XMLNodeOffset readXMLNodeOffset(char **input, unsigned char bytes, bool step);
+extern void writeXMLNodeOffset(XMLNodeOffset ref, char **output, unsigned char bytes, bool step);
 
 #define XNODE_PARSER_STACK_CHUNK	16
 

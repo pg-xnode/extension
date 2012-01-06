@@ -1122,9 +1122,8 @@ getXPathExprValue(xmldoc document, bool *notNull, XPathExprOperandValue res)
 						node = res->v.nodeSet.nodes.array[k];
 						copyXMLNode(node, ndTarget, false, &root);
 						dist = nodeSizeTotal - (targetPos + root);
-						xmlnodeWriteReference(dist, refTarget, bwidth);
+						writeXMLNodeOffset(dist, &refTarget, bwidth, true);
 						targetPos += nodeSizes[k];
-						refTarget += bwidth;
 					}
 					pfree(nodeSizes);
 

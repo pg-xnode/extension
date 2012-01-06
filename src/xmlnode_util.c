@@ -123,7 +123,7 @@ getXMLNodeSize(XMLNodeHeader node, bool subtree)
 			references = 0;
 			while (childOffPtr <= lastChildOffPtr)
 			{
-				XMLNodeOffset childOff = xmlnodeReadReference(&childOffPtr,
+				XMLNodeOffset childOff = readXMLNodeOffset(&childOffPtr,
 				XNODE_ELEMENT_GET_REF_BWIDTH((XMLElementHeader) node), true);
 
 				childNode = (XMLNodeHeader) ((char *) node - childOff);
@@ -338,7 +338,7 @@ getFirstXMLNodeLeaf(XMLElementHeader elh)
 	else
 	{
 		char	   *firstRef = XNODE_FIRST_REF(elh);
-		XMLNodeHeader childNode = (XMLNodeHeader) ((char *) (elh) - xmlnodeReadReference(&firstRef,
+		XMLNodeHeader childNode = (XMLNodeHeader) ((char *) (elh) - readXMLNodeOffset(&firstRef,
 								  XNODE_ELEMENT_GET_REF_BWIDTH(elh), false));
 
 		if (childNode->kind == XMLNODE_ELEMENT || childNode->kind == XMLNODE_DOC ||
@@ -527,7 +527,7 @@ getNextXMLNode(XMLScan xscan, bool removed)
 				}
 			}
 			currentNode = (XMLNodeHeader) ((char *) eh -
-										   xmlnodeReadReference(&scanLevel->nodeRefPtr, XNODE_ELEMENT_GET_REF_BWIDTH(eh), false));
+										   readXMLNodeOffset(&scanLevel->nodeRefPtr, XNODE_ELEMENT_GET_REF_BWIDTH(eh), false));
 
 			if (xscan->skip)
 			{
@@ -1064,14 +1064,13 @@ xmlnodeAdd(xmldoc doc, XMLScan xscan, XMLNodeHeader targNode, XMLNodeHeader newN
 
 			refSrcPtr = XNODE_FIRST_REF(targElement);
 			bws = XNODE_ELEMENT_GET_REF_BWIDTH(targElement);
-			refSrc = xmlnodeReadReference(&refSrcPtr, bws, false);
+			refSrc = readXMLNodeOffset(&refSrcPtr, bws, false);
 			bwt = getXMLNodeOffsetByteWidth(refSrc + newNdSize) + 1;
 
 			for (i = 0; i < targElement->children; i++)
 			{
-				refSrc = xmlnodeReadReference(&refSrcPtr, bws, true);
-				xmlnodeWriteReference(refSrc + newNdSize, refDstPtr, bwt);
-				refDstPtr += bwt;
+				refSrc = readXMLNodeOffset(&refSrcPtr, bws, true);
+				writeXMLNodeOffset(refSrc + newNdSize, &refDstPtr, bwt, true);
 			}
 			last = (XMLNodeHeader) ((char *) targElement - refSrc);
 			if (last->kind == XMLNODE_ATTRIBUTE)
@@ -1096,8 +1095,7 @@ xmlnodeAdd(xmldoc doc, XMLScan xscan, XMLNodeHeader targNode, XMLNodeHeader newN
 			for (i = 0; i < frag->children; i++)
 			{
 				refTarg = (XMLNodeOffset) ((char *) targUpdated - newNdRoots[i]);
-				xmlnodeWriteReference(refTarg, refDstPtr, bwt);
-				refDstPtr += bwt;
+				writeXMLNodeOffset(refTarg, &refDstPtr, bwt, true);
 			}
 			targUpdated->children += frag->children;
 		}
@@ -1108,8 +1106,7 @@ xmlnodeAdd(xmldoc doc, XMLScan xscan, XMLNodeHeader targNode, XMLNodeHeader newN
 			{
 				bwt = getXMLNodeOffsetByteWidth(refTarg) + 1;
 			}
-			xmlnodeWriteReference(refTarg, refDstPtr, bwt);
-			refDstPtr += bwt;
+			writeXMLNodeOffset(refTarg, &refDstPtr, bwt, true);
 			targUpdated->children++;
 		}
 
@@ -1184,7 +1181,7 @@ xmlnodeAdd(xmldoc doc, XMLScan xscan, XMLNodeHeader targNode, XMLNodeHeader newN
 		unsigned short int refSrcCount = 1;
 
 		bwidthSrc = XNODE_ELEMENT_GET_REF_BWIDTH(parentSrc);
-		refSrc = xmlnodeReadReference(&srcCursor, bwidthSrc, false);
+		refSrc = readXMLNodeOffset(&srcCursor, bwidthSrc, false);
 
 		/*
 		 * TODO if the new node will have index 0, only its header size should
@@ -1285,8 +1282,7 @@ xmlnodeAdd(xmldoc doc, XMLScan xscan, XMLNodeHeader targNode, XMLNodeHeader newN
 						}
 					}
 				}
-				xmlnodeWriteReference(refTarg, resCursor, bwidthTarg);
-				resCursor += bwidthTarg;
+				writeXMLNodeOffset(refTarg, &resCursor, bwidthTarg, true);
 
 				if (mode == XMLADD_REPLACE && i == newNdIndex)
 				{
@@ -1303,7 +1299,7 @@ xmlnodeAdd(xmldoc doc, XMLScan xscan, XMLNodeHeader targNode, XMLNodeHeader newN
 					 */
 					if (refSrcCount < parentSrc->children)
 					{
-						refSrc = xmlnodeReadReference(&srcCursor, bwidthSrc, false);
+						refSrc = readXMLNodeOffset(&srcCursor, bwidthSrc, false);
 						refSrcCount++;
 					}
 				}
@@ -1320,7 +1316,7 @@ xmlnodeAdd(xmldoc doc, XMLScan xscan, XMLNodeHeader targNode, XMLNodeHeader newN
 			 */
 			for (i = 0; i < parentTarg->children; i++)
 			{
-				refSrc = xmlnodeReadReference(&srcCursor, bwidthSrc, true);
+				refSrc = readXMLNodeOffset(&srcCursor, bwidthSrc, true);
 				refTarg = refSrc;
 				if (i == newNdIndex)
 				{
@@ -1330,8 +1326,7 @@ xmlnodeAdd(xmldoc doc, XMLScan xscan, XMLNodeHeader targNode, XMLNodeHeader newN
 				{
 					refTarg += newNdSize + intoHdrSzIncr;
 				}
-				xmlnodeWriteReference(refTarg, resCursor, bwidthTarg);
-				resCursor += bwidthTarg;
+				writeXMLNodeOffset(refTarg, &resCursor, bwidthTarg, true);
 			}
 		}
 		hdrSizeIncr = parentTarg->children * bwidthTarg - parentSrc->children * bwidthSrc;
@@ -1353,8 +1348,7 @@ xmlnodeAdd(xmldoc doc, XMLScan xscan, XMLNodeHeader targNode, XMLNodeHeader newN
 				for (i = 0; i < fragNode->children; i++)
 				{
 					refTarg = (XMLNodeOffset) ((char *) parentTarg - newNdRoots[i]);
-					xmlnodeWriteReference(refTarg, resCursor, bwidthTarg);
-					resCursor += bwidthTarg;
+					writeXMLNodeOffset(refTarg, &resCursor, bwidthTarg, true);
 				}
 				parentTarg->children = fragNode->children;
 				hdrSizeIncr = parentTarg->children * bwidthTarg;
@@ -1363,8 +1357,7 @@ xmlnodeAdd(xmldoc doc, XMLScan xscan, XMLNodeHeader targNode, XMLNodeHeader newN
 			{
 				refTarg = (XMLNodeOffset) ((char *) parentTarg - newNdRoot);
 				bwidthTarg = getXMLNodeOffsetByteWidth(refTarg) + 1;
-				xmlnodeWriteReference(refTarg, resCursor, bwidthTarg);
-				resCursor += bwidthTarg;
+				writeXMLNodeOffset(refTarg, &resCursor, bwidthTarg, true);
 				parentTarg->children = 1;
 				hdrSizeIncr = bwidthTarg;
 			}
@@ -1373,8 +1366,7 @@ xmlnodeAdd(xmldoc doc, XMLScan xscan, XMLNodeHeader targNode, XMLNodeHeader newN
 		{
 			refTarg = intoHdrSzIncr;
 			bwidthTarg = getXMLNodeOffsetByteWidth(refTarg) + 1;
-			xmlnodeWriteReference(refTarg, resCursor, bwidthTarg);
-			resCursor += bwidthTarg;
+			writeXMLNodeOffset(refTarg, &resCursor, bwidthTarg, true);
 			parentTarg->children = 1;
 			hdrSizeIncr = bwidthTarg;
 		}
@@ -1577,7 +1569,7 @@ xmlnodeRemove(xmldoc doc, XMLScan xscan, XMLNodeHeader targNode, bool freeSrc)
 		{
 			refRangeDecr = targNdSize;
 		}
-		refSrc = xmlnodeReadReference(&srcCursor, bwidthSrc, false);
+		refSrc = readXMLNodeOffset(&srcCursor, bwidthSrc, false);
 		refSrcCount = 1;
 		bwidthTarg = getXMLNodeOffsetByteWidth(refSrc - refRangeDecr) + 1;
 		for (i = 0; i < parentSrc->children; i++)
@@ -1592,13 +1584,12 @@ xmlnodeRemove(xmldoc doc, XMLScan xscan, XMLNodeHeader targNode, bool freeSrc)
 			}
 			if (i != targNdIndex)
 			{
-				xmlnodeWriteReference(refTarg, resCursor, bwidthTarg);
-				resCursor += bwidthTarg;
+				writeXMLNodeOffset(refTarg, &resCursor, bwidthTarg, true);
 			}
 			srcCursor += bwidthSrc;
 			if (refSrcCount < parentSrc->children)
 			{
-				refSrc = xmlnodeReadReference(&srcCursor, bwidthSrc, false);
+				refSrc = readXMLNodeOffset(&srcCursor, bwidthSrc, false);
 				refSrcCount++;
 			}
 		}
@@ -1661,7 +1652,7 @@ xmlnodeRemove(xmldoc doc, XMLScan xscan, XMLNodeHeader targNode, bool freeSrc)
 			if (parentTarg->children > 0)
 			{
 				char	   *refPtr = XNODE_LAST_REF(parentTarg);
-				XMLNodeOffset lastRefOff = xmlnodeReadReference(&refPtr, XNODE_ELEMENT_GET_REF_BWIDTH(parentTarg), false);
+				XMLNodeOffset lastRefOff = readXMLNodeOffset(&refPtr, XNODE_ELEMENT_GET_REF_BWIDTH(parentTarg), false);
 				XMLNodeHeader lastChild = (XMLNodeHeader) ((char *) parentTarg - lastRefOff);
 
 				if (lastChild->kind == XMLNODE_ATTRIBUTE)
@@ -1712,7 +1703,7 @@ checkXMLWellFormedness(XMLElementHeader root)
 	dtdIndex = 0;
 	for (i = 0; i < root->children; i++)
 	{
-		XMLNodeOffset ref = xmlnodeReadReference(&refStream, XNODE_ELEMENT_GET_REF_BWIDTH(root), true);
+		XMLNodeOffset ref = readXMLNodeOffset(&refStream, XNODE_ELEMENT_GET_REF_BWIDTH(root), true);
 		XMLNodeHeader currNode = (XMLNodeHeader) ((char *) root - ref);
 
 		if (currNode->kind == XMLNODE_ELEMENT)
@@ -1911,7 +1902,7 @@ copyXMLDocFragment(XMLElementHeader fragNode, char **resCursorPtr)
 	newNdRoots = (char **) palloc(fragNode->children * sizeof(char *));
 	for (i = 0; i < fragNode->children; i++)
 	{
-		XMLNodeHeader newNdPart = (XMLNodeHeader) ((char *) fragNode - xmlnodeReadReference(&refs, bwidth, true));
+		XMLNodeHeader newNdPart = (XMLNodeHeader) ((char *) fragNode - readXMLNodeOffset(&refs, bwidth, true));
 		XMLNodeOffset newNdPartOff;
 
 		copyXMLNode(newNdPart, resCursor, false, &newNdPartOff);
@@ -1947,7 +1938,7 @@ static void
 copySiblings(XMLElementHeader parent, char **srcCursor, char **resCursor)
 {
 	char	   *refPtr = XNODE_LAST_REF(parent);
-	XMLNodeOffset lastSblOffRel = xmlnodeReadReference(&refPtr, XNODE_ELEMENT_GET_REF_BWIDTH(parent), false);
+	XMLNodeOffset lastSblOffRel = readXMLNodeOffset(&refPtr, XNODE_ELEMENT_GET_REF_BWIDTH(parent), false);
 	XMLElementHeader lastSbl = (XMLElementHeader) ((char *) parent - lastSblOffRel);
 	unsigned int incr = (char *) lastSbl + getXMLNodeSize((XMLNodeHeader) lastSbl, false) - *srcCursor;
 
@@ -2005,7 +1996,7 @@ propagateChange(XMLScanOneLevel levelScan, int *shift, int *hdrSizeIncr,
 		 * Again, copy (and adjust) the references
 		 */
 		bwidthSrc = XNODE_ELEMENT_GET_REF_BWIDTH(parentSrc);
-		refSrc = xmlnodeReadReference(srcCursor, bwidthSrc, false);
+		refSrc = readXMLNodeOffset(srcCursor, bwidthSrc, false);
 
 		currChild = parentSrc->children - levelScan->siblingsLeft;
 		refMax = currChild > 0 ? refSrc + *shift : refSrc + *hdrSizeIncr;
@@ -2030,12 +2021,12 @@ propagateChange(XMLScanOneLevel levelScan, int *shift, int *hdrSizeIncr,
 			{
 				refTarg = refSrc;
 			}
-			xmlnodeWriteReference(refTarg, *resCursor, bwidthTarg);
-			*resCursor += bwidthTarg;
+			writeXMLNodeOffset(refTarg, resCursor, bwidthTarg, true);
+
 			*srcCursor += bwidthSrc;
 			if ((j + 1) < parentSrc->children)
 			{
-				refSrc = xmlnodeReadReference(srcCursor, bwidthSrc, false);
+				refSrc = readXMLNodeOffset(srcCursor, bwidthSrc, false);
 			}
 		}
 
@@ -3365,7 +3356,7 @@ substituteAttributes(XPathExpression expr, XMLElementHeader element)
 	while (childrenLeft > 0)
 	{
 		XMLNodeHeader child = (XMLNodeHeader) ((char *) element -
-											   xmlnodeReadReference(&chldOffPtr, XNODE_ELEMENT_GET_REF_BWIDTH(element), true));
+											   readXMLNodeOffset(&chldOffPtr, XNODE_ELEMENT_GET_REF_BWIDTH(element), true));
 
 		if (child->kind == XMLNODE_ATTRIBUTE)
 		{
@@ -3602,7 +3593,7 @@ dumpNodeDebug(StringInfo output, char *data, XMLNodeOffset rootOff, unsigned sho
 	}
 	for (i = 0; i < root->children; i++)
 	{
-		XMLNodeOffset offRel = xmlnodeReadReference(&refPtr, bwidth, true);
+		XMLNodeOffset offRel = readXMLNodeOffset(&refPtr, bwidth, true);
 		XMLNodeHeader child = (XMLNodeHeader) ((char *) root - offRel);
 		XMLNodeOffset offAbs = (char *) child - data;
 

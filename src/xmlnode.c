@@ -163,6 +163,8 @@ xmlnode_to_xmldoc(PG_FUNCTION_ARGS)
 		 * If document should contain only one node, it must be element. See
 		 * http://www.w3.org/TR/2008/REC-xml-20081126/#NT-document
 		 */
+		char	   *refTargPtr;
+
 		sizeNew = sizeOrig + sizeof(XMLElementHeaderData) + (bwidth + 1);
 		dataSizeNew = sizeNew - VARHDRSZ;
 		document = (xmldoc) palloc(sizeNew);
@@ -172,7 +174,8 @@ xmlnode_to_xmldoc(PG_FUNCTION_ARGS)
 		rootDoc->common.kind = XMLNODE_DOC;
 		rootDoc->common.flags = bwidth;
 		rootDoc->children = 1;
-		xmlnodeWriteReference(dist, (char *) rootDoc + sizeof(XMLElementHeaderData), bwidth + 1);
+		refTargPtr = (char *) rootDoc + sizeof(XMLElementHeaderData);
+		writeXMLNodeOffset(dist, &refTargPtr, bwidth + 1, false);
 		rootOffPtrNew = (XMLNodeOffset *) (docData + dataSizeNew - sizeof(XMLNodeOffset));
 		*rootOffPtrNew = rootOffsetNew;
 		SET_VARSIZE(document, sizeNew);
