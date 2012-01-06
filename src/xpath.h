@@ -34,7 +34,7 @@ extern Datum xpath_array(PG_FUNCTION_ARGS);
 #define XPATH_ELEMENT_MAX_LEN				0xFF
 #define XPATH_EXPR_VAR_MAX					16
 
-#define XPATH_LAST_LEVEL(xsc) ((xsc->currentDepth + 1) == (xsc->xpath->depth - xsc->xpathRoot))
+#define XPATH_LAST_LEVEL(xsc) ((xsc->depth + 1) == (xsc->xpath->depth - xsc->xpathRoot))
 
 /*
  * The primary purpose of 'xpath' type is to avoid repeated parsing of the
@@ -398,7 +398,10 @@ extern XPathExprOperator parseXPathExpression(XPathExpression exprCurrent, XPath
 typedef struct XMLScanOneLevelData
 {
 	XMLElementHeader parent;
-	char	   *nodeRef;
+
+	/* Where the next (multi-byte) reference will be read from. */
+	char	   *nodeRefPtr;
+
 	unsigned short int siblingsLeft;
 	unsigned short matches;
 	struct XMLScanOneLevelData *up;
@@ -416,8 +419,9 @@ typedef struct XMLScanData
 	 */
 	XPathHeader xpathHeader;
 	unsigned short xpathRoot;
-	XMLScanOneLevel scanState;
-	unsigned short int currentDepth;
+	XMLScanOneLevel state;
+	/* Current depth */
+	unsigned short int depth;
 
 	/*
 	 * 'true' indicates that we only need to proceed to the next node instead
@@ -431,7 +435,7 @@ typedef struct XMLScanData
 	/* 'true' if just returned from subtree scan. */
 	bool		subtreeDone;
 
-	bool		descsProcessed;
+	bool		descsDone;
 	bool		done;
 
 	/* The document is needed for absolute sub-paths. */
@@ -443,13 +447,17 @@ typedef struct XMLScanData
 	 * has sub-scan(s), they all share an instance of the container.
 	 */
 	XMLNodeContainer resTmp;
+
+	/* Direct child in the scan hierarchy. */
 	struct XMLScanData *subScan;
+
+	/* Direct parent in the scan hierarchy. */
 	struct XMLScanData *parent;
 }	XMLScanData;
 
 typedef struct XMLScanData *XMLScan;
 
-#define XMLSCAN_CURRENT_LEVEL(xscan) ((xscan)->scanState + (xscan)->currentDepth)
+#define XMLSCAN_CURRENT_LEVEL(xscan) ((xscan)->state + (xscan)->depth)
 
 typedef struct XMLScanContextData
 {

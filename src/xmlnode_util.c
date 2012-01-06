@@ -382,22 +382,22 @@ initXMLScan(XMLScan xscan, XMLScan parent, XPath xpath, XPathHeader xpHdr, XMLEl
 	{
 		firstLevel = (XMLScanOneLevel) palloc(xscan->xpath->depth * sizeof(XMLScanOneLevelData));
 		firstLevel->parent = scanRoot;
-		firstLevel->nodeRef = XNODE_FIRST_REF(scanRoot);
+		firstLevel->nodeRefPtr = XNODE_FIRST_REF(scanRoot);
 		firstLevel->siblingsLeft = scanRoot->children;
 		firstLevel->matches = 0;
 		firstLevel->up = (parent == NULL) ? NULL : XMLSCAN_CURRENT_LEVEL(parent);
 
-		xscan->scanState = firstLevel;
+		xscan->state = firstLevel;
 	}
 	else
 	{
-		xscan->scanState = NULL;
+		xscan->state = NULL;
 	}
 
-	xscan->currentDepth = 0;
+	xscan->depth = 0;
 	xscan->skip = false;
 	xscan->subtreeDone = false;
-	xscan->descsProcessed = false;
+	xscan->descsDone = false;
 	xscan->document = document;
 
 	xscan->parent = parent;
@@ -430,10 +430,10 @@ initXMLScan(XMLScan xscan, XMLScan parent, XPath xpath, XPathHeader xpHdr, XMLEl
 void
 finalizeXMLScan(XMLScan xscan)
 {
-	if (xscan->scanState != NULL)
+	if (xscan->state != NULL)
 	{
-		pfree(xscan->scanState);
-		xscan->scanState = NULL;
+		pfree(xscan->state);
+		xscan->state = NULL;
 	}
 	if (xscan->resTmp != NULL && xscan->parent == NULL)
 	{
@@ -461,19 +461,19 @@ finalizeXMLScan(XMLScan xscan)
 XMLNodeHeader
 getNextXMLNode(XMLScan xscan, bool removed)
 {
-	if (xscan->scanState == NULL)
+	if (xscan->state == NULL)
 	{
 		elog(ERROR, "XML scan state is not well initialized");
 	}
 	while (true)
 	{
-		XMLScanOneLevel currentLevel = XMLSCAN_CURRENT_LEVEL(xscan);
+		XMLScanOneLevel scanLevel = XMLSCAN_CURRENT_LEVEL(xscan);
 
-		while (currentLevel->siblingsLeft > 0)
+		while (scanLevel->siblingsLeft > 0)
 		{
 			XPathElement xpEl;
 			XPath		xp = xscan->xpath;
-			XMLElementHeader eh = currentLevel->parent;
+			XMLElementHeader eh = scanLevel->parent;
 			XMLNodeHeader currentNode = NULL;
 
 			/*
@@ -481,25 +481,25 @@ getNextXMLNode(XMLScan xscan, bool removed)
 			 */
 			bool		subScanDone = false;
 
-			if (currentLevel->nodeRef == NULL)
+			if (scanLevel->nodeRefPtr == NULL)
 			{
 				/*
 				 * When this function is called from xmlnodeRemove(), the node
 				 * pointed to by 'childRef' might have been removed. If that
 				 * was the only child, NULL is there when the scan resumes.
 				 */
-				if (currentLevel->siblingsLeft != 1)
+				if (scanLevel->siblingsLeft != 1)
 				{
 					elog(ERROR, "unexpected state of xml scan");
 				}
 				else
 				{
-					currentLevel->siblingsLeft--;
+					scanLevel->siblingsLeft--;
 					break;
 				}
 
 			}
-			xpEl = (XPathElement) ((char *) xp + xp->elements[xscan->xpathRoot + xscan->currentDepth]);
+			xpEl = (XPathElement) ((char *) xp + xp->elements[xscan->xpathRoot + xscan->depth]);
 
 			if (xscan->subScan != NULL)
 			{
@@ -522,12 +522,12 @@ getNextXMLNode(XMLScan xscan, bool removed)
 					pfree(xscan->subScan);
 					xscan->subScan = NULL;
 					xscan->skip = true;
-					xscan->descsProcessed = true;
+					xscan->descsDone = true;
 					subScanDone = true;
 				}
 			}
 			currentNode = (XMLNodeHeader) ((char *) eh -
-										   xmlnodeReadReference(&currentLevel->nodeRef, XNODE_ELEMENT_GET_REF_BWIDTH(eh), false));
+										   xmlnodeReadReference(&scanLevel->nodeRefPtr, XNODE_ELEMENT_GET_REF_BWIDTH(eh), false));
 
 			if (xscan->skip)
 			{
@@ -553,7 +553,7 @@ getNextXMLNode(XMLScan xscan, bool removed)
 
 				xscan->skip = false;
 				/* This applies to the next node. */
-				xscan->descsProcessed = false;
+				xscan->descsDone = false;
 
 				/*
 				 * If the node we found last time has been removed, then the
@@ -565,14 +565,14 @@ getNextXMLNode(XMLScan xscan, bool removed)
 
 				if (!removed || (removed && (subScanDone || xscan->subtreeDone)))
 				{
-					currentLevel->nodeRef = XNODE_NEXT_REF(currentLevel->nodeRef, eh);
+					scanLevel->nodeRefPtr = XNODE_NEXT_REF(scanLevel->nodeRefPtr, eh);
 
 					if (xscan->subtreeDone)
 					{
 						xscan->subtreeDone = false;
 					}
 				}
-				currentLevel->siblingsLeft--;
+				scanLevel->siblingsLeft--;
 				continue;
 			}
 
@@ -597,7 +597,7 @@ getNextXMLNode(XMLScan xscan, bool removed)
 				{
 					bool		passed = true;
 
-					currentLevel->matches++;
+					scanLevel->matches++;
 					if (xpEl->hasPredicate)
 					{
 						XPathExprOperandValueData result,
@@ -607,7 +607,7 @@ getNextXMLNode(XMLScan xscan, bool removed)
 						XPathExpression expr = prepareXPathExpression(exprOrig, currentElement,
 								 xscan->document, xscan->xpathHeader, xscan);
 
-						evaluateXPathExpression(expr, currentLevel, currentElement, 0, &result);
+						evaluateXPathExpression(expr, scanLevel, currentElement, 0, &result);
 						freeNodeSets(expr);
 						pfree(expr);
 						xpathValCastToBool(&result, &resultBool);
@@ -615,10 +615,10 @@ getNextXMLNode(XMLScan xscan, bool removed)
 					}
 					if (!passed)
 					{
-						XMLElementHeader eh = currentLevel->parent;
+						XMLElementHeader eh = scanLevel->parent;
 
-						currentLevel->nodeRef = XNODE_NEXT_REF(currentLevel->nodeRef, eh);
-						currentLevel->siblingsLeft--;
+						scanLevel->nodeRefPtr = XNODE_NEXT_REF(scanLevel->nodeRefPtr, eh);
+						scanLevel->siblingsLeft--;
 						continue;
 					}
 					if (!XPATH_LAST_LEVEL(xscan) && XNODE_HAS_CHILDREN(currentElement))
@@ -632,10 +632,10 @@ getNextXMLNode(XMLScan xscan, bool removed)
 							xscan->xpath->targNdKind != XMLNODE_ATTRIBUTE)
 						{
 
-							XMLElementHeader eh = currentLevel->parent;
+							XMLElementHeader eh = scanLevel->parent;
 
-							currentLevel->nodeRef = XNODE_NEXT_REF(currentLevel->nodeRef, eh);
-							currentLevel->siblingsLeft--;
+							scanLevel->nodeRefPtr = XNODE_NEXT_REF(scanLevel->nodeRefPtr, eh);
+							scanLevel->siblingsLeft--;
 							continue;
 						}
 						else
@@ -646,13 +646,13 @@ getNextXMLNode(XMLScan xscan, bool removed)
 							 * Initialize the scan state for the next (deeper)
 							 * level
 							 */
-							xscan->currentDepth++;
+							xscan->depth++;
 							nextLevel = XMLSCAN_CURRENT_LEVEL(xscan);
 							nextLevel->parent = currentElement;
-							nextLevel->nodeRef = childFirst;
+							nextLevel->nodeRefPtr = childFirst;
 							nextLevel->siblingsLeft = currentElement->children;
 							nextLevel->matches = 0;
-							nextLevel->up = currentLevel;
+							nextLevel->up = scanLevel;
 							break;
 						}
 					}
@@ -751,8 +751,8 @@ getNextXMLNode(XMLScan xscan, bool removed)
 			 * Whether descendants found or not, go to the next element on the
 			 * current level
 			 */
-			currentLevel->nodeRef = XNODE_NEXT_REF(currentLevel->nodeRef, currentLevel->parent);
-			currentLevel->siblingsLeft--;
+			scanLevel->nodeRefPtr = XNODE_NEXT_REF(scanLevel->nodeRefPtr, scanLevel->parent);
+			scanLevel->siblingsLeft--;
 		}
 
 		/*
@@ -761,9 +761,9 @@ getNextXMLNode(XMLScan xscan, bool removed)
 		 * end and the following condition can't be met. Otherwise we're done
 		 * with the current level.
 		 */
-		if (currentLevel->siblingsLeft == 0)
+		if (scanLevel->siblingsLeft == 0)
 		{
-			if (xscan->currentDepth == 0)
+			if (xscan->depth == 0)
 			{
 				xscan->done = true;
 
@@ -772,7 +772,7 @@ getNextXMLNode(XMLScan xscan, bool removed)
 			else
 			{
 				xscan->skip = true;
-				(xscan->currentDepth)--;
+				(xscan->depth)--;
 				xscan->subtreeDone = true;
 				continue;
 			}
@@ -867,9 +867,9 @@ xmlnodeAdd(xmldoc doc, XMLScan xscan, XMLNodeHeader targNode, XMLNodeHeader newN
 	xscTmp = xscan;
 	do
 	{
-		levelScan = xscTmp->scanState;
+		levelScan = xscTmp->state;
 
-		for (i = 0; i <= xscTmp->currentDepth; i++)
+		for (i = 0; i <= xscTmp->depth; i++)
 		{
 			levelNode = levelScan->parent;
 			Assert((i == 0 && levelNode->common.kind == XMLNODE_DOC) ||
@@ -1414,11 +1414,11 @@ xmlnodeAdd(xmldoc doc, XMLScan xscan, XMLNodeHeader targNode, XMLNodeHeader newN
 	{
 		if (parentSrc->children > 0)
 		{
-			levelScan->nodeRef = XNODE_FIRST_REF(parentTarg) + lastInd * bwidthTarg;
+			levelScan->nodeRefPtr = XNODE_FIRST_REF(parentTarg) + lastInd * bwidthTarg;
 		}
 		else
 		{
-			levelScan->nodeRef = NULL;
+			levelScan->nodeRefPtr = NULL;
 		}
 	}
 	else
@@ -1426,7 +1426,7 @@ xmlnodeAdd(xmldoc doc, XMLScan xscan, XMLNodeHeader targNode, XMLNodeHeader newN
 		/*
 		 * Reference order does not change, but the width might have done.
 		 */
-		levelScan->nodeRef = XNODE_FIRST_REF(parentTarg) + newNdIndex * bwidthTarg;
+		levelScan->nodeRefPtr = XNODE_FIRST_REF(parentTarg) + newNdIndex * bwidthTarg;
 	}
 
 	/* Copy tag name */
@@ -1623,11 +1623,11 @@ xmlnodeRemove(xmldoc doc, XMLScan xscan, XMLNodeHeader targNode, bool freeSrc)
 	levelScan->parent = parentTarg;
 	if (parentSrc->children > 1)
 	{
-		levelScan->nodeRef = XNODE_FIRST_REF(parentTarg) + targNdIndex * bwidthTarg;
+		levelScan->nodeRefPtr = XNODE_FIRST_REF(parentTarg) + targNdIndex * bwidthTarg;
 	}
 	else
 	{
-		levelScan->nodeRef = NULL;
+		levelScan->nodeRefPtr = NULL;
 	}
 
 	shift += hdrSizeIncr;
@@ -1673,7 +1673,7 @@ xmlnodeRemove(xmldoc doc, XMLScan xscan, XMLNodeHeader targNode, bool freeSrc)
 			}
 		}
 	}
-	i = xscan->currentDepth;
+	i = xscan->depth;
 	propagateChange(levelScan, &shift, &hdrSizeIncr, inputTree, resData, &srcCursor,
 					&resCursor, &newRootOff);
 
@@ -2018,7 +2018,7 @@ propagateChange(XMLScanOneLevel levelScan, int *shift, int *hdrSizeIncr,
 			else if (j == currChild)
 			{
 				refTarg = refSrc + *hdrSizeIncr;
-				levelScan->nodeRef = *resCursor;
+				levelScan->nodeRefPtr = *resCursor;
 			}
 			else
 			{
@@ -2106,7 +2106,7 @@ xmlnodeModify(XMLScan xscan, xmldoc doc, XMLNodeAction action, XMLNodeHeader new
 			 * inside root element and thus the well-formedness can't be
 			 * compromised.
 			 */
-			if (xscan->currentDepth == 0)
+			if (xscan->depth == 0)
 			{
 				XMLNodeOffset *rootOff = (XMLNodeOffset *) ((char *) result + VARSIZE(result) -
 													  sizeof(XMLNodeOffset));
@@ -3629,18 +3629,18 @@ static void
 dumpXScanDebug(StringInfo output, XMLScan scan, char *docData, XMLNodeOffset docRootOff)
 {
 	unsigned short i;
-	XMLScanOneLevel level = scan->scanState;
+	XMLScanOneLevel level = scan->state;
 
-	appendStringInfo(output, "xscan [dpth: %u, xpthroot: %u, xpthdpth: %u]\n", scan->currentDepth,
+	appendStringInfo(output, "xscan [dpth: %u, xpthroot: %u, xpthdpth: %u]\n", scan->depth,
 					 scan->xpathRoot, scan->xpath->depth);
-	for (i = 0; i <= scan->currentDepth; i++)
+	for (i = 0; i <= scan->depth; i++)
 	{
 		XMLElementHeader parent = level->parent;
 		char	   *firstRefPtr = XNODE_FIRST_REF(parent);
 		char		bwidth = XNODE_ELEMENT_GET_REF_BWIDTH(parent);
 
 		appendStringInfo(output, "level: %u, at: %u, sbl: %u, ", i,
-						 (unsigned int) (((char *) level->nodeRef - firstRefPtr) / bwidth), level->siblingsLeft);
+						 (unsigned int) (((char *) level->nodeRefPtr - firstRefPtr) / bwidth), level->siblingsLeft);
 
 		appendStringInfo(output, "parent[");
 		if (i > 0)
@@ -3664,7 +3664,7 @@ dumpXScanDebug(StringInfo output, XMLScan scan, char *docData, XMLNodeOffset doc
 static bool
 considerSubScan(XPathElement xpEl, XMLNodeHeader node, XMLScan xscan)
 {
-	if (xpEl->descendant && node->kind == XMLNODE_ELEMENT && !xscan->descsProcessed)
+	if (xpEl->descendant && node->kind == XMLNODE_ELEMENT && !xscan->descsDone)
 	{
 		XMLElementHeader el = (XMLElementHeader) node;
 
@@ -3673,8 +3673,8 @@ considerSubScan(XPathElement xpEl, XMLNodeHeader node, XMLScan xscan)
 			xscan->subScan = (XMLScan) palloc(sizeof(XMLScanData));
 			initXMLScan(xscan->subScan, xscan, xscan->xpath, xscan->xpathHeader, el, xscan->document,
 						xscan->resTmp != NULL);
-			xscan->subScan->xpathRoot = xscan->xpathRoot + xscan->currentDepth;
-			xscan->descsProcessed = false;
+			xscan->subScan->xpathRoot = xscan->xpathRoot + xscan->depth;
+			xscan->descsDone = false;
 			return true;
 		}
 	}
