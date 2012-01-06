@@ -7,7 +7,7 @@ typedef enum XMLNodeAction
 	XMLNODE_ACTION_REMOVE
 }	XMLNodeAction;
 
-static void adjustTempResult(XMLScan scan, XMLNodeOffset minimum, bool inclusive, int shift);
+static void adjustTempResult(XMLScan scan, XMLNodeOffset minimum, int shift);
 static char **copyXMLDocFragment(XMLElementHeader fragNode, char **resCursorPtr);
 static void copyXMLNodeOrDocFragment(XMLNodeHeader newNode, unsigned int newNdSize, char **resCursor,
 						 char **newNdRoot, char ***newNdRoots);
@@ -955,7 +955,7 @@ xmlnodeAdd(xmldoc doc, XMLScan xscan, XMLNodeHeader targNode, XMLNodeHeader newN
 			 * of the target node. That makes no difference, as the references
 			 * to target node never point before 'srcCursor'.
 			 */
-			adjustTempResult(xscan, (XMLNodeOffset) (srcCursor - inputTree), true, shift);
+			adjustTempResult(xscan, (XMLNodeOffset) (srcCursor - inputTree), shift);
 		}
 		else
 		{
@@ -969,7 +969,7 @@ xmlnodeAdd(xmldoc doc, XMLScan xscan, XMLNodeHeader targNode, XMLNodeHeader newN
 			 * Those pointing to the removed node can be ignored because no
 			 * scan will find them later anyway.
 			 */
-			adjustTempResult(xscan, (XMLNodeOffset) (srcCursor - inputTree + targNdSize), true, shift);
+			adjustTempResult(xscan, (XMLNodeOffset) (srcCursor - inputTree + targNdSize), shift);
 		}
 
 		/* Move behind the target node */
@@ -997,9 +997,9 @@ xmlnodeAdd(xmldoc doc, XMLScan xscan, XMLNodeHeader targNode, XMLNodeHeader newN
 		/*
 		 * 'srcCursor' is still at the target node (header). As the new node
 		 * is added AFTER, the target node's position doesn't change.
-		 * Therefore inclusive='false'.
+		 * Therefore '+ 1' to the minimum increased position.
 		 */
-		adjustTempResult(xscan, (XMLNodeOffset) (srcCursor - inputTree), false, newNdSize);
+		adjustTempResult(xscan, (XMLNodeOffset) (srcCursor - inputTree + 1), newNdSize);
 		srcCursor += srcIncr;
 		resCursor += srcIncr;
 
@@ -1043,12 +1043,11 @@ xmlnodeAdd(xmldoc doc, XMLScan xscan, XMLNodeHeader targNode, XMLNodeHeader newN
 
 		/*
 		 * 'srcCursor' now points at the (still empty) target element, which
-		 * will be moved by new node insertion. Therefore, the target node
-		 * references are included:
+		 * will be moved by new node insertion. Therefore, references to the
+		 * target node and all the following must be adjusted.
 		 */
 		shift = newNdSize;
-
-		adjustTempResult(xscan, (XMLNodeOffset) (srcCursor - inputTree), true, shift);
+		adjustTempResult(xscan, (XMLNodeOffset) (srcCursor - inputTree), shift);
 
 		/*
 		 * Copy the target node header now
@@ -1116,7 +1115,7 @@ xmlnodeAdd(xmldoc doc, XMLScan xscan, XMLNodeHeader targNode, XMLNodeHeader newN
 
 		intoHdrSzIncr = targUpdated->children * bwt - targElement->children * bws;
 
-		/* copy name */
+		/* copy target node name */
 		srcCursor = XNODE_ELEMENT_NAME(targElement);
 		resCursor = refDstPtr;
 		cntLen = strlen(srcCursor);
@@ -1133,10 +1132,17 @@ xmlnodeAdd(xmldoc doc, XMLScan xscan, XMLNodeHeader targNode, XMLNodeHeader newN
 			targUpdated->common.flags &= resetMask;
 			targUpdated->common.flags |= bwt - 1;
 		}
+
 		intoHdrSzIncr = getXMLNodeSize((XMLNodeHeader) targUpdated, false) - getXMLNodeSize(targNode, false);
 		if (intoHdrSzIncr > 0)
 		{
-			adjustTempResult(xscan, (XMLNodeOffset) (srcCursor - inputTree + shift), false, intoHdrSzIncr);
+			/*
+			 * srcCursor is now right after the target node. References
+			 * pointing originally to nodes after the target node (shifted
+			 * already by 'shift') need to be additionally shifted, because
+			 * addition of a new node increases the target node header.
+			 */
+			adjustTempResult(xscan, (XMLNodeOffset) (srcCursor - inputTree + shift), intoHdrSzIncr);
 			shift += intoHdrSzIncr;
 		}
 	}
@@ -1445,7 +1451,7 @@ xmlnodeAdd(xmldoc doc, XMLScan xscan, XMLNodeHeader targNode, XMLNodeHeader newN
 	 * References to 'srcCursor' or higher (increased earlier by 'shift') need
 	 * to be adjusted to additional shift 'hdrSizeIncr'
 	 */
-	adjustTempResult(xscan, (XMLNodeOffset) (srcCursor - inputTree + shift), true, hdrSizeIncr);
+	adjustTempResult(xscan, (XMLNodeOffset) (srcCursor - inputTree + shift), hdrSizeIncr);
 	shift += hdrSizeIncr;
 
 	if (newNode->kind != XMLNODE_ATTRIBUTE && (parentTarg->common.flags & XNODE_ELEMENT_EMPTY) &&
@@ -1868,7 +1874,7 @@ xmlnode_remove(PG_FUNCTION_ARGS)
  * 'minimum' - the minimum offset value affected
  */
 static void
-adjustTempResult(XMLScan scan, XMLNodeOffset minimum, bool inclusive, int shift)
+adjustTempResult(XMLScan scan, XMLNodeOffset minimum, int shift)
 {
 	unsigned short i;
 	XMLNodeContainer cont = scan->resTmp;
@@ -1881,7 +1887,7 @@ adjustTempResult(XMLScan scan, XMLNodeOffset minimum, bool inclusive, int shift)
 	{
 		XMLNodeOffset value = cont->items[i];
 
-		if ((!inclusive && value > minimum) || (inclusive && value >= minimum))
+		if (value >= minimum)
 		{
 			cont->items[i] = value + shift;
 		}
