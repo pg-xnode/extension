@@ -2342,7 +2342,7 @@ saveNodeHeader(XMLParserState state, XMLNodeInternal nodeInfo, char flags)
 	unsigned int hdrSize;
 	XMLNodeHdr	node;
 
-	if (nodeInfo->tokenType & (TOKEN_ETAG | TOKEN_EMPTY_ELEMENT | TOKEN_XMLDECL))
+	if (nodeInfo->tokenType & (TOKEN_ETAG | TOKEN_EMPTY_ELEMENT))
 	{
 		hdrSize = sizeof(XMLCompNodeHdrData);
 	}
