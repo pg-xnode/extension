@@ -178,17 +178,18 @@ xmlnode_to_xmldoc(PG_FUNCTION_ARGS)
 		 */
 		char	   *refTargPtr;
 
-		sizeNew = sizeOrig + sizeof(XMLElementHeaderData) + (bwidth + 1);
+		sizeNew = sizeOrig + sizeof(XMLElementHeaderData) + bwidth;
 		dataSizeNew = sizeNew - VARHDRSZ;
 		document = (xmldoc) palloc(sizeNew);
 		docData = (char *) VARDATA(document);
 		memcpy(docData, nodeData, rootOffsetNew);
 		rootDoc = (XMLElementHeader) (docData + rootOffsetNew);
 		rootDoc->common.kind = XMLNODE_DOC;
-		rootDoc->common.flags = bwidth;
+		rootDoc->common.flags = 0;
+		XNODE_SET_REF_BWIDTH(rootDoc, bwidth);
 		rootDoc->children = 1;
 		refTargPtr = (char *) rootDoc + sizeof(XMLElementHeaderData);
-		writeXMLNodeOffset(dist, &refTargPtr, bwidth + 1, false);
+		writeXMLNodeOffset(dist, &refTargPtr, bwidth, false);
 		rootOffPtrNew = (XMLNodeOffset *) (docData + dataSizeNew - sizeof(XMLNodeOffset));
 		*rootOffPtrNew = rootOffsetNew;
 		SET_VARSIZE(document, sizeNew);
@@ -248,13 +249,11 @@ dumpXMLNode(char *data, XMLNodeOffset rootNdOff)
 	return result;
 }
 
-/*
- * Returns 0 for 1-byte values, 1 for 2-byte values, etc.
- */
+/* How many bytes do we need to store the offset? */
 char
 getXMLNodeOffsetByteWidth(XMLNodeOffset o)
 {
-	char		i = 0;
+	char		i = 1;
 
 	while (o > 0xFF)
 	{

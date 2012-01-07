@@ -2423,14 +2423,14 @@ saveReferences(XMLParserState state, XMLNodeInternal nodeInfo,
 	XMLNodeOffset dist = nodeInfo->nodeOut -
 	state->stack.items[state->stack.position - children];
 	char		bwidth = getXMLNodeOffsetByteWidth(dist);
-	unsigned int refsTotal = children * (bwidth + 1);
+	unsigned int refsTotal = children * bwidth;
 	char	   *childOffTarg;
 	unsigned short int i;
 	XMLNodeOffset elementOff = (char *) element - state->tree;
 
 	ensureSpace(refsTotal, state);
 	element = (XMLElementHeader) (state->tree + elementOff);
-	element->common.flags |= bwidth;
+	XNODE_SET_REF_BWIDTH(element, bwidth);
 	childOffTarg = XNODE_LAST_REF(element);
 	for (i = 0; i < children; i++)
 	{
@@ -2441,7 +2441,7 @@ saveReferences(XMLParserState state, XMLNodeInternal nodeInfo,
 		 */
 		dist = nodeInfo->nodeOut - childOffset;
 
-		writeXMLNodeOffset(dist, &childOffTarg, bwidth + 1, false);
+		writeXMLNodeOffset(dist, &childOffTarg, bwidth, false);
 		childOffTarg = XNODE_PREV_REF(childOffTarg, element);
 	}
 	state->dstPos += refsTotal;
@@ -2529,11 +2529,12 @@ saveRootNodeHeader(XMLParserState state, XMLNodeKind kind)
 	childCount = state->stack.position;
 	rootOffSrc = state->stack.items;
 	bwidth = getXMLNodeOffsetByteWidth(rootNodeOff - *rootOffSrc);
-	refsTotal = childCount * (bwidth + 1);
+	refsTotal = childCount * bwidth;
 	ensureSpace(rootHdrSz + refsTotal, state);
 	state->dstPos += rootHdrSz;
 	rootNode = (XMLElementHeader) (state->tree + rootNodeOff);
-	rootNode->common.flags = bwidth;
+	rootNode->common.flags = 0;
+	XNODE_SET_REF_BWIDTH(rootNode, bwidth);
 	rootNode->common.kind = kind;
 	rootNode->children = childCount;
 
@@ -2546,7 +2547,7 @@ saveRootNodeHeader(XMLParserState state, XMLNodeKind kind)
 	{
 		XMLNodeOffset dist = rootNodeOff - *rootOffSrc;
 
-		writeXMLNodeOffset(dist, &rootOffTarg, bwidth + 1, true);
+		writeXMLNodeOffset(dist, &rootOffTarg, bwidth, true);
 		rootOffSrc++;
 	}
 	state->dstPos += refsTotal;
@@ -2625,7 +2626,7 @@ xmlnodeDumpNode(char *input, XMLNodeOffset nodeOff, char **output, unsigned int 
 				XMLElementHeader eh = (XMLElementHeader) node;
 
 				i = dumpAttributes(eh, input, output, pos);
-				childOffPtr = childOffPtr + i * XNODE_ELEMENT_GET_REF_BWIDTH(eh);
+				childOffPtr = childOffPtr + i * XNODE_GET_REF_BWIDTH(eh);
 
 				if (node->flags & XNODE_ELEMENT_EMPTY)
 				{
@@ -2655,7 +2656,7 @@ xmlnodeDumpNode(char *input, XMLNodeOffset nodeOff, char **output, unsigned int 
 					while (childOffPtr <= lastChild)
 					{
 						xmlnodeDumpNode(input, nodeOff - readXMLNodeOffset(&childOffPtr,
-						XNODE_ELEMENT_GET_REF_BWIDTH(eh), true), output, pos);
+							   XNODE_GET_REF_BWIDTH(eh), true), output, pos);
 					}
 
 					/*
@@ -2686,7 +2687,7 @@ xmlnodeDumpNode(char *input, XMLNodeOffset nodeOff, char **output, unsigned int 
 				while (childOffPtr <= lastChild)
 				{
 					xmlnodeDumpNode(input, nodeOff -
-									readXMLNodeOffset(&childOffPtr, XNODE_ELEMENT_GET_REF_BWIDTH((XMLElementHeader) node), true),
+									readXMLNodeOffset(&childOffPtr, XNODE_GET_REF_BWIDTH((XMLElementHeader) node), true),
 									output, pos);
 				}
 			}
@@ -2813,7 +2814,7 @@ xmlnodeDumpNode(char *input, XMLNodeOffset nodeOff, char **output, unsigned int 
 			{
 				XMLElementHeader eh = (XMLElementHeader) node;
 
-				xmlnodeDumpNode(input, nodeOff - readXMLNodeOffset(&childOffPtr, XNODE_ELEMENT_GET_REF_BWIDTH(eh), true),
+				xmlnodeDumpNode(input, nodeOff - readXMLNodeOffset(&childOffPtr, XNODE_GET_REF_BWIDTH(eh), true),
 								output, pos);
 			}
 			break;
@@ -2836,7 +2837,7 @@ dumpAttributes(XMLElementHeader element, char *input,
 	while (childOffPtr <= lastChild)
 	{
 		XMLNodeHeader attrNode = (XMLNodeHeader) ((char *) element
-												  - readXMLNodeOffset(&childOffPtr, XNODE_ELEMENT_GET_REF_BWIDTH(element), true));
+												  - readXMLNodeOffset(&childOffPtr, XNODE_GET_REF_BWIDTH(element), true));
 		char	   *attrName,
 				   *attrValue;
 		unsigned int attrNameLen,

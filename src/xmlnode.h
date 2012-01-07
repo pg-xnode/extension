@@ -124,7 +124,7 @@ typedef struct XMLDeclData *XMLDecl;
 extern char getXMLNodeOffsetByteWidth(XMLNodeOffset o);
 
 #define XNODE_FIRST_REF(el) ((char *) (el) + sizeof(XMLElementHeaderData))
-#define XNODE_LAST_REF(el) (XNODE_FIRST_REF(el) + ((el)->children - 1) * XNODE_ELEMENT_GET_REF_BWIDTH(el))
+#define XNODE_LAST_REF(el) (XNODE_FIRST_REF(el) + ((el)->children - 1) * XNODE_GET_REF_BWIDTH(el))
 
 /*
  * Only use this for simple nodes
@@ -135,17 +135,11 @@ extern char getXMLNodeOffsetByteWidth(XMLNodeOffset o);
  * TODO Check if the multiplication needs to be performed in alternative
  * (more efficient) way. The same for XNODE_LAST_REF() above
  */
-#define XNODE_ELEMENT_NAME(el) (XNODE_FIRST_REF(el) + (el)->children * XNODE_ELEMENT_GET_REF_BWIDTH(el))
+#define XNODE_ELEMENT_NAME(el) (XNODE_FIRST_REF(el) + (el)->children * XNODE_GET_REF_BWIDTH(el))
 
-#define XNODE_NEXT_REF(ptr, el) (ptr + XNODE_ELEMENT_GET_REF_BWIDTH(el))
-#define XNODE_PREV_REF(ptr, el) (ptr - XNODE_ELEMENT_GET_REF_BWIDTH(el))
+#define XNODE_NEXT_REF(ptr, el) (ptr + XNODE_GET_REF_BWIDTH(el))
+#define XNODE_PREV_REF(ptr, el) (ptr - XNODE_GET_REF_BWIDTH(el))
 #define XNODE_HAS_CHILDREN(el) (el->children > 0)
-
-/*
- * #define XNODE_FIRST_CHILD(el) ((XMLNodeHeader) ((char *) (el) -
- * xmlnodeReadReference(XNODE_FIRST_REF(el),\
- * XNODE_ELEMENT_GET_REF_BWIDTH(el), false)))
- */
 
 typedef struct varlena xmlnodetype;
 typedef xmlnodetype *xmlnode;
@@ -224,10 +218,8 @@ typedef enum XMLAddMode
  */
 #define XNODE_TEXT_SPEC_CHARS		(1 << 7)
 
-/*
- * Bits 0 and 1 indicate byte width of the distance between parent and child
- */
-#define XNODE_ELEMENT_REF_BWIDTH		0x03
+/* Bits 0 and 1 indicate maximum byte width of the distance between parent and child */
+#define XNODE_REF_BWIDTH				0x03
 #define XNODE_ELEMENT_EMPTY				(1 << 2)
 #define XNODE_DOC_XMLDECL				(1 << 3)
 
@@ -242,6 +234,19 @@ typedef enum XMLAddMode
 #define XNODE_PI_HAS_VALUE			(1 << 0)
 
 #define XNODE_ATTR_IS_NUMBER(node)			(((node)->flags & XNODE_ATTR_NUMBER) != 0)
-#define XNODE_ELEMENT_GET_REF_BWIDTH(el)	(((el)->common.flags & XNODE_ELEMENT_REF_BWIDTH) + 1)
+
+/*
+ * Macros to read / write byte width of the maximum child's offset.
+ * The value we store is 0-based, i.e. 0 in the 'flags' filed means 1 byte per reference.
+ */
+#define XNODE_GET_REF_BWIDTH(el)		(((el)->common.flags & XNODE_REF_BWIDTH) + 1)
+/*
+ * It's assumed that the bits we set have been reset.
+ * If the existing value is to be changed, the caller is responsible for resetting the original value.
+ */
+#define XNODE_SET_REF_BWIDTH(el, bw)	((el)->common.flags |= (bw - 1))
+
+/* Reset the byte-width if already set */
+#define XNODE_RESET_REF_BWIDTH(el)		((el)->common.flags &= ~XNODE_REF_BWIDTH)
 
 #endif   /* XMLNODE_H */

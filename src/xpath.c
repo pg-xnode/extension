@@ -1103,7 +1103,7 @@ getXPathExprValue(xmldoc document, bool *notNull, XPathExprOperandValue res)
 					 * 'nodeSizeTotal' now equals to the greatest distance
 					 * between parent (doc fragment) and its child.
 					 */
-					bwidth = getXMLNodeOffsetByteWidth(nodeSizeTotal) + 1;
+					bwidth = getXMLNodeOffsetByteWidth(nodeSizeTotal);
 					resSize = VARHDRSZ + sizeof(XPathValueData) + nodeSizeTotal + sizeof(XMLElementHeaderData) +
 						bwidth * j;
 					output = (char *) palloc(resSize);
@@ -1128,7 +1128,8 @@ getXPathExprValue(xmldoc document, bool *notNull, XPathExprOperandValue res)
 					pfree(nodeSizes);
 
 					fragmentHdr->common.kind = XMLNODE_DOC_FRAGMENT;
-					fragmentHdr->common.flags = bwidth - 1;
+					fragmentHdr->common.flags = 0;
+					XNODE_SET_REF_BWIDTH(fragmentHdr, bwidth);
 					fragmentHdr->children = j;
 
 					xpval->type = XPATH_VAL_NODESET;
