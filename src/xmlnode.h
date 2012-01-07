@@ -152,6 +152,7 @@ typedef xmlnodetype *xmlnode;
 
 extern Datum xmlnode_in(PG_FUNCTION_ARGS);
 extern Datum xmlnode_out(PG_FUNCTION_ARGS);
+extern Datum xmlnode_kind(PG_FUNCTION_ARGS);
 extern char *dumpXMLNode(char *data, XMLNodeOffset rootNdOff);
 
 typedef struct varlena xmldoctype;

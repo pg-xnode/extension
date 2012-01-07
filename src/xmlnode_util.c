@@ -177,30 +177,46 @@ getXMLNodeSize(XMLNodeHeader node, bool subtree)
 char *
 getXMLNodeKindStr(XMLNodeKind k)
 {
+	StringInfoData result;
+
+	result.maxlen = 32;
+	result.data = (char *) palloc(result.maxlen);
+	resetStringInfo(&result);
+
 	switch (k)
 	{
 		case XMLNODE_DOC:
-			return "XML document";
+			appendStringInfoString(&result, "XML document");
+			break;
 		case XMLNODE_DTD:
-			return "DTD";
+			appendStringInfoString(&result, "DTD");
+			break;
 		case XMLNODE_ELEMENT:
-			return "XML element";
+			appendStringInfoString(&result, "XML element");
+			break;
 		case XMLNODE_ATTRIBUTE:
-			return "XML element attribute";
+			appendStringInfoString(&result, "XML element attribute");
+			break;
 		case XMLNODE_COMMENT:
-			return "XML comment";
+			appendStringInfoString(&result, "XML comment");
+			break;
 		case XMLNODE_CDATA:
-			return "CDATA section";
+			appendStringInfoString(&result, "CDATA section");
+			break;
 		case XMLNODE_PI:
-			return "processing instruction";
+			appendStringInfoString(&result, "processing instruction");
+			break;
 		case XMLNODE_TEXT:
-			return "text node";
+			appendStringInfoString(&result, "text node");
+			break;
 		case XMLNODE_DOC_FRAGMENT:
-			return "document fragment";
+			appendStringInfoString(&result, "document fragment");
+			break;
 		default:
 			elog(ERROR, "unknown node kind: %u", k);
-			return "";
+			return NULL;
 	}
+	return result.data;
 }
 
 /*

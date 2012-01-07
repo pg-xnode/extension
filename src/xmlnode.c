@@ -82,6 +82,19 @@ xmlnode_out(PG_FUNCTION_ARGS)
 	PG_RETURN_CSTRING(dumpXMLNode(data, rootNdOff));
 }
 
+PG_FUNCTION_INFO_V1(xmlnode_kind);
+
+Datum
+xmlnode_kind(PG_FUNCTION_ARGS)
+{
+	xmlnode		nodeRaw = (xmlnode) PG_GETARG_VARLENA_P(0);
+	XMLNodeHeader node = XNODE_ROOT(nodeRaw);
+	char	   *kindStr = getXMLNodeKindStr(node->kind);
+
+	PG_RETURN_CSTRING(kindStr);
+}
+
+
 PG_FUNCTION_INFO_V1(xmldoc_in);
 
 Datum

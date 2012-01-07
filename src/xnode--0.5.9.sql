@@ -18,6 +18,13 @@ CREATE TYPE node (
 	storage = extended 
 );
 
+CREATE FUNCTION node_kind(node) RETURNS cstring
+	as 'MODULE_PATHNAME', 'xmlnode_kind'
+	LANGUAGE C
+	IMMUTABLE
+	STRICT;
+
+
 
 CREATE FUNCTION doc_in(cstring) RETURNS doc
 	as 'MODULE_PATHNAME', 'xmldoc_in'
