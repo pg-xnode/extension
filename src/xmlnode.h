@@ -62,32 +62,34 @@ typedef struct XMLNodeCommonData
  * For the following node types, content follows the structure immediately
  * (there are no references to children).
  */
-typedef XMLNodeCommonData XMLNodeHeaderData;
-typedef XMLNodeHeaderData *XMLNodeHeader;;
+typedef XMLNodeCommonData XMLNodeHdrData;
+typedef XMLNodeHdrData *XMLNodeHdr;;
 
 /*
- * This structure can represent: XMLNODE_ELEMENT, XMLNODE_DOC or
- * XMLNODE_DOC_FRAGMENT
- */
-/*
- * TODO As this is used for XMLNODE_ELEMENT, XMLNODE_DOC and
- * XMLNODE_DOC_FRAGMENT, should it be renamed to something like
- * 'XMLCompoundNodeData'?
+ * A compound node, i.e node containing other node(s).
+ * Used for the following node types:
+ * XMLNODE_ELEMENT, XMLNODE_DOC, XMLNODE_DOC_FRAGMENT
  *
- * At the same time rename all related macros, such as XNODE_ELEMENT_NAME()
- * or XNODE_ELEMENT_GET_REF_BWIDTH() and also constants
- * (XNODE_ELEMENT_REF_BWIDTH, XNODE_ELEMENT_EMPTY, XNODE_DOC_XMLDECL)
+ * The header is followed by array of references.
+ * Reference means relative offset of a nested element, from the current element backwards (child
+ * is always stored at lower addresses than parent).
+ * Such a reference takes 1 to 4 bytes, while this 'byte width' must be equal for all references
+ * that given compound node keeps. Thus the byte width is derived from the maximum offset the compound
+ * node has (given the 'child first' ordering, the maximum offset is that of the first child).
+ *
+ * XNODE_GET_REF_BWIDTH() / XNODE_SET_REF_BWIDTH() should be used to set the byte width. Direct access
+ * to the storage is discouraged.
+ *
+ * The array of references is followed either by element name (XMLNODE_ELEMENT) or by document header
+ * (XMLNODE_DOC).
  */
-typedef struct XMLElementHeaderData
+typedef struct XMLCompNodeHdrrData
 {
 	XMLNodeCommonData common;
 
-	/*
-	 * TODO (low priority) Make size of this attribute dynamic
-	 */
 	unsigned short int children;
-}	XMLElementHeaderData;
-typedef XMLElementHeaderData *XMLElementHeader;
+}	XMLCompNodeHdrData;
+typedef XMLCompNodeHdrData *XMLCompNodeHdr;
 
 typedef struct XMLDeclData
 {
@@ -123,13 +125,13 @@ typedef struct XMLDeclData *XMLDecl;
 
 extern char getXMLNodeOffsetByteWidth(XMLNodeOffset o);
 
-#define XNODE_FIRST_REF(el) ((char *) (el) + sizeof(XMLElementHeaderData))
-#define XNODE_LAST_REF(el) (XNODE_FIRST_REF(el) + ((el)->children - 1) * XNODE_GET_REF_BWIDTH(el))
+#define XNODE_FIRST_REF(cnd) ((char *) (cnd) + sizeof(XMLCompNodeHdrData))
+#define XNODE_LAST_REF(cnd) (XNODE_FIRST_REF(cnd) + ((cnd)->children - 1) * XNODE_GET_REF_BWIDTH(cnd))
 
 /*
  * Only use this for simple nodes
  */
-#define XNODE_CONTENT(nd) ((char *) ((XMLNodeHeader) (nd) + 1))
+#define XNODE_CONTENT(nd) ((char *) ((XMLNodeHdr) (nd) + 1))
 
 /*
  * TODO Check if the multiplication needs to be performed in alternative
@@ -137,9 +139,9 @@ extern char getXMLNodeOffsetByteWidth(XMLNodeOffset o);
  */
 #define XNODE_ELEMENT_NAME(el) (XNODE_FIRST_REF(el) + (el)->children * XNODE_GET_REF_BWIDTH(el))
 
-#define XNODE_NEXT_REF(ptr, el) (ptr + XNODE_GET_REF_BWIDTH(el))
-#define XNODE_PREV_REF(ptr, el) (ptr - XNODE_GET_REF_BWIDTH(el))
-#define XNODE_HAS_CHILDREN(el) (el->children > 0)
+#define XNODE_NEXT_REF(ptr, cnd) (ptr + XNODE_GET_REF_BWIDTH(cnd))
+#define XNODE_PREV_REF(ptr, cnd) (ptr - XNODE_GET_REF_BWIDTH(cnd))
+#define XNODE_HAS_CHILDREN(cnd) (cnd->children > 0)
 
 typedef struct varlena xmlnodetype;
 typedef xmlnodetype *xmlnode;
@@ -163,7 +165,7 @@ extern Datum xmlnode_to_xmldoc(PG_FUNCTION_ARGS);
 /*
  * Get root node from varlena (xmlnode, xmldoc) value
  */
-#define XNODE_ROOT(raw) ((XMLNodeHeader) ((char *) VARDATA(raw) + XNODE_ROOT_OFFSET(raw)))
+#define XNODE_ROOT(raw) ((XMLNodeHdr) ((char *) VARDATA(raw) + XNODE_ROOT_OFFSET(raw)))
 
 extern XMLNodeOffset readXMLNodeOffset(char **input, unsigned char bytes, bool step);
 extern void writeXMLNodeOffset(XMLNodeOffset ref, char **output, unsigned char bytes, bool step);
@@ -220,7 +222,7 @@ typedef enum XMLAddMode
 
 /* Bits 0 and 1 indicate maximum byte width of the distance between parent and child */
 #define XNODE_REF_BWIDTH				0x03
-#define XNODE_ELEMENT_EMPTY				(1 << 2)
+#define XNODE_EMPTY						(1 << 2)
 #define XNODE_DOC_XMLDECL				(1 << 3)
 
 #define XNODE_ATTR_APOSTROPHE			(1 << 0)
@@ -239,14 +241,14 @@ typedef enum XMLAddMode
  * Macros to read / write byte width of the maximum child's offset.
  * The value we store is 0-based, i.e. 0 in the 'flags' filed means 1 byte per reference.
  */
-#define XNODE_GET_REF_BWIDTH(el)		(((el)->common.flags & XNODE_REF_BWIDTH) + 1)
+#define XNODE_GET_REF_BWIDTH(cnd)		(((cnd)->common.flags & XNODE_REF_BWIDTH) + 1)
 /*
  * It's assumed that the bits we set have been reset.
  * If the existing value is to be changed, the caller is responsible for resetting the original value.
  */
-#define XNODE_SET_REF_BWIDTH(el, bw)	((el)->common.flags |= (bw - 1))
+#define XNODE_SET_REF_BWIDTH(cnd, bw)	((cnd)->common.flags |= (bw - 1))
 
 /* Reset the byte-width if already set */
-#define XNODE_RESET_REF_BWIDTH(el)		((el)->common.flags &= ~XNODE_REF_BWIDTH)
+#define XNODE_RESET_REF_BWIDTH(cnd)		((cnd)->common.flags &= ~XNODE_REF_BWIDTH)
 
 #endif   /* XMLNODE_H */

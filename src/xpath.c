@@ -724,8 +724,8 @@ xpath_single(PG_FUNCTION_ARGS)
 	{
 		elog(ERROR, "neither relative paths nor attributes expected in main expression");
 	}
-	exprCopy = prepareXPathExpression(expr, (XMLElementHeader) XNODE_ROOT(doc), doc, xpHdr, NULL);
-	evaluateXPathExpression(exprCopy, NULL, (XMLElementHeader) XNODE_ROOT(doc), 0, &resData);
+	exprCopy = prepareXPathExpression(expr, (XMLCompNodeHdr) XNODE_ROOT(doc), doc, xpHdr, NULL);
+	evaluateXPathExpression(exprCopy, NULL, (XMLCompNodeHdr) XNODE_ROOT(doc), 0, &resData);
 	result = getXPathExprValue(doc, &notNull, &resData);
 
 	if (resData.type == XPATH_VAL_NODESET)
@@ -758,7 +758,7 @@ xpath_array(PG_FUNCTION_ARGS)
 {
 	FuncCallContext *fctx;
 	XMLScan		baseScan;
-	XMLNodeHeader baseNode;
+	XMLNodeHdr	baseNode;
 	XMLScanContext xScanCtx;
 
 	if (SRF_IS_FIRSTCALL())
@@ -784,7 +784,7 @@ xpath_array(PG_FUNCTION_ARGS)
 
 		ArrayType  *pathsColArr = (ArrayType *) PG_GETARG_POINTER(1);
 		xmldoc		doc = (xmldoc) PG_GETARG_VARLENA_P(2);
-		XMLElementHeader docRoot = (XMLElementHeader) XNODE_ROOT(doc);
+		XMLCompNodeHdr docRoot = (XMLCompNodeHdr) XNODE_ROOT(doc);
 		MemoryContext oldcontext;
 
 		xpathBase = getSingleXPath(exprBase, xpHdrBase);
@@ -950,12 +950,12 @@ getResultArray(XMLScanContext ctx, XMLNodeOffset baseNodeOff)
 		XPathExpression expr = (XPathExpression) VARDATA(xpathPtr);
 		XPathHeader xpHdr = (XPathHeader) ((char *) expr + expr->size);
 		bool		colNotNull = false;
-		XMLElementHeader baseNode = (XMLElementHeader) ((char *) VARDATA(doc) + baseNodeOff);
+		XMLCompNodeHdr baseNode = (XMLCompNodeHdr) ((char *) VARDATA(doc) + baseNodeOff);
 		XPathExpression exprCopy = prepareXPathExpression(expr, baseNode, doc, xpHdr, ctx->baseScan);
 		XPathExprOperandValueData resData;
 
 		evaluateXPathExpression(exprCopy, XMLSCAN_CURRENT_LEVEL(ctx->baseScan),
-								(XMLElementHeader) ((char *) VARDATA(doc) + baseNodeOff), 0, &resData);
+		(XMLCompNodeHdr) ((char *) VARDATA(doc) + baseNodeOff), 0, &resData);
 		colValue = getXPathExprValue(doc, &colNotNull, &resData);
 		ctx->colResults[i] = PointerGetDatum(colValue);
 		ctx->colResNulls[i] = !colNotNull;
@@ -1015,9 +1015,9 @@ getXPathExprValue(xmldoc document, bool *notNull, XPathExprOperandValue res)
 			 * Convert document to a node fragment. Make sure that XML
 			 * declaration is removed.
 			 */
-			XMLNodeHeader node;
+			XMLNodeHdr	node;
 			XMLNodeOffset rootOffOrig;
-			XMLElementHeader rootOrig;
+			XMLCompNodeHdr rootOrig;
 			unsigned int sizeOrig,
 						sizeNew;
 			char	   *output,
@@ -1026,7 +1026,7 @@ getXPathExprValue(xmldoc document, bool *notNull, XPathExprOperandValue res)
 			Assert(xpath->targNdKind == XMLNODE_DOC);
 
 			rootOffOrig = XNODE_ROOT_OFFSET(document);
-			rootOrig = (XMLElementHeader) XNODE_ROOT(document);
+			rootOrig = (XMLCompNodeHdr) XNODE_ROOT(document);
 			sizeOrig = VARSIZE(document);
 			sizeNew = (rootOrig->common.flags & XNODE_DOC_XMLDECL) ? sizeOrig - sizeof(XMLDeclData) : sizeOrig;
 			sizeNew += sizeof(XPathValueData);
@@ -1041,14 +1041,14 @@ getXPathExprValue(xmldoc document, bool *notNull, XPathExprOperandValue res)
 			SET_VARSIZE(output, sizeNew);
 			retValue = (xpathval) output;
 
-			node = (XMLNodeHeader) ((char *) VARDATA(output) + rootOffOrig + sizeof(XPathValueData));
+			node = (XMLNodeHdr) ((char *) VARDATA(output) + rootOffOrig + sizeof(XPathValueData));
 			node->kind = XMLNODE_DOC_FRAGMENT;
 			*notNull = true;
 		}
 		else
 		{
 			unsigned int j = res->v.nodeSet.count;
-			XMLNodeHeader firstNode = NULL;
+			XMLNodeHdr	firstNode = NULL;
 
 			if (j > 0)
 			{
@@ -1081,9 +1081,9 @@ getXPathExprValue(xmldoc document, bool *notNull, XPathExprOperandValue res)
 					unsigned int nodeSizeTotal = 0;
 					char		bwidth;
 					char	   *refTarget;
-					XMLNodeHeader node;
+					XMLNodeHdr	node;
 					unsigned int *nodeSizes;
-					XMLElementHeader fragmentHdr;
+					XMLCompNodeHdr fragmentHdr;
 					XMLNodeOffset targetPos;
 
 					nodeSizes = (unsigned int *) palloc(j * sizeof(unsigned int));
@@ -1104,13 +1104,13 @@ getXPathExprValue(xmldoc document, bool *notNull, XPathExprOperandValue res)
 					 * between parent (doc fragment) and its child.
 					 */
 					bwidth = getXMLNodeOffsetByteWidth(nodeSizeTotal);
-					resSize = VARHDRSZ + sizeof(XPathValueData) + nodeSizeTotal + sizeof(XMLElementHeaderData) +
+					resSize = VARHDRSZ + sizeof(XPathValueData) + nodeSizeTotal + sizeof(XMLCompNodeHdrData) +
 						bwidth * j;
 					output = (char *) palloc(resSize);
 					xpval = (XPathValue) VARDATA(output);
 					outTmp = (char *) xpval + sizeof(XPathValueData);
-					fragmentHdr = (XMLElementHeader) (outTmp + nodeSizeTotal);
-					refTarget = (char *) fragmentHdr + sizeof(XMLElementHeaderData);
+					fragmentHdr = (XMLCompNodeHdr) (outTmp + nodeSizeTotal);
+					refTarget = (char *) fragmentHdr + sizeof(XMLCompNodeHdrData);
 					targetPos = 0;
 
 					for (k = 0; k < j; k++)

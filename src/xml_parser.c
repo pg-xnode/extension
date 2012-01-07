@@ -109,8 +109,8 @@ typedef struct XMLNodeInternalData *XMLNodeInternal;
 
 static void processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowed);
 static XMLNodeToken processTag(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowed,
-		   XMLNodeHeader * declAttrs, unsigned short *declAttrNum);
-static void checkXMLDeclaration(XMLNodeHeader * declAttrs, unsigned int attCount, XMLDecl decl);
+		   XMLNodeHdr * declAttrs, unsigned short *declAttrNum);
+static void checkXMLDeclaration(XMLNodeHdr * declAttrs, unsigned int attCount, XMLDecl decl);
 static char *getEncodingSimplified(const char *original);
 static void readName(XMLParserState state, bool whitespace);
 static unsigned int readComment(XMLParserState state);
@@ -135,12 +135,11 @@ static void nextChar(XMLParserState state, bool endAllowed);
 static void ensureSpace(unsigned int size, XMLParserState state);
 static void saveNodeHeader(XMLParserState state, XMLNodeInternal nodeInfo, char flags);
 static void saveContent(XMLParserState state, XMLNodeInternal nodeInfo);
-static void saveReferences(XMLParserState state, XMLNodeInternal nodeInfo, XMLElementHeader element,
+static void saveReferences(XMLParserState state, XMLNodeInternal nodeInfo, XMLCompNodeHdr compNode,
 			   unsigned short int children);
-static char *getContentToLog(char *input, unsigned int offset,
-				unsigned int length, unsigned int maxLen);
+static char *getContentToLog(char *input, unsigned int offset, unsigned int length, unsigned int maxLen);
 static void saveRootNodeHeader(XMLParserState state, XMLNodeKind kind);
-static unsigned int dumpAttributes(XMLElementHeader element, char *input,
+static unsigned int dumpAttributes(XMLCompNodeHdr element, char *input,
 			   char **output, unsigned int *pos);
 static void dumpContentEscaped(XMLNodeKind kind, char **output, char *input, unsigned int inputLen,
 				   unsigned int *outPos);
@@ -346,7 +345,7 @@ xmlnodeParseNode(XMLParserState state)
 			}
 			if (entPredef)
 			{
-				XMLNodeHeader node = (XMLNodeHeader) (state->tree + textStart);
+				XMLNodeHdr	node = (XMLNodeHdr) (state->tree + textStart);
 
 				node->flags |= XNODE_TEXT_SPEC_CHARS;
 				entPredef = false;
@@ -380,7 +379,7 @@ xmlnodeParseNode(XMLParserState state)
 	 */
 	if (entPredef || (state->stack.position == 1 && nodeInfo.entPredef))
 	{
-		XMLNodeHeader node = (XMLNodeHeader) (state->tree + nodeInfo.nodeOut);
+		XMLNodeHdr	node = (XMLNodeHdr) (state->tree + nodeInfo.nodeOut);
 
 		node->flags |= XNODE_TEXT_SPEC_CHARS;
 	}
@@ -603,7 +602,7 @@ processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowe
 		if (strncmp(state->c, declStart + 2, strlen(declStart + 2)) == 0 &&
 			XNODE_WHITESPACE(state->c + strlen(declStart + 2)))
 		{
-			XMLNodeHeader declAttrs[XNODE_XDECL_MAX_ATTRS];
+			XMLNodeHdr	declAttrs[XNODE_XDECL_MAX_ATTRS];
 			unsigned short declAttNum;
 
 			if (!(allowed & TOKEN_XMLDECL))
@@ -624,7 +623,7 @@ processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowe
 			unsigned int cntLen,
 						valLen;
 			XMLNodeOffset piNodeOff;
-			XMLNodeHeader piNode;
+			XMLNodeHdr	piNode;
 
 			if (!(allowed & TOKEN_PI))
 			{
@@ -671,7 +670,7 @@ processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowe
 			nodeInfo->cntLength = cntLen - i;
 			nodeInfo->cntSrc += i - valLen;
 			saveContent(state, nodeInfo);
-			piNode = (XMLNodeHeader) (state->tree + piNodeOff);
+			piNode = (XMLNodeHdr) (state->tree + piNodeOff);
 			piNode->flags = XNODE_PI_HAS_VALUE;
 			return;
 		}
@@ -805,7 +804,7 @@ processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowe
 
 		if (tagType == TOKEN_EMPTY_ELEMENT)
 		{
-			XMLElementHeader element;
+			XMLCompNodeHdr element;
 
 			/*
 			 * In this case 'child' always means 'attribute'
@@ -813,8 +812,8 @@ processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowe
 			nodeInfo->nodeOut = state->dstPos;
 			nodeInfo->tokenType = TOKEN_EMPTY_ELEMENT;
 
-			element = (XMLElementHeader) (state->tree + nodeInfo->nodeOut);
-			saveNodeHeader(state, nodeInfo, XNODE_ELEMENT_EMPTY);
+			element = (XMLCompNodeHdr) (state->tree + nodeInfo->nodeOut);
+			saveNodeHeader(state, nodeInfo, XNODE_EMPTY);
 			element->children = children;
 			saveReferences(state, nodeInfo, element, children);
 			saveContent(state, nodeInfo);
@@ -829,8 +828,8 @@ processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowe
 			unsigned int nlBefore = ++(state->nestLevel);
 			bool		childrenProcessed = false;
 			bool		match;
-			XMLElementHeader element;
-			XMLNodeHeader firstText = NULL;
+			XMLCompNodeHdr element;
+			XMLNodeHdr	firstText = NULL;
 
 			state->saveHeader = true;
 
@@ -853,7 +852,7 @@ processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowe
 				{
 					if (firstText == NULL)
 					{
-						firstText = (XMLNodeHeader) (state->tree + childTag.nodeOut);
+						firstText = (XMLNodeHdr) (state->tree + childTag.nodeOut);
 					}
 					if (childTag.tokenType == TOKEN_REFERENCE && childTag.entPredef)
 					{
@@ -927,8 +926,8 @@ processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowe
 			 */
 			nodeInfo->nodeOut = state->dstPos;
 			nodeInfo->tokenType = childTag.tokenType;
-			element = (XMLElementHeader) (state->tree + nodeInfo->nodeOut);
-			saveNodeHeader(state, nodeInfo, children == attributes ? XNODE_ELEMENT_EMPTY : 0);
+			element = (XMLCompNodeHdr) (state->tree + nodeInfo->nodeOut);
+			saveNodeHeader(state, nodeInfo, children == attributes ? XNODE_EMPTY : 0);
 			element->children = children;
 			if (children > 0)
 			{
@@ -983,7 +982,7 @@ readName(XMLParserState state, bool whitespace)
 
 static XMLNodeToken
 processTag(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowed,
-		   XMLNodeHeader * declAttrs, unsigned short *declAttrNum)
+		   XMLNodeHdr * declAttrs, unsigned short *declAttrNum)
 {
 
 	bool		mustEnd = false;
@@ -1054,7 +1053,7 @@ processTag(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowed,
 
 						for (i = attributes; i > 0; i--)
 						{
-							declAttrs[i - 1] = (XMLNodeHeader) (state->tree + xmlnodePop(&state->stack));
+							declAttrs[i - 1] = (XMLNodeHdr) (state->tree + xmlnodePop(&state->stack));
 						}
 						*declAttrNum = attributes;
 					}
@@ -1088,7 +1087,7 @@ processTag(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowed,
 			{
 				unsigned int nameStart,
 							nameLength;
-				XMLNodeHeader attrNode;
+				XMLNodeHdr	attrNode;
 				XMLNodeOffset *stackItems;
 				unsigned short int i;
 				char	   *attrName,
@@ -1149,11 +1148,11 @@ processTag(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowed,
 						elog(ERROR, "XML declaration may contain %u attributes at maximum.", XNODE_XDECL_MAX_ATTRS);
 					}
 				}
-				ensureSpace(sizeof(XMLNodeHeaderData) + nameLength + 1, state);
-				attrNode = (XMLNodeHeader) (state->tree + state->dstPos);
+				ensureSpace(sizeof(XMLNodeHdrData) + nameLength + 1, state);
+				attrNode = (XMLNodeHdr) (state->tree + state->dstPos);
 				attrNode->kind = XMLNODE_ATTRIBUTE;
 				attrNode->flags = 0;
-				state->dstPos += sizeof(XMLNodeHeaderData);
+				state->dstPos += sizeof(XMLNodeHdrData);
 				attrName = state->tree + state->dstPos;
 				memcpy(attrName, state->inputText + nameStart, nameLength);
 				*(state->tree + state->dstPos + nameLength) = '\0';
@@ -1166,9 +1165,9 @@ processTag(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowed,
 				for (i = 0; i < attributes; i++)
 				{
 					char	   *nameOld;
-					XMLNodeHeader attrOld = (XMLNodeHeader) (state->tree + *stackItems);
+					XMLNodeHdr	attrOld = (XMLNodeHdr) (state->tree + *stackItems);
 
-					nameOld = (char *) attrOld + sizeof(XMLNodeHeaderData);
+					nameOld = (char *) attrOld + sizeof(XMLNodeHdrData);
 					stackItems++;
 					if (strcmp(attrName, nameOld) == 0)
 					{
@@ -1217,7 +1216,7 @@ processTag(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowed,
  * http://www.w3.org/TR/xml/#NT-XMLDecl
  */
 static void
-checkXMLDeclaration(XMLNodeHeader * declAttrs, unsigned int attCount, XMLDecl decl)
+checkXMLDeclaration(XMLNodeHdr * declAttrs, unsigned int attCount, XMLDecl decl)
 {
 	unsigned int i;
 
@@ -1230,7 +1229,7 @@ checkXMLDeclaration(XMLNodeHeader * declAttrs, unsigned int attCount, XMLDecl de
 	{
 		char	   *name,
 				   *value;
-		XMLNodeHeader attr = declAttrs[i];
+		XMLNodeHdr	attr = declAttrs[i];
 
 		name = XNODE_CONTENT(attr);
 		value = name + strlen(name) + 1;
@@ -2341,18 +2340,18 @@ static void
 saveNodeHeader(XMLParserState state, XMLNodeInternal nodeInfo, char flags)
 {
 	unsigned int hdrSize;
-	XMLNodeHeader node;
+	XMLNodeHdr	node;
 
 	if (nodeInfo->tokenType & (TOKEN_ETAG | TOKEN_EMPTY_ELEMENT | TOKEN_XMLDECL))
 	{
-		hdrSize = sizeof(XMLElementHeaderData);
+		hdrSize = sizeof(XMLCompNodeHdrData);
 	}
 	else
 	{
-		hdrSize = sizeof(XMLNodeHeaderData);
+		hdrSize = sizeof(XMLNodeHdrData);
 	}
 	ensureSpace(hdrSize, state);
-	node = (XMLNodeHeader) (state->tree + nodeInfo->nodeOut);
+	node = (XMLNodeHdr) (state->tree + nodeInfo->nodeOut);
 	node->flags = flags;
 	switch (nodeInfo->tokenType)
 	{
@@ -2415,7 +2414,7 @@ saveContent(XMLParserState state, XMLNodeInternal nodeInfo)
 
 static void
 saveReferences(XMLParserState state, XMLNodeInternal nodeInfo,
-			   XMLElementHeader element, unsigned short int children)
+			   XMLCompNodeHdr compNode, unsigned short int children)
 {
 	/*
 	 * Find out the range of reference values and the corresponding storage.
@@ -2426,12 +2425,12 @@ saveReferences(XMLParserState state, XMLNodeInternal nodeInfo,
 	unsigned int refsTotal = children * bwidth;
 	char	   *childOffTarg;
 	unsigned short int i;
-	XMLNodeOffset elementOff = (char *) element - state->tree;
+	XMLNodeOffset elementOff = (char *) compNode - state->tree;
 
 	ensureSpace(refsTotal, state);
-	element = (XMLElementHeader) (state->tree + elementOff);
-	XNODE_SET_REF_BWIDTH(element, bwidth);
-	childOffTarg = XNODE_LAST_REF(element);
+	compNode = (XMLCompNodeHdr) (state->tree + elementOff);
+	XNODE_SET_REF_BWIDTH(compNode, bwidth);
+	childOffTarg = XNODE_LAST_REF(compNode);
 	for (i = 0; i < children; i++)
 	{
 		XMLNodeOffset childOffset = xmlnodePop(&state->stack);
@@ -2442,7 +2441,7 @@ saveReferences(XMLParserState state, XMLNodeInternal nodeInfo,
 		dist = nodeInfo->nodeOut - childOffset;
 
 		writeXMLNodeOffset(dist, &childOffTarg, bwidth, false);
-		childOffTarg = XNODE_PREV_REF(childOffTarg, element);
+		childOffTarg = XNODE_PREV_REF(childOffTarg, compNode);
 	}
 	state->dstPos += refsTotal;
 }
@@ -2510,7 +2509,7 @@ saveRootNodeHeader(XMLParserState state, XMLNodeKind kind)
 {
 	unsigned int i;
 	unsigned int rootHdrSz;
-	XMLElementHeader rootNode;
+	XMLCompNodeHdr rootNode;
 	XMLNodeOffset *rootOffSrc;
 	char	   *rootOffTarg;
 	XMLNodeOffset rootNodeOff = state->dstPos;
@@ -2519,7 +2518,7 @@ saveRootNodeHeader(XMLParserState state, XMLNodeKind kind)
 	unsigned int refsTotal;
 	char		bwidth;
 
-	rootHdrSz = sizeof(XMLElementHeaderData);
+	rootHdrSz = sizeof(XMLCompNodeHdrData);
 
 	/*
 	 * If the initial call to processToken() did not fail, at least one root
@@ -2532,7 +2531,7 @@ saveRootNodeHeader(XMLParserState state, XMLNodeKind kind)
 	refsTotal = childCount * bwidth;
 	ensureSpace(rootHdrSz + refsTotal, state);
 	state->dstPos += rootHdrSz;
-	rootNode = (XMLElementHeader) (state->tree + rootNodeOff);
+	rootNode = (XMLCompNodeHdr) (state->tree + rootNodeOff);
 	rootNode->common.flags = 0;
 	XNODE_SET_REF_BWIDTH(rootNode, bwidth);
 	rootNode->common.kind = kind;
@@ -2561,14 +2560,14 @@ saveRootNodeHeader(XMLParserState state, XMLNodeKind kind)
 		/*
 		 * re-initialize the 'rootNode', in case re-allocation took place
 		 */
-		rootNode = (XMLElementHeader) (state->tree + rootNodeOff);
+		rootNode = (XMLCompNodeHdr) (state->tree + rootNodeOff);
 
 		memcpy(state->tree + state->dstPos, state->decl, declSize);
 		state->dstPos += declSize;
 		rootNode->common.flags |= XNODE_DOC_XMLDECL;
 	}
 	ensureSpace(sizeof(XMLNodeOffset), state);
-	rootNode = (XMLElementHeader) (state->tree + rootNodeOff);
+	rootNode = (XMLCompNodeHdr) (state->tree + rootNodeOff);
 
 	rootNodeOffPtr = (XMLNodeOffset *) (state->tree + state->dstPos);
 	*rootNodeOffPtr = ((char *) rootNode - state->tree);
@@ -2586,7 +2585,7 @@ xmlnodeDumpNode(char *input, XMLNodeOffset nodeOff, char **output, unsigned int 
 	char	   *content;
 	unsigned int cntLen;
 	unsigned int incr;
-	XMLNodeHeader node = (XMLNodeHeader) (input + nodeOff);
+	XMLNodeHdr	node = (XMLNodeHdr) (input + nodeOff);
 
 	switch (node->kind)
 	{
@@ -2598,7 +2597,7 @@ xmlnodeDumpNode(char *input, XMLNodeOffset nodeOff, char **output, unsigned int 
 		case XMLNODE_DOC:
 			if (node->kind == XMLNODE_ELEMENT)
 			{
-				XMLElementHeader element = (XMLElementHeader) node;
+				XMLCompNodeHdr element = (XMLCompNodeHdr) node;
 
 				content = XNODE_ELEMENT_NAME(element);
 				cntLen = strlen(content);
@@ -2620,15 +2619,15 @@ xmlnodeDumpNode(char *input, XMLNodeOffset nodeOff, char **output, unsigned int 
 				*pos += cntLen + 1;
 				/* '<' + Name */
 			}
-			childOffPtr = XNODE_FIRST_REF(((XMLElementHeader) node));
+			childOffPtr = XNODE_FIRST_REF(((XMLCompNodeHdr) node));
 			if (node->kind == XMLNODE_ELEMENT)
 			{
-				XMLElementHeader eh = (XMLElementHeader) node;
+				XMLCompNodeHdr eh = (XMLCompNodeHdr) node;
 
 				i = dumpAttributes(eh, input, output, pos);
 				childOffPtr = childOffPtr + i * XNODE_GET_REF_BWIDTH(eh);
 
-				if (node->flags & XNODE_ELEMENT_EMPTY)
+				if (node->flags & XNODE_EMPTY)
 				{
 					/*
 					 * EmptyElement
@@ -2644,7 +2643,7 @@ xmlnodeDumpNode(char *input, XMLNodeOffset nodeOff, char **output, unsigned int 
 				}
 				else
 				{
-					char	   *lastChild = XNODE_LAST_REF((XMLElementHeader) node);
+					char	   *lastChild = XNODE_LAST_REF((XMLCompNodeHdr) node);
 
 					if (*output != NULL)
 					{
@@ -2682,12 +2681,12 @@ xmlnodeDumpNode(char *input, XMLNodeOffset nodeOff, char **output, unsigned int 
 				/*
 				 * This is a document node.
 				 */
-				char	   *lastChild = XNODE_LAST_REF((XMLElementHeader) node);
+				char	   *lastChild = XNODE_LAST_REF((XMLCompNodeHdr) node);
 
 				while (childOffPtr <= lastChild)
 				{
 					xmlnodeDumpNode(input, nodeOff -
-									readXMLNodeOffset(&childOffPtr, XNODE_GET_REF_BWIDTH((XMLElementHeader) node), true),
+									readXMLNodeOffset(&childOffPtr, XNODE_GET_REF_BWIDTH((XMLCompNodeHdr) node), true),
 									output, pos);
 				}
 			}
@@ -2808,11 +2807,11 @@ xmlnodeDumpNode(char *input, XMLNodeOffset nodeOff, char **output, unsigned int 
 			break;
 
 		case XMLNODE_DOC_FRAGMENT:
-			childOffPtr = XNODE_FIRST_REF(((XMLElementHeader) node));
-			lastChild = XNODE_LAST_REF((XMLElementHeader) node);
+			childOffPtr = XNODE_FIRST_REF(((XMLCompNodeHdr) node));
+			lastChild = XNODE_LAST_REF((XMLCompNodeHdr) node);
 			while (childOffPtr <= lastChild)
 			{
-				XMLElementHeader eh = (XMLElementHeader) node;
+				XMLCompNodeHdr eh = (XMLCompNodeHdr) node;
 
 				xmlnodeDumpNode(input, nodeOff - readXMLNodeOffset(&childOffPtr, XNODE_GET_REF_BWIDTH(eh), true),
 								output, pos);
@@ -2826,7 +2825,7 @@ xmlnodeDumpNode(char *input, XMLNodeOffset nodeOff, char **output, unsigned int 
 }
 
 static unsigned int
-dumpAttributes(XMLElementHeader element, char *input,
+dumpAttributes(XMLCompNodeHdr element, char *input,
 			   char **output, unsigned int *pos)
 {
 
@@ -2836,8 +2835,8 @@ dumpAttributes(XMLElementHeader element, char *input,
 
 	while (childOffPtr <= lastChild)
 	{
-		XMLNodeHeader attrNode = (XMLNodeHeader) ((char *) element
-												  - readXMLNodeOffset(&childOffPtr, XNODE_GET_REF_BWIDTH(element), true));
+		XMLNodeHdr	attrNode = (XMLNodeHdr) ((char *) element
+											 - readXMLNodeOffset(&childOffPtr, XNODE_GET_REF_BWIDTH(element), true));
 		char	   *attrName,
 				   *attrValue;
 		unsigned int attrNameLen,
@@ -2848,7 +2847,7 @@ dumpAttributes(XMLElementHeader element, char *input,
 		{
 			break;
 		}
-		attrName = (char *) attrNode + sizeof(XMLNodeHeaderData);
+		attrName = (char *) attrNode + sizeof(XMLNodeHdrData);
 		attrNameLen = strlen(attrName);
 		if (*output != NULL)
 		{

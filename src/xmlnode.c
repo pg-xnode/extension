@@ -88,7 +88,7 @@ Datum
 xmlnode_kind(PG_FUNCTION_ARGS)
 {
 	xmlnode		nodeRaw = (xmlnode) PG_GETARG_VARLENA_P(0);
-	XMLNodeHeader node = XNODE_ROOT(nodeRaw);
+	XMLNodeHdr	node = XNODE_ROOT(nodeRaw);
 	char	   *kindStr = getXMLNodeKindStr(node->kind);
 
 	PG_RETURN_CSTRING(kindStr);
@@ -137,7 +137,7 @@ PG_FUNCTION_INFO_V1(xmlnode_to_xmldoc);
 Datum
 xmlnode_to_xmldoc(PG_FUNCTION_ARGS)
 {
-	XMLElementHeader rootNode,
+	XMLCompNodeHdr rootNode,
 				rootDoc;
 	unsigned int sizeNew,
 				dataSizeNew;
@@ -169,7 +169,7 @@ xmlnode_to_xmldoc(PG_FUNCTION_ARGS)
 
 	char		bwidth = getXMLNodeOffsetByteWidth(dist);
 
-	rootNode = (XMLElementHeader) (nodeData + rootOffsetOrig);
+	rootNode = (XMLCompNodeHdr) (nodeData + rootOffsetOrig);
 	if (rootNode->common.kind == XMLNODE_ELEMENT)
 	{
 		/*
@@ -178,17 +178,17 @@ xmlnode_to_xmldoc(PG_FUNCTION_ARGS)
 		 */
 		char	   *refTargPtr;
 
-		sizeNew = sizeOrig + sizeof(XMLElementHeaderData) + bwidth;
+		sizeNew = sizeOrig + sizeof(XMLCompNodeHdrData) + bwidth;
 		dataSizeNew = sizeNew - VARHDRSZ;
 		document = (xmldoc) palloc(sizeNew);
 		docData = (char *) VARDATA(document);
 		memcpy(docData, nodeData, rootOffsetNew);
-		rootDoc = (XMLElementHeader) (docData + rootOffsetNew);
+		rootDoc = (XMLCompNodeHdr) (docData + rootOffsetNew);
 		rootDoc->common.kind = XMLNODE_DOC;
 		rootDoc->common.flags = 0;
 		XNODE_SET_REF_BWIDTH(rootDoc, bwidth);
 		rootDoc->children = 1;
-		refTargPtr = (char *) rootDoc + sizeof(XMLElementHeaderData);
+		refTargPtr = (char *) rootDoc + sizeof(XMLCompNodeHdrData);
 		writeXMLNodeOffset(dist, &refTargPtr, bwidth, false);
 		rootOffPtrNew = (XMLNodeOffset *) (docData + dataSizeNew - sizeof(XMLNodeOffset));
 		*rootOffPtrNew = rootOffsetNew;
@@ -200,7 +200,7 @@ xmlnode_to_xmldoc(PG_FUNCTION_ARGS)
 		document = (xmldoc) palloc(sizeOrig);
 		docData = (char *) VARDATA(document);
 		memcpy(document, node, sizeOrig);
-		rootDoc = (XMLElementHeader) (docData + rootOffsetOrig);
+		rootDoc = (XMLCompNodeHdr) (docData + rootOffsetOrig);
 		rootDoc->common.kind = XMLNODE_DOC;
 		SET_VARSIZE(document, sizeOrig);
 	}
@@ -221,7 +221,7 @@ dumpXMLNode(char *data, XMLNodeOffset rootNdOff)
 	unsigned int resultPos;
 	char	   *result,
 			   *resultTmp;
-	XMLNodeHeader root = (XMLNodeHeader) (data + rootNdOff);
+	XMLNodeHdr	root = (XMLNodeHdr) (data + rootNdOff);
 	char	   *declStr = NULL;
 	unsigned short declSize = 0;
 
@@ -230,7 +230,7 @@ dumpXMLNode(char *data, XMLNodeOffset rootNdOff)
 	xmlnodeDumpNode(data, rootNdOff, &resultTmp, &resultPos);
 	if (root->kind == XMLNODE_DOC && (root->flags & XNODE_DOC_XMLDECL))
 	{
-		XMLElementHeader doc = (XMLElementHeader) root;
+		XMLCompNodeHdr doc = (XMLCompNodeHdr) root;
 		XMLDecl		decl = (XMLDecl) XNODE_ELEMENT_NAME(doc);
 
 		declStr = dumpXMLDecl(decl);

@@ -145,8 +145,8 @@ typedef struct XPathNodeSetData
 	bool		isDocument;
 	union
 	{
-		XMLNodeHeader single;
-		XMLNodeHeader *array;
+		XMLNodeHdr	single;
+		XMLNodeHdr *array;
 	}			nodes;
 }	XPathNodeSetData;
 
@@ -397,7 +397,7 @@ extern XPathExprOperator parseXPathExpression(XPathExpression exprCurrent, XPath
  */
 typedef struct XMLScanOneLevelData
 {
-	XMLElementHeader parent;
+	XMLCompNodeHdr parent;
 
 	/* Where the next (multi-byte) reference will be read from. */
 	char	   *nodeRefPtr;
@@ -475,10 +475,10 @@ typedef struct XMLScanContextData
 
 typedef struct XMLScanContextData *XMLScanContext;
 
-extern XPathExpression prepareXPathExpression(XPathExpression exprOrig, XMLElementHeader ctxElem,
+extern XPathExpression prepareXPathExpression(XPathExpression exprOrig, XMLCompNodeHdr ctxElem,
 					   xmldoc document, XPathHeader xpHdr, XMLScan xscan);
 extern void evaluateXPathExpression(XPathExpression expr, XMLScanOneLevel scan,
-						XMLElementHeader element, unsigned short recursionLevel, XPathExprOperandValue result);
+						XMLCompNodeHdr element, unsigned short recursionLevel, XPathExprOperandValue result);
 
 extern void xpathValCastToBool(XPathExprOperandValue valueSrc, XPathExprOperandValue valueDst);
 extern void xpathValCastToNum(XPathExprOperandValue valueSrc, XPathExprOperandValue valueDst);

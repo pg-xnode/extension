@@ -8,22 +8,22 @@ typedef enum XMLNodeAction
 }	XMLNodeAction;
 
 static void adjustTempResult(XMLScan scan, XMLNodeOffset minimum, int shift);
-static char **copyXMLDocFragment(XMLElementHeader fragNode, char **resCursorPtr);
-static void copyXMLNodeOrDocFragment(XMLNodeHeader newNode, unsigned int newNdSize, char **resCursor,
+static char **copyXMLDocFragment(XMLCompNodeHdr fragNode, char **resCursorPtr);
+static void copyXMLNodeOrDocFragment(XMLNodeHdr newNode, unsigned int newNdSize, char **resCursor,
 						 char **newNdRoot, char ***newNdRoots);
-static void copySiblings(XMLElementHeader parent, char **srcCursor, char **resCursor);
+static void copySiblings(XMLCompNodeHdr parent, char **srcCursor, char **resCursor);
 static void propagateChange(XMLScanOneLevel levelScan, int *shift, int *hdrSizeIncr, char *tree, char *resData,
 			 char **srcCursor, char **resCursor, XMLNodeOffset * newRootOff);
-static xmldoc xmlnodeModify(XMLScan xscan, xmldoc doc, XMLNodeAction action, XMLNodeHeader newNode,
+static xmldoc xmlnodeModify(XMLScan xscan, xmldoc doc, XMLNodeAction action, XMLNodeHdr newNode,
 			  XMLAddMode addMode);
-static unsigned int evaluateXPathOperand(XPathExprOperand operand, XMLScanOneLevel scan, XMLElementHeader element,
+static unsigned int evaluateXPathOperand(XPathExprOperand operand, XMLScanOneLevel scan, XMLCompNodeHdr element,
 				unsigned short recursionLevel, XPathExprOperandValue result);
-static void evaluateXPathFunction(XPathExpression funcExpr, XMLScanOneLevel scan, XMLElementHeader element,
+static void evaluateXPathFunction(XPathExpression funcExpr, XMLScanOneLevel scan, XMLCompNodeHdr element,
 				unsigned short recursionLevel, XPathExprOperandValue result);
 static void prepareLiteral(XPathExprOperand operand);
 static void freeNodeSets(XPathExpression expr);
 static void evaluateBinaryOperator(XPathExprOperandValue valueLeft, XPathExprOperandValue valueRight,
-					   XPathExprOperator operator, XPathExprOperandValue result, XMLElementHeader element);
+					   XPathExprOperator operator, XPathExprOperandValue result, XMLCompNodeHdr element);
 static void compareNumValues(XPathExprOperandValue valueLeft, XPathExprOperandValue valueRight,
 				 XPathExprOperator operator, XPathExprOperandValue result);
 static void compareNumbers(double numLeft, double numRight, XPathExprOperator operator,
@@ -31,24 +31,24 @@ static void compareNumbers(double numLeft, double numRight, XPathExprOperator op
 
 static double getNumValue(char *str);
 static bool compareNodeSets(XPathNodeSet ns1, XPathNodeSet ns2, XPathExprOperator operator);
-static bool compareElements(XMLElementHeader elLeft, XMLElementHeader elRight);
-static void initScanForTextNodes(XMLScan xscan, XMLElementHeader root);
+static bool compareElements(XMLCompNodeHdr elLeft, XMLCompNodeHdr elRight);
+static void initScanForTextNodes(XMLScan xscan, XMLCompNodeHdr root);
 static void finalizeScanForTextNodes(XMLScan xscan);
-static bool compareValueToNode(XPathExprOperandValue value, XMLNodeHeader node, XPathExprOperator operator);
+static bool compareValueToNode(XPathExprOperandValue value, XMLNodeHdr node, XPathExprOperator operator);
 static void compareNumToStr(double num, char *numStr, XPathExprOperator operator, XPathExprOperandValue result);
-static char *getElementNodeStr(XMLElementHeader element);
-static char *getNonElementNodeStr(XMLNodeHeader node);
+static char *getElementNodeStr(XMLCompNodeHdr element);
+static char *getNonElementNodeStr(XMLNodeHdr node);
 static bool compareValueToNodeSet(XPathExprOperandValue value, XPathNodeSet ns, XPathExprOperator operator);
-static void substituteAttributes(XPathExpression expr, XMLElementHeader element);
-static void substituteSubpaths(XPathExpression expression, XMLElementHeader element, xmldoc document,
+static void substituteAttributes(XPathExpression expr, XMLCompNodeHdr element);
+static void substituteSubpaths(XPathExpression expression, XMLCompNodeHdr element, xmldoc document,
 				   XPathHeader xpHdr);
 static void substituteFunctions(XPathExpression expression, XMLScan xscan);
-static void copyXMLDecl(XMLElementHeader doc, char **resCursor);
-static bool isNodeUnique(XMLNodeHeader node, XMLScan scan);
-static void rememberResult(XMLNodeHeader node, XMLScan scan);
+static void copyXMLDecl(XMLCompNodeHdr doc, char **resCursor);
+static bool isNodeUnique(XMLNodeHdr node, XMLScan scan);
+static void rememberResult(XMLNodeHdr node, XMLScan scan);
 static void dumpNodeDebug(StringInfo output, char *data, XMLNodeOffset rootOff, unsigned short level);
 static void dumpXScanDebug(StringInfo output, XMLScan scan, char *docData, XMLNodeOffset docRootOff);
-static bool considerSubScan(XPathElement xpEl, XMLNodeHeader node, XMLScan xscan);
+static bool considerSubScan(XPathElement xpEl, XMLNodeHdr node, XMLScan xscan);
 
 void
 xmlnodeContainerInit(XMLNodeContainer cont)
@@ -102,9 +102,9 @@ xmlnodePop(XMLNodeContainer cont)
  * 'node' the node to be examined 'subtree' consider subtree (if exists)?
  */
 unsigned int
-getXMLNodeSize(XMLNodeHeader node, bool subtree)
+getXMLNodeSize(XMLNodeHdr node, bool subtree)
 {
-	XMLNodeHeader childNode;
+	XMLNodeHdr	childNode;
 	unsigned int result = 0;
 	char	   *childOffPtr,
 			   *lastChildOffPtr;
@@ -117,26 +117,26 @@ getXMLNodeSize(XMLNodeHeader node, bool subtree)
 		case XMLNODE_DOC:
 		case XMLNODE_ELEMENT:
 		case XMLNODE_DOC_FRAGMENT:
-			result = sizeof(XMLElementHeaderData);
-			childOffPtr = XNODE_FIRST_REF((XMLElementHeader) node);
-			lastChildOffPtr = XNODE_LAST_REF((XMLElementHeader) node);
+			result = sizeof(XMLCompNodeHdrData);
+			childOffPtr = XNODE_FIRST_REF((XMLCompNodeHdr) node);
+			lastChildOffPtr = XNODE_LAST_REF((XMLCompNodeHdr) node);
 			references = 0;
 			while (childOffPtr <= lastChildOffPtr)
 			{
 				XMLNodeOffset childOff = readXMLNodeOffset(&childOffPtr,
-						XNODE_GET_REF_BWIDTH((XMLElementHeader) node), true);
+						  XNODE_GET_REF_BWIDTH((XMLCompNodeHdr) node), true);
 
-				childNode = (XMLNodeHeader) ((char *) node - childOff);
+				childNode = (XMLNodeHdr) ((char *) node - childOff);
 				if (subtree)
 				{
 					result += getXMLNodeSize(childNode, true);
 				}
 				references++;
 			}
-			result += references * XNODE_GET_REF_BWIDTH((XMLElementHeader) node);
+			result += references * XNODE_GET_REF_BWIDTH((XMLCompNodeHdr) node);
 			if (node->kind == XMLNODE_ELEMENT)
 			{
-				content = XNODE_ELEMENT_NAME((XMLElementHeader) node);
+				content = XNODE_ELEMENT_NAME((XMLCompNodeHdr) node);
 				result += strlen(content) + 1;
 			}
 			else if (node->kind == XMLNODE_DOC)
@@ -153,13 +153,13 @@ getXMLNodeSize(XMLNodeHeader node, bool subtree)
 		case XMLNODE_CDATA:
 		case XMLNODE_PI:
 		case XMLNODE_TEXT:
-			result = sizeof(XMLNodeHeaderData);
+			result = sizeof(XMLNodeHdrData);
 			content = (char *) node + result;
 			result += strlen(content) + 1;
 			return result;
 
 		case XMLNODE_ATTRIBUTE:
-			result = sizeof(XMLNodeHeaderData);
+			result = sizeof(XMLNodeHdrData);
 			content = (char *) node + result;
 			attNameLen = strlen(content) + 1;
 			result += attNameLen;
@@ -230,7 +230,7 @@ getXMLNodeKindStr(XMLNodeKind k)
  * is located. If 'xmlnode' is true, VARHDRSZ is not included in this offset.
  */
 char *
-copyXMLNode(XMLNodeHeader node, char *target, bool xmlnode, XMLNodeOffset * root)
+copyXMLNode(XMLNodeHdr node, char *target, bool xmlnode, XMLNodeOffset * root)
 {
 	char	   *content = NULL;
 	unsigned int cntLen = 0;
@@ -245,9 +245,9 @@ copyXMLNode(XMLNodeHeader node, char *target, bool xmlnode, XMLNodeOffset * root
 	start = NULL;
 	if (node->kind == XMLNODE_ELEMENT || node->kind == XMLNODE_DOC || node->kind == XMLNODE_DOC_FRAGMENT)
 	{
-		XMLElementHeader element = (XMLElementHeader) node;
+		XMLCompNodeHdr compNode = (XMLCompNodeHdr) node;
 
-		content = XNODE_ELEMENT_NAME(element);
+		content = XNODE_ELEMENT_NAME(compNode);
 		switch (node->kind)
 		{
 			case XMLNODE_ELEMENT:
@@ -269,11 +269,11 @@ copyXMLNode(XMLNodeHeader node, char *target, bool xmlnode, XMLNodeOffset * root
 				cntLen = 0;
 				break;
 		}
-		start = (char *) getFirstXMLNodeLeaf(element);
+		start = (char *) getFirstXMLNodeLeaf(compNode);
 	}
 	else if (node->kind == XMLNODE_ATTRIBUTE || node->kind == XMLNODE_PI)
 	{
-		content = (char *) node + sizeof(XMLNodeHeaderData);
+		content = (char *) node + sizeof(XMLNodeHdrData);
 
 		/*
 		 * Both name and value need to be taken into account
@@ -296,7 +296,7 @@ copyXMLNode(XMLNodeHeader node, char *target, bool xmlnode, XMLNodeOffset * root
 			case XMLNODE_CDATA:
 			case XMLNODE_PI:
 			case XMLNODE_TEXT:
-				content = (char *) node + sizeof(XMLNodeHeaderData);
+				content = (char *) node + sizeof(XMLNodeHdrData);
 				cntLen = strlen(content) + 1;
 				break;
 
@@ -337,30 +337,30 @@ copyXMLNode(XMLNodeHeader node, char *target, bool xmlnode, XMLNodeOffset * root
 
 /*
  * Returns first leaf node of a subtree that starts with 'elh'. This is tight
- * to the parser behaviour: children are stored to lower addresses than
+ * to the parser behaviour: children are stored at lower addresses than
  * parents. First, the element attributes are stored, then other child nodes
  * (the same logic is applied on them recursively) and finally the element
  * itself.
  */
 
-XMLNodeHeader
-getFirstXMLNodeLeaf(XMLElementHeader elh)
+XMLNodeHdr
+getFirstXMLNodeLeaf(XMLCompNodeHdr compNode)
 {
 
-	if (!XNODE_HAS_CHILDREN(elh))
+	if (!XNODE_HAS_CHILDREN(compNode))
 	{
-		return (XMLNodeHeader) elh;
+		return (XMLNodeHdr) compNode;
 	}
 	else
 	{
-		char	   *firstRef = XNODE_FIRST_REF(elh);
-		XMLNodeHeader childNode = (XMLNodeHeader) ((char *) (elh) - readXMLNodeOffset(&firstRef,
-										  XNODE_GET_REF_BWIDTH(elh), false));
+		char	   *firstRef = XNODE_FIRST_REF(compNode);
+		XMLNodeHdr	childNode = (XMLNodeHdr) ((char *) (compNode) - readXMLNodeOffset(&firstRef,
+									 XNODE_GET_REF_BWIDTH(compNode), false));
 
 		if (childNode->kind == XMLNODE_ELEMENT || childNode->kind == XMLNODE_DOC ||
 			childNode->kind == XMLNODE_DOC_FRAGMENT)
 		{
-			return getFirstXMLNodeLeaf((XMLElementHeader) childNode);
+			return getFirstXMLNodeLeaf((XMLCompNodeHdr) childNode);
 		}
 		else
 		{
@@ -384,7 +384,7 @@ getFirstXMLNodeLeaf(XMLElementHeader elh)
  * one level lower. Typically, this is document node.
  */
 void
-initXMLScan(XMLScan xscan, XMLScan parent, XPath xpath, XPathHeader xpHdr, XMLElementHeader scanRoot,
+initXMLScan(XMLScan xscan, XMLScan parent, XPath xpath, XPathHeader xpHdr, XMLCompNodeHdr scanRoot,
 			xmldoc document, bool checkUniqueness)
 {
 	XMLScanOneLevel firstLevel;
@@ -474,7 +474,7 @@ finalizeXMLScan(XMLScan xscan)
  * Returns a pointer to the matching node. This points to inside 'xscan->document' and therefore
  * must not be pfree'd.
  */
-XMLNodeHeader
+XMLNodeHdr
 getNextXMLNode(XMLScan xscan, bool removed)
 {
 	if (xscan->state == NULL)
@@ -489,8 +489,8 @@ getNextXMLNode(XMLScan xscan, bool removed)
 		{
 			XPathElement xpEl;
 			XPath		xp = xscan->xpath;
-			XMLElementHeader eh = scanLevel->parent;
-			XMLNodeHeader currentNode = NULL;
+			XMLCompNodeHdr eh = scanLevel->parent;
+			XMLNodeHdr	currentNode = NULL;
 
 			/*
 			 * Indicates later in the loop whether sub-scan has just finished.
@@ -519,7 +519,7 @@ getNextXMLNode(XMLScan xscan, bool removed)
 
 			if (xscan->subScan != NULL)
 			{
-				XMLNodeHeader subNode = getNextXMLNode(xscan->subScan, removed);
+				XMLNodeHdr	subNode = getNextXMLNode(xscan->subScan, removed);
 
 				/*
 				 * isNodeUnique() is not used here on return because the check
@@ -542,8 +542,8 @@ getNextXMLNode(XMLScan xscan, bool removed)
 					subScanDone = true;
 				}
 			}
-			currentNode = (XMLNodeHeader) ((char *) eh -
-										   readXMLNodeOffset(&scanLevel->nodeRefPtr, XNODE_GET_REF_BWIDTH(eh), false));
+			currentNode = (XMLNodeHdr) ((char *) eh -
+										readXMLNodeOffset(&scanLevel->nodeRefPtr, XNODE_GET_REF_BWIDTH(eh), false));
 
 			if (xscan->skip)
 			{
@@ -597,7 +597,7 @@ getNextXMLNode(XMLScan xscan, bool removed)
 			 */
 			if (currentNode->kind == XMLNODE_ELEMENT)
 			{
-				XMLElementHeader currentElement = (XMLElementHeader) currentNode;
+				XMLCompNodeHdr currentElement = (XMLCompNodeHdr) currentNode;
 				char	   *childFirst = XNODE_FIRST_REF(currentElement);
 				char	   *name = XNODE_ELEMENT_NAME(currentElement);
 				char	   *nameTest = xpEl->name;
@@ -631,7 +631,7 @@ getNextXMLNode(XMLScan xscan, bool removed)
 					}
 					if (!passed)
 					{
-						XMLElementHeader eh = scanLevel->parent;
+						XMLCompNodeHdr eh = scanLevel->parent;
 
 						scanLevel->nodeRefPtr = XNODE_NEXT_REF(scanLevel->nodeRefPtr, eh);
 						scanLevel->siblingsLeft--;
@@ -644,11 +644,11 @@ getNextXMLNode(XMLScan xscan, bool removed)
 						 * next level are attributes and attribute is not
 						 * target of the xpath
 						 */
-						if ((currentElement->common.flags & XNODE_ELEMENT_EMPTY) &&
+						if ((currentElement->common.flags & XNODE_EMPTY) &&
 							xscan->xpath->targNdKind != XMLNODE_ATTRIBUTE)
 						{
 
-							XMLElementHeader eh = scanLevel->parent;
+							XMLCompNodeHdr eh = scanLevel->parent;
 
 							scanLevel->nodeRefPtr = XNODE_NEXT_REF(scanLevel->nodeRefPtr, eh);
 							scanLevel->siblingsLeft--;
@@ -734,7 +734,7 @@ getNextXMLNode(XMLScan xscan, bool removed)
 						}
 						else
 						{
-							char	   *attrName = (char *) currentNode + sizeof(XMLNodeHeaderData);
+							char	   *attrName = (char *) currentNode + sizeof(XMLNodeHdrData);
 							char	   *attrNameTest = xpEl->name;
 
 							if (strcmp(attrNameTest, attrName) == 0)
@@ -806,13 +806,13 @@ getNextXMLNode(XMLScan xscan, bool removed)
  * Well-formedness of the resulting documents needs to be checked.
  */
 xmldoc
-xmlnodeAdd(xmldoc doc, XMLScan xscan, XMLNodeHeader targNode, XMLNodeHeader newNode,
+xmlnodeAdd(xmldoc doc, XMLScan xscan, XMLNodeHdr targNode, XMLNodeHdr newNode,
 		   XMLAddMode mode, bool freeSrc)
 {
 
 	char	   *inputTree = (char *) VARDATA(doc);
 	XMLNodeOffset *docRootOff = NULL;
-	XMLElementHeader docNodeSrc = (XMLElementHeader) XNODE_ROOT(doc);
+	XMLCompNodeHdr docNodeSrc = (XMLCompNodeHdr) XNODE_ROOT(doc);
 	XMLScanOneLevel levelScan;
 	unsigned short int i;
 	unsigned int extraSpace = 0;
@@ -826,7 +826,7 @@ xmlnodeAdd(xmldoc doc, XMLScan xscan, XMLNodeHeader targNode, XMLNodeHeader newN
 	XMLNodeOffset srcIncr;
 	char	   *srcCursor = inputTree;
 	char	   *resCursor = NULL;
-	XMLElementHeader levelNode,
+	XMLCompNodeHdr levelNode,
 				parentSrc,
 				parentTarg;
 	unsigned char bwidthSrc,
@@ -871,7 +871,7 @@ xmlnodeAdd(xmldoc doc, XMLScan xscan, XMLNodeHeader targNode, XMLNodeHeader newN
 	}
 	if (newNode->kind == XMLNODE_DOC_FRAGMENT)
 	{
-		Assert(((XMLElementHeader) newNode)->children > 0);
+		Assert(((XMLCompNodeHdr) newNode)->children > 0);
 	}
 
 	/*
@@ -912,7 +912,7 @@ xmlnodeAdd(xmldoc doc, XMLScan xscan, XMLNodeHeader targNode, XMLNodeHeader newN
 		 * Ignore the fragment node itself - only its children will be added.
 		 */
 		newNdSize -= getXMLNodeSize(newNode, false);
-		extraSpace += newNdSize + ((XMLElementHeader) newNode)->children * sizeof(XMLNodeOffset);
+		extraSpace += newNdSize + ((XMLCompNodeHdr) newNode)->children * sizeof(XMLNodeOffset);
 	}
 	else
 	{
@@ -936,7 +936,7 @@ xmlnodeAdd(xmldoc doc, XMLScan xscan, XMLNodeHeader targNode, XMLNodeHeader newN
 		 */
 		if (targNode->kind == XMLNODE_ELEMENT)
 		{
-			srcIncr = (char *) getFirstXMLNodeLeaf((XMLElementHeader) targNode) - inputTree;
+			srcIncr = (char *) getFirstXMLNodeLeaf((XMLCompNodeHdr) targNode) - inputTree;
 		}
 		else
 		{
@@ -1028,10 +1028,10 @@ xmlnodeAdd(xmldoc doc, XMLScan xscan, XMLNodeHeader targNode, XMLNodeHeader newN
 	}
 	else if (mode == XMLADD_INTO)
 	{
-		XMLElementHeader targElement = (XMLElementHeader) targNode;
+		XMLCompNodeHdr targElement = (XMLCompNodeHdr) targNode;
 		char	   *refSrcPtr;
 		char	   *refDstPtr;
-		XMLElementHeader targUpdated;
+		XMLCompNodeHdr targUpdated;
 		unsigned int cntLen;
 		char		bws,
 					bwt;
@@ -1068,15 +1068,15 @@ xmlnodeAdd(xmldoc doc, XMLScan xscan, XMLNodeHeader targNode, XMLNodeHeader newN
 		/*
 		 * Copy the target node header now
 		 */
-		memcpy(resCursor, srcCursor, srcIncr = sizeof(XMLElementHeaderData));
-		targUpdated = (XMLElementHeader) resCursor;
+		memcpy(resCursor, srcCursor, srcIncr = sizeof(XMLCompNodeHdrData));
+		targUpdated = (XMLCompNodeHdr) resCursor;
 		refDstPtr = XNODE_FIRST_REF(targUpdated);
 
 		/* Copy references for the existing nested nodes. */
 		if (targElement->children > 0)
 		{
 			unsigned short i;
-			XMLNodeHeader last;
+			XMLNodeHdr	last;
 
 			refSrcPtr = XNODE_FIRST_REF(targElement);
 			bws = XNODE_GET_REF_BWIDTH(targElement);
@@ -1088,23 +1088,23 @@ xmlnodeAdd(xmldoc doc, XMLScan xscan, XMLNodeHeader targNode, XMLNodeHeader newN
 				refSrc = readXMLNodeOffset(&refSrcPtr, bws, true);
 				writeXMLNodeOffset(refSrc + newNdSize, &refDstPtr, bwt, true);
 			}
-			last = (XMLNodeHeader) ((char *) targElement - refSrc);
+			last = (XMLNodeHdr) ((char *) targElement - refSrc);
 			if (last->kind == XMLNODE_ATTRIBUTE)
 			{
-				targUpdated->common.flags &= ~XNODE_ELEMENT_EMPTY;
+				targUpdated->common.flags &= ~XNODE_EMPTY;
 			}
 		}
 		else
 		{
 			bws = 0;
-			targUpdated->common.flags &= ~XNODE_ELEMENT_EMPTY;
+			targUpdated->common.flags &= ~XNODE_EMPTY;
 			bwt = getXMLNodeOffsetByteWidth(newNdSize);
 		}
 
 		/* Add reference(s) for the new node */
 		if (newNode->kind == XMLNODE_DOC_FRAGMENT)
 		{
-			XMLElementHeader frag = (XMLElementHeader) newNode;
+			XMLCompNodeHdr frag = (XMLCompNodeHdr) newNode;
 			unsigned short i;
 
 			refSrcPtr = XNODE_FIRST_REF(frag);
@@ -1144,7 +1144,7 @@ xmlnodeAdd(xmldoc doc, XMLScan xscan, XMLNodeHeader targNode, XMLNodeHeader newN
 			XNODE_SET_REF_BWIDTH(targUpdated, bwt);
 		}
 
-		intoHdrSzIncr = getXMLNodeSize((XMLNodeHeader) targUpdated, false) - getXMLNodeSize(targNode, false);
+		intoHdrSzIncr = getXMLNodeSize((XMLNodeHdr) targUpdated, false) - getXMLNodeSize(targNode, false);
 		if (intoHdrSzIncr > 0)
 		{
 			/*
@@ -1180,8 +1180,8 @@ xmlnodeAdd(xmldoc doc, XMLScan xscan, XMLNodeHeader targNode, XMLNodeHeader newN
 	 * Copy header of the new node's parent and (adjusted) references
 	 */
 	newRootOff = resCursor - resData;
-	memcpy(resCursor, srcCursor, srcIncr = sizeof(XMLElementHeaderData));
-	parentTarg = (XMLElementHeader) resCursor;
+	memcpy(resCursor, srcCursor, srcIncr = sizeof(XMLCompNodeHdrData));
+	parentTarg = (XMLCompNodeHdr) resCursor;
 	srcCursor += srcIncr;
 	resCursor += srcIncr;
 
@@ -1243,7 +1243,7 @@ xmlnodeAdd(xmldoc doc, XMLScan xscan, XMLNodeHeader targNode, XMLNodeHeader newN
 			}
 			if (newNode->kind == XMLNODE_DOC_FRAGMENT)
 			{
-				parentTarg->children += ((XMLElementHeader) newNode)->children - 1;
+				parentTarg->children += ((XMLCompNodeHdr) newNode)->children - 1;
 			}
 		}
 
@@ -1265,7 +1265,7 @@ xmlnodeAdd(xmldoc doc, XMLScan xscan, XMLNodeHeader targNode, XMLNodeHeader newN
 				{
 					if (newNode->kind == XMLNODE_DOC_FRAGMENT)
 					{
-						XMLElementHeader fragNode = (XMLElementHeader) newNode;
+						XMLCompNodeHdr fragNode = (XMLCompNodeHdr) newNode;
 						unsigned short int newNdIndLast = newNdIndex + fragNode->children - 1;
 
 						if (i >= newNdIndex && i <= newNdIndLast)
@@ -1354,7 +1354,7 @@ xmlnodeAdd(xmldoc doc, XMLScan xscan, XMLNodeHeader targNode, XMLNodeHeader newN
 		{
 			if (newNode->kind == XMLNODE_DOC_FRAGMENT)
 			{
-				XMLElementHeader fragNode = (XMLElementHeader) newNode;
+				XMLCompNodeHdr fragNode = (XMLCompNodeHdr) newNode;
 				unsigned short i;
 
 				refTarg = (XMLNodeOffset) ((char *) parentTarg - newNdRoots[0]);
@@ -1411,12 +1411,12 @@ xmlnodeAdd(xmldoc doc, XMLScan xscan, XMLNodeHeader targNode, XMLNodeHeader newN
 	if (mode == XMLADD_AFTER || mode == XMLADD_REPLACE)
 	{
 		lastInd = (newNode->kind != XMLNODE_DOC_FRAGMENT) ? newNdIndex :
-			newNdIndex + ((XMLElementHeader) newNode)->children - 1;
+			newNdIndex + ((XMLCompNodeHdr) newNode)->children - 1;
 	}
 	else if (mode == XMLADD_BEFORE)
 	{
 		lastInd = newNdIndex + ((newNode->kind != XMLNODE_DOC_FRAGMENT) ? 1 :
-								((XMLElementHeader) newNode)->children);
+								((XMLCompNodeHdr) newNode)->children);
 	}
 
 
@@ -1458,11 +1458,11 @@ xmlnodeAdd(xmldoc doc, XMLScan xscan, XMLNodeHeader targNode, XMLNodeHeader newN
 	adjustTempResult(xscan, (XMLNodeOffset) (srcCursor - inputTree + shift), hdrSizeIncr);
 	shift += hdrSizeIncr;
 
-	if (newNode->kind != XMLNODE_ATTRIBUTE && (parentTarg->common.flags & XNODE_ELEMENT_EMPTY) &&
+	if (newNode->kind != XMLNODE_ATTRIBUTE && (parentTarg->common.flags & XNODE_EMPTY) &&
 		mode != XMLADD_REPLACE)
 	{
 		/* The element is no longer empty */
-		unsigned char resetMask = ~XNODE_ELEMENT_EMPTY;
+		unsigned char resetMask = ~XNODE_EMPTY;
 
 		parentTarg->common.flags &= resetMask;
 	}
@@ -1491,11 +1491,11 @@ xmlnodeAdd(xmldoc doc, XMLScan xscan, XMLNodeHeader targNode, XMLNodeHeader newN
 }
 
 xmldoc
-xmlnodeRemove(xmldoc doc, XMLScan xscan, XMLNodeHeader targNode, bool freeSrc)
+xmlnodeRemove(xmldoc doc, XMLScan xscan, XMLNodeHdr targNode, bool freeSrc)
 {
 	char	   *inputTree = (char *) VARDATA(doc);
 	XMLNodeOffset *docRootOff = NULL;
-	XMLElementHeader docNodeSrc = (XMLElementHeader) XNODE_ROOT(doc);
+	XMLCompNodeHdr docNodeSrc = (XMLCompNodeHdr) XNODE_ROOT(doc);
 	XMLScanOneLevel levelScan;
 	unsigned int targNdSize;
 	unsigned int resultSizeMax;
@@ -1505,7 +1505,7 @@ xmlnodeRemove(xmldoc doc, XMLScan xscan, XMLNodeHeader targNode, bool freeSrc)
 	XMLNodeOffset srcIncr;
 	char	   *srcCursor = inputTree;
 	char	   *resCursor = NULL;
-	XMLElementHeader parentSrc,
+	XMLCompNodeHdr parentSrc,
 				parentTarg;
 	unsigned char bwidthSrc,
 				bwidthTarg;
@@ -1538,7 +1538,7 @@ xmlnodeRemove(xmldoc doc, XMLScan xscan, XMLNodeHeader targNode, bool freeSrc)
 	 */
 	if (targNode->kind == XMLNODE_ELEMENT)
 	{
-		srcIncr = (char *) getFirstXMLNodeLeaf((XMLElementHeader) targNode) - inputTree;
+		srcIncr = (char *) getFirstXMLNodeLeaf((XMLCompNodeHdr) targNode) - inputTree;
 	}
 	else
 	{
@@ -1560,8 +1560,8 @@ xmlnodeRemove(xmldoc doc, XMLScan xscan, XMLNodeHeader targNode, bool freeSrc)
 		copySiblings(parentSrc, &srcCursor, &resCursor);
 	}
 	newRootOff = resCursor - resData;
-	memcpy(resCursor, srcCursor, srcIncr = sizeof(XMLElementHeaderData));
-	parentTarg = (XMLElementHeader) resCursor;
+	memcpy(resCursor, srcCursor, srcIncr = sizeof(XMLCompNodeHdrData));
+	parentTarg = (XMLCompNodeHdr) resCursor;
 	srcCursor += srcIncr;
 	resCursor += srcIncr;
 	parentTarg->children = parentSrc->children - 1;
@@ -1655,7 +1655,7 @@ xmlnodeRemove(xmldoc doc, XMLScan xscan, XMLNodeHeader targNode, bool freeSrc)
 		/*
 		 * ... does it become empty element?
 		 */
-		if (!(parentSrc->common.flags & XNODE_ELEMENT_EMPTY))
+		if (!(parentSrc->common.flags & XNODE_EMPTY))
 		{
 			bool		empty = false;
 
@@ -1663,7 +1663,7 @@ xmlnodeRemove(xmldoc doc, XMLScan xscan, XMLNodeHeader targNode, bool freeSrc)
 			{
 				char	   *refPtr = XNODE_LAST_REF(parentTarg);
 				XMLNodeOffset lastRefOff = readXMLNodeOffset(&refPtr, XNODE_GET_REF_BWIDTH(parentTarg), false);
-				XMLNodeHeader lastChild = (XMLNodeHeader) ((char *) parentTarg - lastRefOff);
+				XMLNodeHdr	lastChild = (XMLNodeHdr) ((char *) parentTarg - lastRefOff);
 
 				if (lastChild->kind == XMLNODE_ATTRIBUTE)
 				{
@@ -1676,7 +1676,7 @@ xmlnodeRemove(xmldoc doc, XMLScan xscan, XMLNodeHeader targNode, bool freeSrc)
 			}
 			if (empty)
 			{
-				parentTarg->common.flags |= XNODE_ELEMENT_EMPTY;
+				parentTarg->common.flags |= XNODE_EMPTY;
 			}
 		}
 	}
@@ -1696,7 +1696,7 @@ xmlnodeRemove(xmldoc doc, XMLScan xscan, XMLNodeHeader targNode, bool freeSrc)
 }
 
 void
-checkXMLWellFormedness(XMLElementHeader root)
+checkXMLWellFormedness(XMLCompNodeHdr root)
 {
 	unsigned short int i,
 				elIndex,
@@ -1714,7 +1714,7 @@ checkXMLWellFormedness(XMLElementHeader root)
 	for (i = 0; i < root->children; i++)
 	{
 		XMLNodeOffset ref = readXMLNodeOffset(&refStream, XNODE_GET_REF_BWIDTH(root), true);
-		XMLNodeHeader currNode = (XMLNodeHeader) ((char *) root - ref);
+		XMLNodeHdr	currNode = (XMLNodeHdr) ((char *) root - ref);
 
 		if (currNode->kind == XMLNODE_ELEMENT)
 		{
@@ -1812,10 +1812,10 @@ xmlnode_add(PG_FUNCTION_ARGS)
 	xmlnode		newNdVar = (xmlnode) PG_GETARG_POINTER(2);
 	BpChar	   *modeVar = PG_GETARG_BPCHAR_PP(3);
 	char		mode = *(VARDATA_ANY(modeVar));
-	XMLNodeHeader newNode;
+	XMLNodeHdr	newNode;
 	xmldoc		result;
 	XMLScanData xscan;
-	XMLElementHeader docRoot;
+	XMLCompNodeHdr docRoot;
 
 	if (xpath->relative)
 	{
@@ -1830,7 +1830,7 @@ xmlnode_add(PG_FUNCTION_ARGS)
 	{
 		elog(ERROR, "invalid node type to add: %s", getXMLNodeKindStr(newNode->kind));
 	}
-	docRoot = (XMLElementHeader) XNODE_ROOT(doc);
+	docRoot = (XMLCompNodeHdr) XNODE_ROOT(doc);
 	initXMLScan(&xscan, NULL, xpath, xpHdr, docRoot, doc, xpath->descendants > 1);
 	result = xmlnodeModify(&xscan, doc, XMLNODE_ACTION_ADD, newNode, XMLADD_MODE(mode));
 	finalizeXMLScan(&xscan);
@@ -1849,7 +1849,7 @@ xmlnode_remove(PG_FUNCTION_ARGS)
 	XPath		xpath = getSingleXPath(exprBase, xpHdr);
 	xmldoc		result;
 	XMLScanData xscan;
-	XMLElementHeader docRoot;
+	XMLCompNodeHdr docRoot;
 
 	if (xpath->relative)
 	{
@@ -1859,7 +1859,7 @@ xmlnode_remove(PG_FUNCTION_ARGS)
 	{
 		elog(ERROR, "invalid target path");
 	}
-	docRoot = (XMLElementHeader) XNODE_ROOT(doc);
+	docRoot = (XMLCompNodeHdr) XNODE_ROOT(doc);
 	initXMLScan(&xscan, NULL, xpath, xpHdr, docRoot, doc, xpath->descendants > 1);
 	result = xmlnodeModify(&xscan, doc, XMLNODE_ACTION_REMOVE, NULL, XMLADD_INVALID);
 
@@ -1896,7 +1896,7 @@ adjustTempResult(XMLScan scan, XMLNodeOffset minimum, int shift)
 }
 
 static char **
-copyXMLDocFragment(XMLElementHeader fragNode, char **resCursorPtr)
+copyXMLDocFragment(XMLCompNodeHdr fragNode, char **resCursorPtr)
 {
 	char	   *refs = XNODE_FIRST_REF(fragNode);
 	char		bwidth = XNODE_GET_REF_BWIDTH(fragNode);
@@ -1912,7 +1912,7 @@ copyXMLDocFragment(XMLElementHeader fragNode, char **resCursorPtr)
 	newNdRoots = (char **) palloc(fragNode->children * sizeof(char *));
 	for (i = 0; i < fragNode->children; i++)
 	{
-		XMLNodeHeader newNdPart = (XMLNodeHeader) ((char *) fragNode - readXMLNodeOffset(&refs, bwidth, true));
+		XMLNodeHdr	newNdPart = (XMLNodeHdr) ((char *) fragNode - readXMLNodeOffset(&refs, bwidth, true));
 		XMLNodeOffset newNdPartOff;
 
 		copyXMLNode(newNdPart, resCursor, false, &newNdPartOff);
@@ -1925,7 +1925,7 @@ copyXMLDocFragment(XMLElementHeader fragNode, char **resCursorPtr)
 
 
 static void
-copyXMLNodeOrDocFragment(XMLNodeHeader newNode, unsigned int newNdSize, char **resCursor,
+copyXMLNodeOrDocFragment(XMLNodeHdr newNode, unsigned int newNdSize, char **resCursor,
 						 char **newNdRoot, char ***newNdRoots)
 {
 
@@ -1933,7 +1933,7 @@ copyXMLNodeOrDocFragment(XMLNodeHeader newNode, unsigned int newNdSize, char **r
 
 	if (newNode->kind == XMLNODE_DOC_FRAGMENT)
 	{
-		*newNdRoots = copyXMLDocFragment((XMLElementHeader) newNode, resCursor);
+		*newNdRoots = copyXMLDocFragment((XMLCompNodeHdr) newNode, resCursor);
 	}
 	else
 	{
@@ -1945,12 +1945,12 @@ copyXMLNodeOrDocFragment(XMLNodeHeader newNode, unsigned int newNdSize, char **r
 
 
 static void
-copySiblings(XMLElementHeader parent, char **srcCursor, char **resCursor)
+copySiblings(XMLCompNodeHdr parent, char **srcCursor, char **resCursor)
 {
 	char	   *refPtr = XNODE_LAST_REF(parent);
 	XMLNodeOffset lastSblOffRel = readXMLNodeOffset(&refPtr, XNODE_GET_REF_BWIDTH(parent), false);
-	XMLElementHeader lastSbl = (XMLElementHeader) ((char *) parent - lastSblOffRel);
-	unsigned int incr = (char *) lastSbl + getXMLNodeSize((XMLNodeHeader) lastSbl, false) - *srcCursor;
+	XMLCompNodeHdr lastSbl = (XMLCompNodeHdr) ((char *) parent - lastSblOffRel);
+	unsigned int incr = (char *) lastSbl + getXMLNodeSize((XMLNodeHdr) lastSbl, false) - *srcCursor;
 
 	memcpy(*resCursor, *srcCursor, incr);
 	*srcCursor += incr;
@@ -1974,7 +1974,7 @@ propagateChange(XMLScanOneLevel levelScan, int *shift, int *hdrSizeIncr,
 					gap,
 					bwidthSrc,
 					bwidthTarg;
-		XMLElementHeader parentSrc,
+		XMLCompNodeHdr parentSrc,
 					parentTarg;
 		XMLNodeOffset refSrc;
 		unsigned int srcIncr;
@@ -1995,10 +1995,10 @@ propagateChange(XMLScanOneLevel levelScan, int *shift, int *hdrSizeIncr,
 		}
 		*srcCursor = (char *) parentSrc;
 		parentSrcOff = (char *) parentSrc - tree;
-		parentTarg = (XMLElementHeader) (resData + parentSrcOff + *shift);
+		parentTarg = (XMLCompNodeHdr) (resData + parentSrcOff + *shift);
 		*resCursor = (char *) parentTarg;
 		*newRootOff = (char *) parentTarg - resData;
-		memcpy(*resCursor, *srcCursor, srcIncr = sizeof(XMLElementHeaderData));
+		memcpy(*resCursor, *srcCursor, srcIncr = sizeof(XMLCompNodeHdrData));
 		*srcCursor += srcIncr;
 		*resCursor += srcIncr;
 
@@ -2076,11 +2076,11 @@ propagateChange(XMLScanOneLevel levelScan, int *shift, int *hdrSizeIncr,
 }
 
 static xmldoc
-xmlnodeModify(XMLScan xscan, xmldoc doc, XMLNodeAction action, XMLNodeHeader newNode,
+xmlnodeModify(XMLScan xscan, xmldoc doc, XMLNodeAction action, XMLNodeHdr newNode,
 			  XMLAddMode addMode)
 {
 
-	XMLNodeHeader targNode = getNextXMLNode(xscan, false);
+	XMLNodeHdr	targNode = getNextXMLNode(xscan, false);
 	xmldoc		result;
 
 	if (targNode != NULL)
@@ -2115,7 +2115,7 @@ xmlnodeModify(XMLScan xscan, xmldoc doc, XMLNodeAction action, XMLNodeHeader new
 			{
 				XMLNodeOffset *rootOff = (XMLNodeOffset *) ((char *) result + VARSIZE(result) -
 													  sizeof(XMLNodeOffset));
-				XMLElementHeader root = (XMLElementHeader) ((char *) VARDATA(result) + *rootOff);
+				XMLCompNodeHdr root = (XMLCompNodeHdr) ((char *) VARDATA(result) + *rootOff);
 
 				checkXMLWellFormedness(root);
 			}
@@ -2142,7 +2142,7 @@ xmlnodeModify(XMLScan xscan, xmldoc doc, XMLNodeAction action, XMLNodeHeader new
 		XMLNodeOffset *docRootOff = (XMLNodeOffset *) ((char *) doc + VARSIZE(doc) -
 													   sizeof(XMLNodeOffset));
 		char	   *inputTree = (char *) VARDATA(doc);
-		XMLNodeHeader srcNode = (XMLNodeHeader) (inputTree + *docRootOff);
+		XMLNodeHdr	srcNode = (XMLNodeHdr) (inputTree + *docRootOff);
 
 		result = (xmldoc) copyXMLNode(srcNode, NULL, true, NULL);
 	}
@@ -2156,7 +2156,7 @@ xmlnodeModify(XMLScan xscan, xmldoc doc, XMLNodeAction action, XMLNodeHeader new
  */
 void
 evaluateXPathExpression(XPathExpression expr, XMLScanOneLevel scan,
-						XMLElementHeader element, unsigned short recursionLevel, XPathExprOperandValue result)
+						XMLCompNodeHdr element, unsigned short recursionLevel, XPathExprOperandValue result)
 {
 
 	unsigned short i;
@@ -2244,7 +2244,7 @@ evaluateXPathExpression(XPathExpression expr, XMLScanOneLevel scan,
 }
 
 static unsigned int
-evaluateXPathOperand(XPathExprOperand operand, XMLScanOneLevel scan, XMLElementHeader element,
+evaluateXPathOperand(XPathExprOperand operand, XMLScanOneLevel scan, XMLCompNodeHdr element,
 				 unsigned short recursionLevel, XPathExprOperandValue result)
 {
 	unsigned int resSize;
@@ -2269,7 +2269,7 @@ evaluateXPathOperand(XPathExprOperand operand, XMLScanOneLevel scan, XMLElementH
 }
 
 static void
-evaluateXPathFunction(XPathExpression funcExpr, XMLScanOneLevel scan, XMLElementHeader element,
+evaluateXPathFunction(XPathExpression funcExpr, XMLScanOneLevel scan, XMLCompNodeHdr element,
 				 unsigned short recursionLevel, XPathExprOperandValue result)
 {
 
@@ -2339,7 +2339,7 @@ prepareLiteral(XPathExprOperand operand)
  * sub-paths, etc.)
  */
 XPathExpression
-prepareXPathExpression(XPathExpression exprOrig, XMLElementHeader ctxElem,
+prepareXPathExpression(XPathExpression exprOrig, XMLCompNodeHdr ctxElem,
 					   xmldoc document, XPathHeader xpHdr, XMLScan xscan)
 {
 	XPathExpression expr = (XPathExpression) palloc(exprOrig->size);
@@ -2397,7 +2397,7 @@ freeNodeSets(XPathExpression expr)
 
 static void
 evaluateBinaryOperator(XPathExprOperandValue valueLeft, XPathExprOperandValue valueRight,
-					   XPathExprOperator operator, XPathExprOperandValue result, XMLElementHeader element)
+					   XPathExprOperator operator, XPathExprOperandValue result, XMLCompNodeHdr element)
 {
 
 	if (operator->id == XPATH_EXPR_OPERATOR_OR || operator->id == XPATH_EXPR_OPERATOR_AND)
@@ -2823,11 +2823,11 @@ xpathValCastToStr(XPathExprOperandValue valueSrc, XPathExprOperandValue valueDst
 				 * is used (http://www.w3.org/TR/1999/REC-xpath-19991116/#sect
 				 * ion-String-Functions)
 				 */
-				XMLNodeHeader node = ns->count == 1 ? ns->nodes.single : ns->nodes.array[0];
+				XMLNodeHdr	node = ns->count == 1 ? ns->nodes.single : ns->nodes.array[0];
 
 				if (node->kind == XMLNODE_ELEMENT)
 				{
-					valueDst->v.string.str = getElementNodeStr((XMLElementHeader) node);
+					valueDst->v.string.str = getElementNodeStr((XMLCompNodeHdr) node);
 					valueDst->v.string.mustFree = true;
 				}
 				else
@@ -2891,22 +2891,22 @@ getNumValue(char *str)
 static bool
 compareNodeSets(XPathNodeSet ns1, XPathNodeSet ns2, XPathExprOperator operator)
 {
-	XMLNodeHeader *arrayOuter = (ns1->count > 1) ? ns1->nodes.array : &(ns1->nodes.single);
-	XMLNodeHeader *arrayInner = (ns2->count > 1) ? ns2->nodes.array : &(ns2->nodes.single);
+	XMLNodeHdr *arrayOuter = (ns1->count > 1) ? ns1->nodes.array : &(ns1->nodes.single);
+	XMLNodeHdr *arrayInner = (ns2->count > 1) ? ns2->nodes.array : &(ns2->nodes.single);
 	XPathNodeSet nsOuter = ns1;
 	XPathNodeSet nsInner = ns2;
 	unsigned short i;
 
 	for (i = 0; i < nsOuter->count; i++)
 	{
-		XMLNodeHeader nodeOuter = arrayOuter[i];
+		XMLNodeHdr	nodeOuter = arrayOuter[i];
 
 		unsigned short j;
 		bool		match = false;
 
 		for (j = 0; j < nsInner->count; j++)
 		{
-			XMLNodeHeader nodeInner = arrayInner[j];
+			XMLNodeHdr	nodeInner = arrayInner[j];
 
 			/*
 			 * In order to reduce the number of combinations there's a rule
@@ -2916,7 +2916,7 @@ compareNodeSets(XPathNodeSet ns1, XPathNodeSet ns2, XPathExprOperator operator)
 			 */
 			if (nodeOuter->kind == XMLNODE_ELEMENT && nodeInner->kind != XMLNODE_ELEMENT)
 			{
-				XMLNodeHeader nodeTmp;
+				XMLNodeHdr	nodeTmp;
 
 				nodeTmp = nodeOuter;
 				nodeOuter = nodeInner;
@@ -2927,7 +2927,7 @@ compareNodeSets(XPathNodeSet ns1, XPathNodeSet ns2, XPathExprOperator operator)
 				/* Both nodes are elements */
 				bool		matchResult = false;
 
-				match = compareElements((XMLElementHeader) nodeOuter, (XMLElementHeader) nodeInner);
+				match = compareElements((XMLCompNodeHdr) nodeOuter, (XMLCompNodeHdr) nodeInner);
 				matchResult = (operator->id == XPATH_EXPR_OPERATOR_EQ) ? match : !match;
 				if (matchResult)
 				{
@@ -2962,14 +2962,14 @@ compareNodeSets(XPathNodeSet ns1, XPathNodeSet ns2, XPathExprOperator operator)
 }
 
 static bool
-compareElements(XMLElementHeader elLeft, XMLElementHeader elRight)
+compareElements(XMLCompNodeHdr elLeft, XMLCompNodeHdr elRight)
 {
 	XMLScanData scanLeft,
 				scanRight;
 
 	/* maximum text position that we have for both elements */
 	unsigned int charsToCompare;
-	XMLNodeHeader nodeLeft,
+	XMLNodeHdr	nodeLeft,
 				nodeRight;
 	char	   *textLeft,
 			   *textRight;
@@ -3065,7 +3065,7 @@ compareElements(XMLElementHeader elLeft, XMLElementHeader elRight)
 }
 
 static void
-initScanForTextNodes(XMLScan xscan, XMLElementHeader root)
+initScanForTextNodes(XMLScan xscan, XMLCompNodeHdr root)
 {
 	XPath		xpath = (XPath) palloc(sizeof(XPathData) + sizeof(XPathElementData));
 	XPathElement xpEl = (XPathElement) ((char *) xpath + sizeof(XPathData));
@@ -3092,7 +3092,7 @@ finalizeScanForTextNodes(XMLScan xscan)
  * the caller must switch the direction.
  */
 static bool
-compareValueToNode(XPathExprOperandValue value, XMLNodeHeader node, XPathExprOperator operator)
+compareValueToNode(XPathExprOperandValue value, XMLNodeHdr node, XPathExprOperator operator)
 {
 	bool		match = false;
 
@@ -3103,7 +3103,7 @@ compareValueToNode(XPathExprOperandValue value, XMLNodeHeader node, XPathExprOpe
 	if (node->kind == XMLNODE_ELEMENT)
 	{
 
-		XMLNodeHeader textNode;
+		XMLNodeHdr	textNode;
 		unsigned int strLen;
 		unsigned int nodeCntLen = 0;
 
@@ -3113,7 +3113,7 @@ compareValueToNode(XPathExprOperandValue value, XMLNodeHeader node, XPathExprOpe
 			XMLScanData textScan;
 
 			strLen = strlen(cStr);
-			initScanForTextNodes(&textScan, (XMLElementHeader) node);
+			initScanForTextNodes(&textScan, (XMLCompNodeHdr) node);
 
 			while ((textNode = getNextXMLNode(&textScan, false)) != NULL)
 			{
@@ -3154,7 +3154,7 @@ compareValueToNode(XPathExprOperandValue value, XMLNodeHeader node, XPathExprOpe
 			result.type = XPATH_VAL_BOOLEAN;
 			result.v.boolean = false;
 
-			nodeStr = getElementNodeStr((XMLElementHeader) node);
+			nodeStr = getElementNodeStr((XMLCompNodeHdr) node);
 
 			if (strlen(nodeStr) > 0)
 			{
@@ -3249,10 +3249,10 @@ compareNumToStr(double num, char *numStr, XPathExprOperator operator, XPathExprO
 }
 
 static char *
-getElementNodeStr(XMLElementHeader element)
+getElementNodeStr(XMLCompNodeHdr element)
 {
 	XMLScanData textScan;
-	XMLNodeHeader textNode;
+	XMLNodeHdr	textNode;
 	StringInfoData si;
 
 	initScanForTextNodes(&textScan, element);
@@ -3279,7 +3279,7 @@ getElementNodeStr(XMLElementHeader element)
  * having to construct a single string out of the text nodes.
  */
 static char *
-getNonElementNodeStr(XMLNodeHeader node)
+getNonElementNodeStr(XMLNodeHdr node)
 {
 	if (node->kind == XMLNODE_ELEMENT)
 	{
@@ -3328,7 +3328,7 @@ getNonElementNodeStr(XMLNodeHeader node)
 static bool
 compareValueToNodeSet(XPathExprOperandValue value, XPathNodeSet ns, XPathExprOperator operator)
 {
-	XMLNodeHeader *array = (ns->count > 1) ? ns->nodes.array : &(ns->nodes.single);
+	XMLNodeHdr *array = (ns->count > 1) ? ns->nodes.array : &(ns->nodes.single);
 	unsigned short i;
 
 	if (!(operator->id == XPATH_EXPR_OPERATOR_EQ || operator->id == XPATH_EXPR_OPERATOR_NEQ ||
@@ -3339,7 +3339,7 @@ compareValueToNodeSet(XPathExprOperandValue value, XPathNodeSet ns, XPathExprOpe
 	}
 	for (i = 0; i < ns->count; i++)
 	{
-		XMLNodeHeader node = array[i];
+		XMLNodeHdr	node = array[i];
 
 		if (compareValueToNode(value, node, operator))
 		{
@@ -3355,7 +3355,7 @@ compareValueToNodeSet(XPathExprOperandValue value, XPathNodeSet ns, XPathExprOpe
  * values that the current element contains).
  */
 static void
-substituteAttributes(XPathExpression expr, XMLElementHeader element)
+substituteAttributes(XPathExpression expr, XMLCompNodeHdr element)
 {
 	unsigned short childrenLeft = element->children;
 	char	   *childFirst = XNODE_FIRST_REF(element);
@@ -3363,7 +3363,7 @@ substituteAttributes(XPathExpression expr, XMLElementHeader element)
 
 	while (childrenLeft > 0)
 	{
-		XMLNodeHeader child = (XMLNodeHeader) ((char *) element -
+		XMLNodeHdr	child = (XMLNodeHdr) ((char *) element -
 		readXMLNodeOffset(&chldOffPtr, XNODE_GET_REF_BWIDTH(element), true));
 
 		if (child->kind == XMLNODE_ATTRIBUTE)
@@ -3410,7 +3410,7 @@ substituteAttributes(XPathExpression expr, XMLElementHeader element)
  * using 'expression' when the substitution is complete.
  */
 static void
-substituteSubpaths(XPathExpression expression, XMLElementHeader element, xmldoc document,
+substituteSubpaths(XPathExpression expression, XMLCompNodeHdr element, xmldoc document,
 				   XPathHeader xpHdr)
 {
 	unsigned short i,
@@ -3427,7 +3427,7 @@ substituteSubpaths(XPathExpression expression, XMLElementHeader element, xmldoc 
 			XMLScanData xscanSub;
 			XPath		subPath = XPATH_HDR_GET_PATH(xpHdr, opnd->value.v.path);
 
-			XMLNodeHeader matching;
+			XMLNodeHdr	matching;
 			unsigned short count = 0;
 			unsigned short arrSize = 0;
 
@@ -3441,7 +3441,7 @@ substituteSubpaths(XPathExpression expression, XMLElementHeader element, xmldoc 
 				initXMLScan(&xscanSub, NULL, subPath, xpHdr, element, document, subPath->descendants > 1);
 				while ((matching = getNextXMLNode(&xscanSub, false)) != NULL)
 				{
-					XMLNodeHeader *array = NULL;
+					XMLNodeHdr *array = NULL;
 
 					Assert(matching->type == xscanSub.xpath.targNdType);
 
@@ -3456,7 +3456,7 @@ substituteSubpaths(XPathExpression expression, XMLElementHeader element, xmldoc 
 						 * 2.
 						 */
 						arrSize = (element->children > count) ? element->children : 2;
-						array = (XMLNodeHeader *) palloc(sizeof(XMLNodeHeader) * arrSize);
+						array = (XMLNodeHdr *) palloc(sizeof(XMLNodeHdr) * arrSize);
 						array[0] = opnd->value.v.nodeSet.nodes.single;
 						array[1] = matching;
 						opnd->value.v.nodeSet.nodes.array = array;
@@ -3470,8 +3470,8 @@ substituteSubpaths(XPathExpression expression, XMLElementHeader element, xmldoc 
 							 * has few or many children
 							 */
 							arrSize = count + (count >> 1) + 1;
-							array = (XMLNodeHeader *) repalloc(opnd->value.v.nodeSet.nodes.array,
-											sizeof(XMLNodeHeader) * arrSize);
+							array = (XMLNodeHdr *) repalloc(opnd->value.v.nodeSet.nodes.array,
+											   sizeof(XMLNodeHdr) * arrSize);
 							opnd->value.v.nodeSet.nodes.array = array;
 
 						}
@@ -3541,7 +3541,7 @@ substituteFunctions(XPathExpression expression, XMLScan xscan)
 	}
 }
 static void
-copyXMLDecl(XMLElementHeader doc, char **resCursor)
+copyXMLDecl(XMLCompNodeHdr doc, char **resCursor)
 {
 	if (doc->common.flags & XNODE_DOC_XMLDECL)
 	{
@@ -3554,7 +3554,7 @@ copyXMLDecl(XMLElementHeader doc, char **resCursor)
 }
 
 static bool
-isNodeUnique(XMLNodeHeader node, XMLScan scan)
+isNodeUnique(XMLNodeHdr node, XMLScan scan)
 {
 	XMLNodeOffset nodeOff = XNODE_OFFSET(node, scan->document);
 
@@ -3579,7 +3579,7 @@ isNodeUnique(XMLNodeHeader node, XMLScan scan)
 }
 
 static void
-rememberResult(XMLNodeHeader node, XMLScan scan)
+rememberResult(XMLNodeHdr node, XMLScan scan)
 {
 	if (scan->resTmp != NULL)
 	{
@@ -3590,7 +3590,7 @@ rememberResult(XMLNodeHeader node, XMLScan scan)
 static void
 dumpNodeDebug(StringInfo output, char *data, XMLNodeOffset rootOff, unsigned short level)
 {
-	XMLElementHeader root = (XMLElementHeader) (data + rootOff);
+	XMLCompNodeHdr root = (XMLCompNodeHdr) (data + rootOff);
 	char	   *refPtr = XNODE_FIRST_REF(root);
 	unsigned short i;
 	unsigned short bwidth = XNODE_GET_REF_BWIDTH(root);
@@ -3602,7 +3602,7 @@ dumpNodeDebug(StringInfo output, char *data, XMLNodeOffset rootOff, unsigned sho
 	for (i = 0; i < root->children; i++)
 	{
 		XMLNodeOffset offRel = readXMLNodeOffset(&refPtr, bwidth, true);
-		XMLNodeHeader child = (XMLNodeHeader) ((char *) root - offRel);
+		XMLNodeHdr	child = (XMLNodeHdr) ((char *) root - offRel);
 		XMLNodeOffset offAbs = (char *) child - data;
 
 		appendStringInfoSpaces(output, level);
@@ -3610,9 +3610,9 @@ dumpNodeDebug(StringInfo output, char *data, XMLNodeOffset rootOff, unsigned sho
 		switch (child->kind)
 		{
 			case XMLNODE_ELEMENT:
-				appendStringInfo(output, "%s (%u / %u)\n", XNODE_ELEMENT_NAME((XMLElementHeader) child), offRel,
+				appendStringInfo(output, "%s (%u / %u)\n", XNODE_ELEMENT_NAME((XMLCompNodeHdr) child), offRel,
 								 offAbs);
-				if (((XMLElementHeader) child)->children > 0)
+				if (((XMLCompNodeHdr) child)->children > 0)
 				{
 					dumpNodeDebug(output, data, (char *) child - data, level + 1);
 				}
@@ -3640,7 +3640,7 @@ dumpXScanDebug(StringInfo output, XMLScan scan, char *docData, XMLNodeOffset doc
 					 scan->xpathRoot, scan->xpath->depth);
 	for (i = 0; i <= scan->depth; i++)
 	{
-		XMLElementHeader parent = level->parent;
+		XMLCompNodeHdr parent = level->parent;
 		char	   *firstRefPtr = XNODE_FIRST_REF(parent);
 		char		bwidth = XNODE_GET_REF_BWIDTH(parent);
 
@@ -3667,11 +3667,11 @@ dumpXScanDebug(StringInfo output, XMLScan scan, char *docData, XMLNodeOffset doc
  * If any of those children has children, new sub-scan is initiated, etc.
  */
 static bool
-considerSubScan(XPathElement xpEl, XMLNodeHeader node, XMLScan xscan)
+considerSubScan(XPathElement xpEl, XMLNodeHdr node, XMLScan xscan)
 {
 	if (xpEl->descendant && node->kind == XMLNODE_ELEMENT && !xscan->descsDone)
 	{
-		XMLElementHeader el = (XMLElementHeader) node;
+		XMLCompNodeHdr el = (XMLCompNodeHdr) node;
 
 		if (el->children > 0)
 		{

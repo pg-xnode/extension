@@ -12,20 +12,20 @@ extern void xmlnodeContainerFree(XMLNodeContainer cont);
 extern void xmlnodePush(XMLNodeContainer stack, XMLNodeOffset value);
 extern XMLNodeOffset xmlnodePop(XMLNodeContainer stack);
 
-extern unsigned int getXMLNodeSize(XMLNodeHeader node, bool subtree);
+extern unsigned int getXMLNodeSize(XMLNodeHdr node, bool subtree);
 extern char *getXMLNodeKindStr(XMLNodeKind k);
-extern char *copyXMLNode(XMLNodeHeader node, char *target, bool xmlnode, XMLNodeOffset * root);
-extern XMLNodeHeader getFirstXMLNodeLeaf(XMLElementHeader elh);
+extern char *copyXMLNode(XMLNodeHdr node, char *target, bool xmlnode, XMLNodeOffset * root);
+extern XMLNodeHdr getFirstXMLNodeLeaf(XMLCompNodeHdr compNode);
 
-void initXMLScan(XMLScan xscan, XMLScan parent, XPath xpath, XPathHeader xpHdr, XMLElementHeader scanRoot,
+void initXMLScan(XMLScan xscan, XMLScan parent, XPath xpath, XPathHeader xpHdr, XMLCompNodeHdr scanRoot,
 			xmldoc document, bool checkUniqueness);
 extern void finalizeXMLScan(XMLScan xscan);
 
-extern XMLNodeHeader getNextXMLNode(XMLScan xscan, bool removed);
-extern xmldoc xmlnodeAdd(xmldoc doc, XMLScan xscan, XMLNodeHeader targNode, XMLNodeHeader newNode,
+extern XMLNodeHdr getNextXMLNode(XMLScan xscan, bool removed);
+extern xmldoc xmlnodeAdd(xmldoc doc, XMLScan xscan, XMLNodeHdr targNode, XMLNodeHdr newNode,
 		   XMLAddMode mode, bool freeSrc);
-extern xmldoc xmlnodeRemove(xmldoc doc, XMLScan xscan, XMLNodeHeader targNode, bool freeSrc);
-extern void checkXMLWellFormedness(XMLElementHeader root);
+extern xmldoc xmlnodeRemove(xmldoc doc, XMLScan xscan, XMLNodeHdr targNode, bool freeSrc);
+extern void checkXMLWellFormedness(XMLCompNodeHdr root);
 extern bool isXMLCharInInterval(char *c, UTF8Interval * intervals, unsigned short int intCount);
 extern int	utf8cmp(char *c1, char *c2);
 
