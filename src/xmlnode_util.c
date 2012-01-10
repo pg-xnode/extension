@@ -1753,8 +1753,7 @@ checkXMLWellFormedness(XMLCompNodeHdr root)
  * Check if UTF-8 character 'c' fits one item of the 'intervals'.array.
  */
 bool
-isXMLCharInInterval(char *c, UTF8Interval * intervals,
-					unsigned short int intCount)
+isXMLCharInInterval(char *c, UTF8Interval * intervals, unsigned short int intCount)
 {
 	unsigned short int i;
 	UTF8Interval *interval = intervals;

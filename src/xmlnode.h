@@ -196,6 +196,7 @@ typedef struct UTF8Interval
 
 extern UTF8Interval nameStartCharIntervals[XNODE_NAME_START_CHAR_INTERVALS];
 extern UTF8Interval nameCharIntervals[XNODE_NAME_CHAR_INTERVALS];
+extern bool isXMLCharInInterval(char *c, UTF8Interval * intervals, unsigned short int intCount);
 
 typedef enum XMLAddMode
 {

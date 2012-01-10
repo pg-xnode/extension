@@ -1,6 +1,8 @@
 #ifndef XPATH_H_
 #define XPATH_H_
 
+#include "lib/stringinfo.h"
+
 #include "xmlnode.h"
 
 typedef struct varlena xpathtype;
@@ -74,9 +76,9 @@ typedef struct XPathHeaderData
 	XPathOffset paths[1];
 }	XPathHeaderData;
 
-#define XPATH_SET_MAX_PATHS		0xFF
-
 typedef struct XPathHeaderData *XPathHeader;
+
+#define XPATH_SET_MAX_PATHS		0xFF
 
 #define XPATH_HDR_GET_PATH(header, i) ((XPath) (((char *)(header)) + (header)->paths[i]))
 
@@ -107,6 +109,9 @@ typedef enum XPathValueType
 	XPATH_VAL_NODESET
 }	XPathValueType;
 
+extern char *xpathValueTypes[];
+extern bool xpathCasts[4][4];
+
 typedef struct XPathValueData
 {
 	/*
@@ -135,6 +140,7 @@ typedef xpathvaltype *xpathval;
 extern Datum xpathval_in(PG_FUNCTION_ARGS);
 extern Datum xpathval_out(PG_FUNCTION_ARGS);
 extern Datum xpathval_to_xmlnode(PG_FUNCTION_ARGS);
+
 
 /*
  * All nodes in the set are supposed to be of the same kind
@@ -331,9 +337,13 @@ typedef struct XPathExpressionData
 	XPathValueType valType;
 }	XPathExpressionData;
 
+typedef struct XPathExpressionData *XPathExpression;
+
 #define XPATH_SUBEXPRESSION_EXPLICIT		(1 << 0)
 
-typedef struct XPathExpressionData *XPathExpression;
+extern void dumpXPathExpression(XPathExpression expr, XPathHeader xpathHdr, StringInfo output, bool main,
+					bool debug);
+extern void dumpLocationPath(XPathHeader xpathHdr, StringInfo output, bool debug, unsigned short pathNr);;
 
 extern XPath getSingleXPath(XPathExpression expr, XPathHeader xpHdr);
 
@@ -386,11 +396,12 @@ typedef enum XPathNodeType
 }	XPathNodeType;
 
 
-extern XPath parseLocationPath(XPath * subpaths, bool isSubPath, unsigned short *subpathCnt, char **xpathPtr,
-				  unsigned short *pos);
 extern XPathExprOperator parseXPathExpression(XPathExpression exprCurrent, XPathParserState state,
 					 char term, XPathExprOperator firstOperator, char *output, unsigned short *outPos, bool isSubExpr,
   bool argList, XPath * subpaths, unsigned short *subpathCnt, bool mainExpr);
+
+extern XPath parseLocationPath(XPath * subpaths, bool isSubPath, unsigned short *subpathCnt, char **xpathPtr,
+				  unsigned short *pos);
 
 /*
  * Status of XML tree scan at given level of the tree.

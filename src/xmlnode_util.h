@@ -26,7 +26,6 @@ extern xmldoc xmlnodeAdd(xmldoc doc, XMLScan xscan, XMLNodeHdr targNode, XMLNode
 		   XMLAddMode mode, bool freeSrc);
 extern xmldoc xmlnodeRemove(xmldoc doc, XMLScan xscan, XMLNodeHdr targNode, bool freeSrc);
 extern void checkXMLWellFormedness(XMLCompNodeHdr root);
-extern bool isXMLCharInInterval(char *c, UTF8Interval * intervals, unsigned short int intCount);
 extern int	utf8cmp(char *c1, char *c2);
 
 extern Datum xmlnode_add(PG_FUNCTION_ARGS);
