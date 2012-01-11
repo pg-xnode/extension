@@ -817,16 +817,16 @@ parseLocationPath(XPath * paths, bool isSubPath, unsigned short *pathCount, char
 }
 
 /*
- * Make 'operand' the first member of a subexpression. The following operator
- * must also be shifted.
- *
+ * Make 'operand' the first member of a subexpression.
+ * Operator following this operand is also shifted (this operator's precedence is typically the reason
+ * for the new subexpression).
+ * It's also necessary to adjust variables already pointing to the operands that we shift.
  */
 static void
 insertSubexpression(XPathExprOperand operand, XPathExprOperator * operator,
 		XPathExpression exprTop, unsigned short blockSize, bool varsShiftAll,
 					char *output, unsigned short *outPos)
 {
-
 	unsigned short i;
 	unsigned short subExprSz = sizeof(XPathExpressionData);
 	XPathOffset *varOffPtr;
@@ -1182,6 +1182,10 @@ checkExprOperand(XPathExpression exprTop, XPathExprOperand operand, bool mainExp
 	}
 }
 
+/*
+ * Test if a valid number starts at 'str'.
+ * If it does, then '*end' is set to the first character after the number.
+ */
 static bool
 canBeNumber(char *str, double *numValue, char **end)
 {
@@ -1240,6 +1244,9 @@ readExpressionOperator(XPathParserState state, char *output,
 }
 
 /*
+ * Parse function argument list where 'nargs' is the expected number of arguments.
+ * Any XPath expression operand, including location path or a subexpression can be the argument.
+ *
  * Reading stops right after ')'.
  */
 static void
@@ -1290,6 +1297,10 @@ parseFunctionArgList(XPathParserState state, unsigned short nargs, char *output,
 	}
 }
 
+/*
+ * Types of function arguments are checked at parse time.
+ * It would make no sense to let the XPath processor perform (repeated) evaluation of invalid function call.
+ */
 static void
 checkFunctionArgTypes(XPathExpression argList, XPathFunction function)
 {
@@ -1383,7 +1394,7 @@ ensureSpace(unsigned int sizeNeeded, XPathParserState state)
 }
 
 /*
- * Not sure if it's worthwhile to add reallocation ability to this buffer. In
+ * It might not be worthwhile to add reallocation ability to this buffer. In
  * the future it'd make more sense to replace XPATH_EXPR_BUFFER_SIZE constant
  * with a configurable parameter.
  */
@@ -1396,6 +1407,12 @@ checkExpressionBuffer(unsigned short maxPos)
 	}
 }
 
+/*
+ * If the space for offsets of variables hasn't been used up, the whole expression is shifted
+ * so that no space is wasted.
+ * The existing 'variable offsets' are decreased in such a case, so they keep pointing to the
+ * variables.
+ */
 static void
 utilizeSpaceForVars(char *output, unsigned short *outPos)
 {
@@ -1474,6 +1491,12 @@ dumpXPathExpression(XPathExpression expr, XPathHeader xpathHdr, StringInfo outpu
 		}
 	}
 }
+
+/*
+ * Functions to dump XPath expressions.
+ * If 'debug' is true, then structure of the expression is displayed in detail, showing subexpressions,
+ * precedence of operators, etc.
+ */
 
 void
 dumpLocationPath(XPathHeader xpathHdr, StringInfo output, bool debug, unsigned short pathNr)
