@@ -22,13 +22,7 @@ void initXMLScan(XMLScan xscan, XMLScan parent, XPath xpath, XPathHeader xpHdr, 
 extern void finalizeXMLScan(XMLScan xscan);
 
 extern XMLNodeHdr getNextXMLNode(XMLScan xscan, bool removed);
-extern xmldoc xmlnodeAdd(xmldoc doc, XMLScan xscan, XMLNodeHdr targNode, XMLNodeHdr newNode,
-		   XMLAddMode mode, bool freeSrc);
-extern xmldoc xmlnodeRemove(xmldoc doc, XMLScan xscan, XMLNodeHdr targNode, bool freeSrc);
 extern void checkXMLWellFormedness(XMLCompNodeHdr root);
 extern int	utf8cmp(char *c1, char *c2);
-
-extern Datum xmlnode_add(PG_FUNCTION_ARGS);
-extern Datum xmlnode_remove(PG_FUNCTION_ARGS);
 
 #endif   /* XMLNODE_UTIL_H_ */

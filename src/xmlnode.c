@@ -4,8 +4,8 @@
 #include "utils/palloc.h"
 
 #include "xmlnode.h"
-#include "xml_parser.h"
 #include "xmlnode_util.h"
+#include "xml_parser.h"
 
 /*
  * TODO error handling: use 'ereport()' and define numeric error codes.

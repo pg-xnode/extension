@@ -198,17 +198,6 @@ extern UTF8Interval nameStartCharIntervals[XNODE_NAME_START_CHAR_INTERVALS];
 extern UTF8Interval nameCharIntervals[XNODE_NAME_CHAR_INTERVALS];
 extern bool isXMLCharInInterval(char *c, UTF8Interval * intervals, unsigned short int intCount);
 
-typedef enum XMLAddMode
-{
-	XMLADD_INVALID = 0,
-	XMLADD_AFTER = 'a',
-	XMLADD_BEFORE = 'b',
-	XMLADD_INTO = 'i',
-	XMLADD_REPLACE = 'r'
-} XMLAddMode;
-
-#define XMLADD_MODE(m) (tolower(m))
-
 
 /*
  * Flags that are supposed to be generic must be at the highest positions.
@@ -251,5 +240,22 @@ typedef enum XMLAddMode
 
 /* Reset the byte-width if already set */
 #define XNODE_RESET_REF_BWIDTH(cnd)		((cnd)->common.flags &= ~XNODE_REF_BWIDTH)
+
+typedef enum XMLAddMode
+{
+	XMLADD_INVALID = 0,
+	XMLADD_AFTER = 'a',
+	XMLADD_BEFORE = 'b',
+	XMLADD_INTO = 'i',
+	XMLADD_REPLACE = 'r'
+} XMLAddMode;
+
+#define XMLADD_MODE(m) (tolower(m))
+
+typedef enum XMLNodeAction
+{
+	XMLNODE_ACTION_ADD,
+	XMLNODE_ACTION_REMOVE
+}	XMLNodeAction;
 
 #endif   /* XMLNODE_H */
