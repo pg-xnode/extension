@@ -12,6 +12,74 @@ static char **copyXMLDocFragment(XMLCompNodeHdr fragNode, char **resCursorPtr);
 static void copyXMLDecl(XMLCompNodeHdr doc, char **resCursor);
 static void copySiblings(XMLCompNodeHdr parent, char **srcCursor, char **resCursor);
 
+PG_FUNCTION_INFO_V1(xmlnode_add);
+
+Datum
+xmlnode_add(PG_FUNCTION_ARGS)
+{
+	xmldoc		doc = (xmldoc) PG_GETARG_VARLENA_P(0);
+	xpath		xpathPtr = (xpath) PG_GETARG_POINTER(1);
+	XPathExpression exprBase = (XPathExpression) VARDATA(xpathPtr);
+	XPathHeader xpHdr = (XPathHeader) ((char *) exprBase + exprBase->size);
+	XPath		xpath = getSingleXPath(exprBase, xpHdr);
+	xmlnode		newNdVar = (xmlnode) PG_GETARG_POINTER(2);
+	BpChar	   *modeVar = PG_GETARG_BPCHAR_PP(3);
+	char		mode = *(VARDATA_ANY(modeVar));
+	XMLNodeHdr	newNode;
+	xmldoc		result;
+	XMLScanData xscan;
+	XMLCompNodeHdr docRoot;
+
+	if (xpath->relative)
+	{
+		elog(ERROR, "absolute XPath expected");
+	}
+	if (xpath->depth == 0)
+	{
+		elog(ERROR, "invalid target path");
+	}
+	newNode = XNODE_ROOT(newNdVar);
+	if (newNode->kind == XMLNODE_ATTRIBUTE)
+	{
+		elog(ERROR, "invalid node type to add: %s", getXMLNodeKindStr(newNode->kind));
+	}
+	docRoot = (XMLCompNodeHdr) XNODE_ROOT(doc);
+	initXMLScan(&xscan, NULL, xpath, xpHdr, docRoot, doc, xpath->descendants > 1);
+	result = updateXMLDocument(&xscan, doc, XMLNODE_ACTION_ADD, newNode, XMLADD_MODE(mode));
+	finalizeXMLScan(&xscan);
+	PG_RETURN_POINTER(result);
+}
+
+PG_FUNCTION_INFO_V1(xmlnode_remove);
+
+extern Datum
+xmlnode_remove(PG_FUNCTION_ARGS)
+{
+	xmldoc		doc = (xmldoc) PG_GETARG_VARLENA_P(0);
+	xpath		xpathPtr = (xpath) PG_GETARG_POINTER(1);
+	XPathExpression exprBase = (XPathExpression) VARDATA(xpathPtr);
+	XPathHeader xpHdr = (XPathHeader) ((char *) exprBase + exprBase->size);
+	XPath		xpath = getSingleXPath(exprBase, xpHdr);
+	xmldoc		result;
+	XMLScanData xscan;
+	XMLCompNodeHdr docRoot;
+
+	if (xpath->relative)
+	{
+		elog(ERROR, "absolute XPath expected");
+	}
+	if (xpath->depth == 0)
+	{
+		elog(ERROR, "invalid target path");
+	}
+	docRoot = (XMLCompNodeHdr) XNODE_ROOT(doc);
+	initXMLScan(&xscan, NULL, xpath, xpHdr, docRoot, doc, xpath->descendants > 1);
+	result = updateXMLDocument(&xscan, doc, XMLNODE_ACTION_REMOVE, NULL, XMLADD_INVALID);
+
+	finalizeXMLScan(&xscan);
+	PG_RETURN_POINTER(result);
+}
+
 xmldoc
 updateXMLDocument(XMLScan xscan, xmldoc doc, XMLNodeAction action, XMLNodeHdr newNode,
 				  XMLAddMode addMode)

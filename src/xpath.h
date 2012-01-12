@@ -1,6 +1,7 @@
 #ifndef XPATH_H_
 #define XPATH_H_
 
+#include "postgres.h"
 #include "lib/stringinfo.h"
 
 #include "xmlnode.h"
@@ -486,6 +487,13 @@ typedef struct XMLScanContextData
 
 typedef struct XMLScanContextData *XMLScanContext;
 
+extern void initXMLScan(XMLScan xscan, XMLScan parent, XPath xpath, XPathHeader xpHdr, XMLCompNodeHdr scanRoot,
+			xmldoc document, bool checkUniqueness);
+extern void finalizeXMLScan(XMLScan xscan);
+
+extern void initScanForTextNodes(XMLScan xscan, XMLCompNodeHdr root);
+extern void finalizeScanForTextNodes(XMLScan xscan);
+
 extern XPathExpression prepareXPathExpression(XPathExpression exprOrig, XMLCompNodeHdr ctxElem,
 					   xmldoc document, XPathHeader xpHdr, XMLScan xscan);
 extern void evaluateXPathExpression(XPathExpression expr, XMLScanOneLevel scan,
@@ -494,7 +502,9 @@ extern void evaluateXPathExpression(XPathExpression expr, XMLScanOneLevel scan,
 extern void xpathValCastToBool(XPathExprOperandValue valueSrc, XPathExprOperandValue valueDst);
 extern void xpathValCastToNum(XPathExprOperandValue valueSrc, XPathExprOperandValue valueDst);
 extern void xpathValCastToStr(XPathExprOperandValue valueSrc, XPathExprOperandValue valueDst);
+
 extern void xpathStrFree(XPathExprOperandValue strValue);
+
 
 extern void xpathCount(unsigned short nargs, XPathExprOperandValue args, XPathExprOperandValue result);
 extern void xpathContains(unsigned short nargs, XPathExprOperandValue args, XPathExprOperandValue result);

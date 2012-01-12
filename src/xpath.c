@@ -467,6 +467,151 @@ xpath_array(PG_FUNCTION_ARGS)
 	SRF_RETURN_DONE(fctx);
 }
 
+void
+xpathValCastToBool(XPathExprOperandValue valueSrc, XPathExprOperandValue valueDst)
+{
+	valueDst->type = XPATH_VAL_BOOLEAN;
+	switch (valueSrc->type)
+	{
+		case XPATH_VAL_BOOLEAN:
+			valueDst->v.boolean = valueSrc->v.boolean;
+			break;
+
+		case XPATH_VAL_NUMBER:
+			valueDst->v.boolean = (valueSrc->v.num != 0.0);
+			break;
+
+		case XPATH_VAL_STRING:
+			valueDst->v.boolean = (!valueSrc->isNull && (strlen(valueSrc->v.string.str) > 0));
+			break;
+
+		case XPATH_VAL_NODESET:
+			if (valueSrc->v.nodeSet.isDocument)
+			{
+				/* Document is always a non-empty node set. */
+				valueDst->v.boolean = true;
+			}
+			else
+			{
+				valueDst->v.boolean = (valueSrc->v.nodeSet.count > 0);
+			}
+			break;
+
+		default:
+			elog(ERROR, "unable to cast type %u to boolean", valueSrc->type);
+			break;
+	}
+}
+
+void
+xpathValCastToStr(XPathExprOperandValue valueSrc, XPathExprOperandValue valueDst)
+{
+	valueDst->type = XPATH_VAL_STRING;
+	valueDst->isNull = valueSrc->isNull;
+
+	switch (valueSrc->type)
+	{
+		case XPATH_VAL_STRING:
+
+			if (!valueSrc->isNull)
+			{
+				if (valueSrc->v.string.mustFree)
+				{
+					char	   *src = valueSrc->v.string.str;
+					unsigned int len = sizeof(src) + 1;
+					char	   *dst = (char *) palloc(len);
+
+					memcpy(dst, src, len);
+					valueDst->v.string.str = dst;
+				}
+				else
+				{
+					valueDst->v.string.str = valueSrc->v.string.str;
+				}
+
+				valueDst->v.string.mustFree = valueSrc->v.string.mustFree;
+				return;
+			}
+			break;
+
+		case XPATH_VAL_NODESET:
+			if (valueSrc->v.nodeSet.isDocument)
+			{
+				elog(ERROR, "document can't be cast to string");
+			}
+			if (!valueSrc->isNull)
+			{
+				XPathNodeSet ns = &valueSrc->v.nodeSet;
+
+				/*
+				 * If the node-set contains multiple nodes,only the first on
+				 * is used (http://www.w3.org/TR/1999/REC-xpath-19991116/#sect
+				 * ion-String-Functions)
+				 */
+				XMLNodeHdr	node = ns->count == 1 ? ns->nodes.single : ns->nodes.array[0];
+
+				if (node->kind == XMLNODE_ELEMENT)
+				{
+					valueDst->v.string.str = getElementNodeStr((XMLCompNodeHdr) node);
+					valueDst->v.string.mustFree = true;
+				}
+				else
+				{
+					valueDst->v.string.str = getNonElementNodeStr(node);
+					valueDst->v.string.mustFree = false;
+				}
+			}
+			break;
+
+
+		default:
+			elog(ERROR, "unable to cast type %u to string", valueSrc->type);
+			break;
+	}
+}
+
+/*
+ * Neither null value nor NaN strings expected.
+ */
+void
+xpathValCastToNum(XPathExprOperandValue valueSrc, XPathExprOperandValue valueDst)
+{
+	valueDst->type = XPATH_VAL_NUMBER;
+	switch (valueSrc->type)
+	{
+		case XPATH_VAL_NUMBER:
+			valueDst->v.num = valueSrc->v.num;
+			break;
+
+		case XPATH_VAL_STRING:
+			Assert(operand->common.castToNumber);
+			valueDst->v.num = xnodeGetNumValue(valueSrc->v.string.str);
+			break;
+
+		default:
+			elog(ERROR, "unable to cast type %u to number", valueSrc->type);
+			break;
+	}
+}
+
+/*
+ * XPathExprOperandValue is used so that we can access 'isNull; attribute.
+ * However, XPATH_VAL_STRING is the only value type accepted.
+ */
+void
+xpathStrFree(XPathExprOperandValue strValue)
+{
+	if (!strValue->isNull)
+	{
+		Assert(strValue->type == XPATH_VAL_STRING);
+		if (strValue->v.string.mustFree)
+		{
+			pfree(strValue->v.string.str);
+		}
+	}
+}
+
+
 /*
  * Returns array of nodes where i-th element is result of scan starting at
  * 'baseNodeOff', using 'ctx->colPaths[i]' as XPath expression.
@@ -723,23 +868,6 @@ getXPathExprValue(xmldoc document, bool *notNull, XPathExprOperandValue res)
 		retValue = (xpathval) output;
 	}
 	return retValue;
-}
-
-/*
- * XPathExprOperandValue is used so that we can access 'isNull; attribute.
- * However, XPATH_VAL_STRING is the only value type accepted.
- */
-void
-xpathStrFree(XPathExprOperandValue strValue)
-{
-	if (!strValue->isNull)
-	{
-		Assert(strValue->type == XPATH_VAL_STRING);
-		if (strValue->v.string.mustFree)
-		{
-			pfree(strValue->v.string.str);
-		}
-	}
 }
 
 PG_FUNCTION_INFO_V1(xpathval_in);
