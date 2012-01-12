@@ -778,6 +778,19 @@ xmlnodeAdd(xmldoc doc, XMLScan xscan, XMLNodeHdr targNode, XMLNodeHdr newNode,
 	return (xmldoc) result;
 }
 
+/*
+ * Removes 'targNode' from 'doc'.
+ *
+ * 'xscan' is updated so that search for the next matching nodes can continue in the new (modified)
+ * document.
+ *
+ * 'freeSrc' says whether the source document should be pfreed. 'true' is only passed when the function
+ * returns modified document and then receives it again to remove another node. On the other hand, the
+ * source document ('doc') must not be pfreed when the first node is being removed. In such a case, 'doc'
+ * is what the xpath() function recieved.
+ *
+ * Returns modified document.
+ */
 xmldoc
 xmlnodeRemove(xmldoc doc, XMLScan xscan, XMLNodeHdr targNode, bool freeSrc)
 {
@@ -1148,6 +1161,14 @@ copyXMLNodeOrDocFragment(XMLNodeHdr newNode, unsigned int newNdSize, char **resC
 	}
 }
 
+/*
+ * Copy document fragment (i.e. children of 'fragNode', but not 'fragNode' itself)
+ * to a memory starting at '*resCursorPtr'.
+ * When done, '*resCursorPtr' points right after the copied fragment.
+ *
+ * Returns array where each element represents offset of particular new (just inserted) node
+ * from the beginning of the output memory chunk.
+ */
 static char **
 copyXMLDocFragment(XMLCompNodeHdr fragNode, char **resCursorPtr)
 {
@@ -1189,6 +1210,10 @@ copyXMLDecl(XMLCompNodeHdr doc, char **resCursor)
 	}
 }
 
+
+/*
+ * Continue copying nodes from '*srcCursor' to '*resCursor' and stop right before their parent.
+ */
 static void
 copySiblings(XMLCompNodeHdr parent, char **srcCursor, char **resCursor)
 {
