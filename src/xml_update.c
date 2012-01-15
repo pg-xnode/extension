@@ -1049,7 +1049,7 @@ xmlnodeRemove(xmldoc doc, XMLScan xscan, XMLNodeHdr targNode, bool freeSrc)
 			}
 		}
 	}
-	i = xscan->depth;
+
 	propagateChange(levelScan, &shift, &hdrSizeIncr, inputTree, resData, &srcCursor,
 					&resCursor, &newRootOff);
 
