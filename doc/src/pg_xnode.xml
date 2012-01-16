@@ -1,0 +1,176 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE article PUBLIC "-//OASIS//DTD DocBook XML V4.2//EN" "http://docbook.org/xml/4.2/docbookx.dtd">
+<article>
+ <title><productname>pg_xnode</productname> - user documentation</title>
+ <sect1>
+  <title>
+   Introduction
+  </title>
+  <para>
+   <productname>pg_xnode</productname> is PostgreSQL extension. The purpose is to
+   <itemizedlist>
+    <listitem>
+     <para>
+     provide the PostgreSQL database server with ability to query and modify XML documents
+     in an efficient and convenient way.
+     </para>
+    </listitem>
+    <listitem>
+     <para>
+     introduce a set of data types to represent XML document (DOM) tree, its parts (nodes,
+     subtrees) and XPath expressions.
+     </para>    
+    </listitem>
+    <listitem>
+     <para>
+     provide an extensible platform for non-traditional approaches to XML storage and processing.
+     </para>
+    </listitem>
+   </itemizedlist>
+   <productname>pg_xnode</productname> doesn't rely on any third-party library.
+  </para>
+ </sect1>
+ 
+ <sect1>
+  <title>Data types</title>
+  <para>
+   <productname>pg_xnode</productname> defines data types to store various XML-related objects
+   in binary form. This helps to avoid (repeated) unnecessary parsing and serialization of
+   those objects and thus provides potential for efficient data processing.
+  </para>
+  <sect2>
+   <title><literal>xml.node</literal></title>
+   <para>
+    <literal>xml.node</literal>
+     <literal>xml.node</literal> type represents a node of XML document tree.
+     Following are the valid node kinds: <firstterm>document</firstterm>,
+     <firstterm>document type declaration (DTD)</firstterm>, <firstterm>element</firstterm>,
+     <firstterm>attribute</firstterm>, <firstterm>comment</firstterm>,
+     <firstterm>character data (CDATA)</firstterm>, <firstterm>processing instruction (PI)</firstterm>
+     and <firstterm>text node</firstterm>.
+   </para>
+   <para>
+    A special node type <firstterm>document fragment</firstterm> exists to represent
+    a set of nodes.
+   </para>
+  </sect2>
+  
+  <sect2>
+   <title><literal>xml.doc</literal></title>
+   <para>
+    <literal>xml.doc</literal> represents well-formed XML document.
+   </para>
+   <para>
+    Unlike other node kinds (comment, element, etc.) there's no polymorphism between
+    <literal>xml.node</literal> and <literal>xml.doc</literal>. That is, functions do not
+    consider <literal>xml.doc</literal> a special case of <literal>xml.node</literal>.
+   </para>
+  </sect2>
+  
+  <sect2>
+   <title><literal>xml.path</literal></title>
+   <para>
+    <literal>xml.path</literal> represents parsed (compiled) XPath expression.
+   </para>
+  </sect2>
+
+  <sect2>
+   <title><literal>xml.pathval</literal></title>
+   <para>
+    <literal>xml.pathval</literal> represents a result of <literal>xml.path()</literal> function.
+   </para>
+  </sect2>
+ </sect1>
+
+ <sect1>
+  <title>Functions</title>
+
+   <sect2>
+    <title><literal>xml.node_kind()</literal></title>
+<synopsis>
+xml.node_kind(xml.node node) returns cstring
+</synopsis>
+    <para>
+     Returns textual expression for the kind of <literal>node</literal>, e.g. element, comment, etc.
+    </para>
+   </sect2>
+   
+   <sect2>
+    <title><literal>xml.path()</literal> - scalar</title>
+<synopsis>
+xml.path(xml.path xpath, xml.doc document) returns xml.pathval
+</synopsis>
+    <para>
+     Returns result of XPath expression (passed as <literal>xpath</literal>)
+     applied to <literal>document</literal>.
+     If <literal>xpath</literal> is a location path and there are multiple qualifying nodes
+     in the document then the returned<function>xml.pathval</function> contains a document fragment
+     containing all the qualifying nodes.
+    </para>
+   </sect2>
+   
+   <sect2>
+    <title><literal>xml.path()</literal> - vector</title>
+<synopsis>
+xml.path(xml.path basePath, xml.path[] columnPaths, xml.doc doc) returns xml.pathval[]
+</synopsis>
+    <para>
+     Returns table-like output. For each occurrence of <literal>basePath</literal> in
+     <literal>doc</literal> an array of <literal>xml.pathval</literal> values is returned
+     where n-th element is value of relative XPath expression passed as n-th element of
+     <literal>columnPaths</literal>. All values of <literal>columnPaths</literal> array
+     are relative to <literal>basePath</literal>.
+    </para>
+   </sect2>
+ 
+  <sect2>
+   <title><literal>xml.path_debug_print()</literal></title>
+<synopsis>
+xml.path_debug_print(xml.path xpath) returns cstring
+</synopsis>
+   <para>
+    Returns text string showing structure of XPath expression passed as <literal>xpath</literal>. 
+   </para>
+  </sect2>
+ 
+  <sect2>
+   <title><literal>xml.add()</literal></title>
+<synopsis>
+xml.add(xml.doc doc, xml.path path, xml.node newNode, xml.add_mode mode) returns xml.doc
+</synopsis>
+   <para>
+    Adds <literal>newNode</literal> to all occurrences of <literal>path</literal> in
+    <literal>doc</literal>. Depending on <literal>mode</literal> value, the new node can
+    be added before (<literal>b</literal>) or after (<literal>a</literal>) the <firstterm>target node</firstterm>
+    (where target node is the the node <literal>path</literal> points at).
+   </para>
+   <para>
+    If target node kind is element and  <literal>mode</literal> is <literal>i</literal>, then
+    the new node is added into that element. If that element is not empty, the new node is added
+    as the last.
+   </para>
+   <para>
+    If <literal>mode</literal> is <literal>r</literal> then the target node is replaced with
+    <literal>newNode</literal>.
+   </para>
+   <para>
+    A document is returned where all the additions have been done as required
+    in the input parameters.
+   </para>
+  </sect2>
+ 
+  <sect2>
+   <title><literal>xml.remove()</literal></title>
+<synopsis>
+xml.remove(xml.doc doc, xml.path path) returns xml.doc
+</synopsis>
+   <para>
+    Removes all occurrences of <literal>path</literal> from <literal>docu</literal>.
+   </para>
+   <para>
+    A document is returned where all the removals have been done as required
+    in the input parameters.
+   </para>
+  </sect2>
+ </sect1>
+</article>
