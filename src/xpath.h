@@ -83,7 +83,7 @@ typedef struct XPathHeaderData *XPathHeader;
 
 #define XPATH_HDR_GET_PATH(header, i) ((XPath) (((char *)(header)) + (header)->paths[i]))
 
-typedef enum XPathExpricateOperandType
+typedef enum XPathExprOperandType
 {
 	/* The following are all stored as XPathExprOperand */
 	XPATH_OPERAND_LITERAL = 0,
