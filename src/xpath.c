@@ -10,6 +10,7 @@
 #include "xml_parser.h"
 #include "xmlnode_util.h"
 
+static void retrieveColumnPaths(XMLScanContext xScanCtx, ArrayType *pathsColArr, int columns);
 static ArrayType *getResultArray(XMLScanContext ctx, XMLNodeOffset baseNodeOff);
 static xpathval getXPathExprValue(xmldoc document, bool *notNull, XPathExprOperandValue res);
 
@@ -308,16 +309,6 @@ xpath_array(PG_FUNCTION_ARGS)
 	if (SRF_IS_FIRSTCALL())
 	{
 		int		   *dimv;
-		int			colIndex;
-		bool		isNull;
-		Oid			elTypOid,
-					arrTypeOid;
-		HeapTuple	typeTup;
-		Form_pg_type typeStruct;
-		int2		elTypLen,
-					arrTypLen;
-		bool		elByVal;
-		char		elTypAlign;
 		XMLNodeKind baseTarget;
 		Oid			resultType;
 
@@ -345,45 +336,26 @@ xpath_array(PG_FUNCTION_ARGS)
 			elog(ERROR, " 1-dimensional array must be used to pass column xpaths");
 		}
 		dimv = ARR_DIMS(pathsColArr);
+
+		/*
+		 * First dimension is the only one and as such it's length of the
+		 * array
+		 */
 		if (*dimv > XMLNODE_SET_MAX_COLS)
 		{
 			elog(ERROR, "maximum number of xpath columns is %u", XMLNODE_SET_MAX_COLS);
 		}
 
-		/*
-		 * Retrieve parameters for 'array_ref()'
-		 */
-		elTypOid = ARR_ELEMTYPE(pathsColArr);
-		typeTup = SearchSysCache1(TYPEOID, ObjectIdGetDatum(elTypOid));
-		Assert(HeapTupleIsValid(typeTup));
-		typeStruct = (Form_pg_type) GETSTRUCT(typeTup);
-		elTypLen = typeStruct->typlen;
-		elByVal = typeStruct->typbyval;
-		elTypAlign = typeStruct->typalign;
-		arrTypeOid = typeStruct->typarray;
-		ReleaseSysCache(typeTup);
-
-		typeTup = SearchSysCache1(TYPEOID, ObjectIdGetDatum(arrTypeOid));
-		Assert(HeapTupleIsValid(typeTup));
-		typeStruct = (Form_pg_type) GETSTRUCT(typeTup);
-		arrTypLen = typeStruct->typlen;
-		ReleaseSysCache(typeTup);
-
 		xScanCtx = (XMLScanContext) palloc(sizeof(XMLScanContextData));
 		xScanCtx->baseScan = (XMLScan) palloc(sizeof(XMLScanData));
-
 		initXMLScan(xScanCtx->baseScan, NULL, xpathBase, xpHdrBase, docRoot, doc, xpathBase->descendants > 1);
+
 		baseTarget = xScanCtx->baseScan->xpath->targNdKind;
 		if (baseTarget != XMLNODE_DOC && baseTarget != XMLNODE_ELEMENT)
 		{
 			elog(ERROR, "base path must point to element or document");
 		}
 
-		/*
-		 * For columns, the paths are only checked and stored to the context.
-		 * Initialization of the 'column scans' is deferred to the point where
-		 * the base scan really finds something.
-		 */
 		xScanCtx->columns = *dimv;
 		xScanCtx->colPaths = (xpath *) palloc(xScanCtx->columns * sizeof(xpath));
 		xScanCtx->colResults = NULL;
@@ -392,21 +364,12 @@ xpath_array(PG_FUNCTION_ARGS)
 
 		/*
 		 * Output element OID to be identified later - first time a not null
-		 * value is found for any xpath.
+		 * value is found for any column xpath.
 		 */
 		xScanCtx->outElmType = InvalidOid;
-		for (colIndex = 1; colIndex <= *dimv; colIndex++)
-		{
-			Datum		colPathD = array_ref(pathsColArr, 1, &colIndex, arrTypLen, elTypLen, elByVal, elTypAlign, &isNull);
-			xpath		colPathPtr;
 
-			if (isNull)
-			{
-				elog(ERROR, "column XPath must not be null");
-			}
-			colPathPtr = (xpath) DatumGetPointer(colPathD);
-			xScanCtx->colPaths[colIndex - 1] = colPathPtr;
-		}
+		retrieveColumnPaths(xScanCtx, pathsColArr, *dimv);
+
 		fctx->user_fctx = xScanCtx;
 		MemoryContextSwitchTo(oldcontext);
 	}
@@ -611,6 +574,59 @@ xpathStrFree(XPathExprOperandValue strValue)
 	}
 }
 
+
+/*
+ * Get column paths from array.
+ *
+ * The paths are only checked and stored to the context.
+ * Initialization of the 'column scans' is deferred to the point where
+ * the base scan really finds something.
+ */
+static void
+retrieveColumnPaths(XMLScanContext xScanCtx, ArrayType *pathsColArr, int columns)
+{
+	int			colIndex;
+	Oid			arrTypeOid;
+	Form_pg_type typeStruct;
+	int2		elTypLen,
+				arrTypLen;
+	bool		elByVal;
+	char		elTypAlign;
+	bool		isNull;
+	Oid			elTypOid = ARR_ELEMTYPE(pathsColArr);
+	HeapTuple	typeTup = SearchSysCache1(TYPEOID, ObjectIdGetDatum(elTypOid));
+
+	/*
+	 * Retrieve parameters for 'array_ref()'
+	 */
+	Assert(HeapTupleIsValid(typeTup));
+	typeStruct = (Form_pg_type) GETSTRUCT(typeTup);
+	elTypLen = typeStruct->typlen;
+	elByVal = typeStruct->typbyval;
+	elTypAlign = typeStruct->typalign;
+	arrTypeOid = typeStruct->typarray;
+	ReleaseSysCache(typeTup);
+
+	typeTup = SearchSysCache1(TYPEOID, ObjectIdGetDatum(arrTypeOid));
+	Assert(HeapTupleIsValid(typeTup));
+	typeStruct = (Form_pg_type) GETSTRUCT(typeTup);
+	arrTypLen = typeStruct->typlen;
+	ReleaseSysCache(typeTup);
+
+	for (colIndex = 1; colIndex <= columns; colIndex++)
+	{
+		Datum		colPathD = array_ref(pathsColArr, 1, &colIndex, arrTypLen, elTypLen, elByVal,
+										 elTypAlign, &isNull);
+		xpath		colPathPtr;
+
+		if (isNull)
+		{
+			elog(ERROR, "column XPath must not be null");
+		}
+		colPathPtr = (xpath) DatumGetPointer(colPathD);
+		xScanCtx->colPaths[colIndex - 1] = colPathPtr;
+	}
+}
 
 /*
  * Returns array of nodes where i-th element is result of scan starting at
