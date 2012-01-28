@@ -18,7 +18,7 @@ CREATE TYPE node (
 	storage = extended 
 );
 
-CREATE FUNCTION node_kind(node) RETURNS cstring
+CREATE FUNCTION node_kind(node) RETURNS text
 	as 'MODULE_PATHNAME', 'xmlnode_kind'
 	LANGUAGE C
 	IMMUTABLE
@@ -68,7 +68,7 @@ CREATE TYPE @extschema@.path (
 );
 
 
-CREATE FUNCTION path_debug_print(@extschema@.path) RETURNS cstring
+CREATE FUNCTION path_debug_print(@extschema@.path) RETURNS text
 	as 'MODULE_PATHNAME', 'xpath_debug_print'
 	LANGUAGE C
 	STABLE

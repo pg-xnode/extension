@@ -3,6 +3,7 @@
 #include "funcapi.h"
 #include "catalog/pg_type.h"
 #include "utils/array.h"
+#include "utils/builtins.h"
 #include "utils/syscache.h"
 
 #include "xmlnode.h"
@@ -201,7 +202,6 @@ xpath_debug_print(PG_FUNCTION_ARGS)
 
 	if (expr->npaths > 0)
 	{
-
 		unsigned short i;
 
 		appendStringInfoChar(&output, '\n');
@@ -212,7 +212,7 @@ xpath_debug_print(PG_FUNCTION_ARGS)
 			appendStringInfoChar(&output, '\n');
 		}
 	}
-	PG_RETURN_POINTER(output.data);
+	PG_RETURN_TEXT_P(cstring_to_text(output.data));
 }
 
 XPath

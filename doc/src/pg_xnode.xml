@@ -88,7 +88,7 @@
    <sect2>
     <title><literal>xml.node_kind()</literal></title>
 <synopsis>
-xml.node_kind(xml.node node) returns cstring
+xml.node_kind(xml.node node) returns text
 </synopsis>
     <para>
      Returns textual expression for the kind of <literal>node</literal>, e.g. element, comment, etc.
@@ -126,7 +126,7 @@ xml.path(xml.path basePath, xml.path[] columnPaths, xml.doc doc) returns xml.pat
   <sect2>
    <title><literal>xml.path_debug_print()</literal></title>
 <synopsis>
-xml.path_debug_print(xml.path xpath) returns cstring
+xml.path_debug_print(xml.path xpath) returns text
 </synopsis>
    <para>
     Returns text string showing structure of XPath expression passed as <literal>xpath</literal>. 

@@ -1,6 +1,7 @@
 #include "postgres.h"
 #include "funcapi.h"
 #include "mb/pg_wchar.h"
+#include "utils/builtins.h"
 #include "utils/palloc.h"
 
 #include "xmlnode.h"
@@ -91,7 +92,7 @@ xmlnode_kind(PG_FUNCTION_ARGS)
 	XMLNodeHdr	node = XNODE_ROOT(nodeRaw);
 	char	   *kindStr = getXMLNodeKindStr(node->kind);
 
-	PG_RETURN_CSTRING(kindStr);
+	PG_RETURN_TEXT_P(cstring_to_text(kindStr));
 }
 
 
