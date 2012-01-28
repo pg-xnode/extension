@@ -2,8 +2,12 @@
 #include "xmlnode_util.h"
 #include "xml_update.h"
 
-static void dumpNodeDebug(StringInfo output, char *data, XMLNodeOffset rootOff, unsigned short level);
+static void dumpXMLNodeDebugInternal(char *data, XMLNodeOffset off,
+		   XMLNodeOffset offParent, StringInfo output, unsigned short level);
+
+#ifdef XNODE_DEBUG
 static void dumpXScanDebug(StringInfo output, XMLScan scan, char *docData, XMLNodeOffset docRootOff);
+#endif
 
 void
 xmlnodeContainerInit(XMLNodeContainer cont)
@@ -521,48 +525,103 @@ getNonElementNodeStr(XMLNodeHdr node)
 	return NULL;
 }
 
-static void
-dumpNodeDebug(StringInfo output, char *data, XMLNodeOffset rootOff, unsigned short level)
+void
+dumpXMLNodeDebug(StringInfo output, char *data, XMLNodeOffset off)
 {
-	XMLCompNodeHdr root = (XMLCompNodeHdr) (data + rootOff);
-	char	   *refPtr = XNODE_FIRST_REF(root);
-	unsigned short i;
-	unsigned short bwidth = XNODE_GET_REF_BWIDTH(root);
+	XMLCompNodeHdr root = (XMLCompNodeHdr) (data + off);
+	unsigned short level = 0;
+	XMLNodeKind kind = root->common.kind;
 
-	if (level == 0)
+	if (kind != XMLNODE_DOC && kind != XMLNODE_DOC_FRAGMENT)
 	{
-		appendStringInfoString(output, "node:\n");
+		dumpXMLNodeDebugInternal(data, off, off, output, level);
 	}
-	for (i = 0; i < root->children; i++)
+	else
 	{
-		XMLNodeOffset offRel = readXMLNodeOffset(&refPtr, bwidth, true);
-		XMLNodeHdr	child = (XMLNodeHdr) ((char *) root - offRel);
-		XMLNodeOffset offAbs = (char *) child - data;
+		unsigned short i;
+		unsigned short bwidth = XNODE_GET_REF_BWIDTH(root);
+		char	   *refPtr = XNODE_FIRST_REF(root);
 
-		appendStringInfoSpaces(output, level);
-
-		switch (child->kind)
+		for (i = 0; i < root->children; i++)
 		{
-			case XMLNODE_ELEMENT:
-				appendStringInfo(output, "%s (%u / %u)\n", XNODE_ELEMENT_NAME((XMLCompNodeHdr) child), offRel,
-								 offAbs);
-				if (((XMLCompNodeHdr) child)->children > 0)
-				{
-					dumpNodeDebug(output, data, (char *) child - data, level + 1);
-				}
-				break;
+			XMLNodeOffset offRel = readXMLNodeOffset(&refPtr, bwidth, true);
 
-			case XMLNODE_ATTRIBUTE:
-				appendStringInfo(output, "@%s (%u / %u)\n", XNODE_CONTENT(child), offRel, offAbs);
-				break;
-
-			default:
-				appendStringInfoString(output, "...\n");
-				break;
+			dumpXMLNodeDebugInternal(data, off - offRel, off, output, level);
 		}
-
 	}
 }
+
+static void
+dumpXMLNodeDebugInternal(char *data, XMLNodeOffset off,
+			XMLNodeOffset offParent, StringInfo output, unsigned short level)
+{
+
+	XMLNodeHdr	node = (XMLNodeHdr) (data + off);
+	XMLNodeOffset offRel = offParent - off;
+	char	   *str;
+	unsigned int size;
+
+	appendStringInfoSpaces(output, level);
+
+	switch (node->kind)
+	{
+		case XMLNODE_ELEMENT:
+			size = getXMLNodeSize(node, true);
+			appendStringInfo(output, "%s (abs: %u , rel: %u , size: %u)\n",
+			   XNODE_ELEMENT_NAME((XMLCompNodeHdr) node), off, offRel, size);
+			{
+				XMLCompNodeHdr element = (XMLCompNodeHdr) node;
+
+				if (element->children > 0)
+				{
+					unsigned short i;
+					unsigned short bwidth = XNODE_GET_REF_BWIDTH(element);
+					char	   *refPtr = XNODE_FIRST_REF(element);
+
+					for (i = 0; i < element->children; i++)
+					{
+						XMLNodeOffset offRel = readXMLNodeOffset(&refPtr, bwidth, true);
+
+						dumpXMLNodeDebugInternal(data, off - offRel, off, output, level + 1);
+					}
+				}
+			}
+
+			break;
+
+		case XMLNODE_ATTRIBUTE:
+			str = XNODE_CONTENT(node);
+			break;
+
+		case XMLNODE_COMMENT:
+			str = "<comment>";
+			break;
+
+		case XMLNODE_CDATA:
+			str = "CDATA";
+			break;
+
+		case XMLNODE_PI:
+			str = "PI";
+			break;
+
+		case XMLNODE_TEXT:
+			str = "<text>";
+			break;
+
+		default:
+			elog(INFO, "unrecognized node kind %u", node->kind);
+			break;
+	}
+
+	if (node->kind != XMLNODE_ELEMENT)
+	{
+		size = getXMLNodeSize(node, true);
+		appendStringInfo(output, "%s (abs: %u , rel: %u , size: %u)\n", str, off, offRel, size);
+	}
+}
+
+#ifdef XNODE_DEBUG
 
 static void
 dumpXScanDebug(StringInfo output, XMLScan scan, char *docData, XMLNodeOffset docRootOff)
@@ -594,3 +653,5 @@ dumpXScanDebug(StringInfo output, XMLScan scan, char *docData, XMLNodeOffset doc
 		level++;
 	}
 }
+
+#endif

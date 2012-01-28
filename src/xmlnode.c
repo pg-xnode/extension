@@ -96,6 +96,19 @@ xmlnode_kind(PG_FUNCTION_ARGS)
 }
 
 
+PG_FUNCTION_INFO_V1(xmlnode_debug_print);
+
+Datum
+xmlnode_debug_print(PG_FUNCTION_ARGS)
+{
+	xmlnode		nodeRaw = (xmlnode) PG_GETARG_VARLENA_P(0);
+	char	   *data = (char *) VARDATA(nodeRaw);
+	StringInfo	output = makeStringInfo();
+
+	dumpXMLNodeDebug(output, data, XNODE_ROOT_OFFSET(nodeRaw));
+	PG_RETURN_TEXT_P(cstring_to_text(output->data));
+}
+
 PG_FUNCTION_INFO_V1(xmldoc_in);
 
 Datum

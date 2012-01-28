@@ -94,7 +94,18 @@ xml.node_kind(xml.node node) returns text
      Returns textual expression for the kind of <literal>node</literal>, e.g. element, comment, etc.
     </para>
    </sect2>
-   
+ 
+   <sect2>
+    <title><literal>xml.node_debug_print()</literal></title>
+<synopsis>
+xml.node_debug_print(xml.node node) returns text
+</synopsis>
+    <para>
+     Shows tree structure of <literal>node</literal> tree. Instead of content, position
+     (offset) of each node in the binary value is displayed, as well as its size. 
+    </para>
+   </sect2>
+     
    <sect2>
     <title><literal>xml.path()</literal> - scalar</title>
 <synopsis>

@@ -24,6 +24,11 @@ CREATE FUNCTION node_kind(node) RETURNS text
 	IMMUTABLE
 	STRICT;
 
+CREATE FUNCTION node_debug_print(node) RETURNS text
+	as 'MODULE_PATHNAME', 'xmlnode_debug_print'
+	LANGUAGE C
+	IMMUTABLE
+	STRICT;
 
 
 CREATE FUNCTION doc_in(cstring) RETURNS doc

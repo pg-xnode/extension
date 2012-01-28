@@ -21,8 +21,10 @@ extern XMLNodeHdr getNextXMLNode(XMLScan xscan, bool removed);
 extern void checkXMLWellFormedness(XMLCompNodeHdr root);
 extern int	utf8cmp(char *c1, char *c2);
 
-double		xnodeGetNumValue(char *str);
-char	   *getElementNodeStr(XMLCompNodeHdr element);
-char	   *getNonElementNodeStr(XMLNodeHdr node);
+extern double xnodeGetNumValue(char *str);
+extern char *getElementNodeStr(XMLCompNodeHdr element);
+extern char *getNonElementNodeStr(XMLNodeHdr node);
+
+extern void dumpXMLNodeDebug(StringInfo output, char *data, XMLNodeOffset rootOff);
 
 #endif   /* XMLNODE_UTIL_H_ */
