@@ -358,8 +358,6 @@ xpath_array(PG_FUNCTION_ARGS)
 
 		xScanCtx->columns = *dimv;
 		xScanCtx->colPaths = (xpath *) palloc(xScanCtx->columns * sizeof(xpath));
-		xScanCtx->colResults = NULL;
-		xScanCtx->colResNulls = NULL;
 		xScanCtx->outArrayType = resultType;
 
 		/*
@@ -373,8 +371,11 @@ xpath_array(PG_FUNCTION_ARGS)
 		fctx->user_fctx = xScanCtx;
 		MemoryContextSwitchTo(oldcontext);
 	}
+
 	fctx = SRF_PERCALL_SETUP();
 	xScanCtx = (XMLScanContext) fctx->user_fctx;
+	xScanCtx->colResults = NULL;
+	xScanCtx->colResNulls = NULL;
 	baseScan = xScanCtx->baseScan;
 
 	if (baseScan->xpath->targNdKind == XMLNODE_DOC && !baseScan->done)
