@@ -158,12 +158,16 @@ typedef xmldoctype *xmldoc;
 
 extern Datum xmldoc_in(PG_FUNCTION_ARGS);
 extern Datum xmldoc_out(PG_FUNCTION_ARGS);
-extern Datum xmlnode_to_xmldoc(PG_FUNCTION_ARGS);
 
-/*
- * Get root node offset from varlena (xmlnode, xmldoc) value
- */
-#define XNODE_ROOT_OFFSET(raw) (*((XMLNodeOffset *) ((char *) raw + VARSIZE(raw) - sizeof(XMLNodeOffset))))
+extern Datum xmlnode_to_xmldoc(PG_FUNCTION_ARGS);
+extern Datum xmldoc_to_xmlnode(PG_FUNCTION_ARGS);
+
+
+/* Get a pointer to root node offset from varlena (xmlnode, xmldoc) value. */
+#define XNODE_ROOT_OFFSET_PTR(raw)	((XMLNodeOffset *) ((char *) raw + VARSIZE(raw) - sizeof(XMLNodeOffset)))
+/* ... and the root offset itself */
+#define XNODE_ROOT_OFFSET(raw) (*XNODE_ROOT_OFFSET_PTR(raw))
+
 /*
  * Get root node from varlena (xmlnode, xmldoc) value
  */

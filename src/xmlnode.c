@@ -225,9 +225,60 @@ xmlnode_to_xmldoc(PG_FUNCTION_ARGS)
 	PG_RETURN_POINTER(document);
 }
 
-/*
- * TODO Other casts
- */
+PG_FUNCTION_INFO_V1(xmldoc_to_xmlnode);
+
+Datum
+xmldoc_to_xmlnode(PG_FUNCTION_ARGS)
+{
+	xmldoc		doc = (xmldoc) PG_GETARG_VARLENA_P(0);
+	char	   *docData = VARDATA(doc);
+	xmlnode		node;
+	XMLNodeOffset rootOff,
+				rootOffNew;
+	XMLNodeOffset *rootOffPtrNew;
+
+	XMLCompNodeHdr root = (XMLCompNodeHdr) XNODE_ROOT(doc);
+
+	Assert(root->common.kind == XMLNODE_DOC);
+
+	rootOff = (char *) root - docData;
+
+	if (root->children == 1)
+	{
+		/* The single child (i.e. root element) will be the result of the cast */
+		char	   *refPtr = XNODE_FIRST_REF(root);
+		unsigned char bwidth = XNODE_GET_REF_BWIDTH(root);
+		XMLNodeOffset childOff = rootOff - readXMLNodeOffset(&refPtr, bwidth, false);
+		XMLNodeHdr	child = (XMLNodeHdr) (docData + childOff);
+
+		node = (xmlnode) copyXMLNode(child, NULL, true, &rootOffNew);
+		rootOffPtrNew = XNODE_ROOT_OFFSET_PTR(node);
+		*rootOffPtrNew = rootOffNew;
+	}
+	else
+	{
+		/* Just change type to document fragment and ignore head if one exists */
+		char	   *nodeData;
+		XMLCompNodeHdr rootNew;
+
+		node = (xmlnode) copyXMLNode((XMLNodeHdr) root, NULL, true, &rootOffNew);
+		nodeData = VARDATA(node);
+		rootNew = (XMLCompNodeHdr) (nodeData + rootOffNew);
+		rootNew->common.kind = XMLNODE_DOC_FRAGMENT;
+		rootNew->common.flags = 0;
+
+		/*
+		 * The root offset will be stored right after the document fragment
+		 * header. If we used XNODE_ROOT_OFFSET_PTR() at this place, it could
+		 * be wrong because original document (that we have just coppied)
+		 * could have contained XMLDeclData.
+		 */
+		rootOffPtrNew = (XMLNodeOffset *) XNODE_ELEMENT_NAME(rootNew);
+		*rootOffPtrNew = rootOffNew;
+	}
+
+	PG_RETURN_POINTER(node);
+}
 
 char *
 dumpXMLNode(char *data, XMLNodeOffset rootNdOff)

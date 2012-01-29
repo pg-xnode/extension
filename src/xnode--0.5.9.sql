@@ -110,6 +110,14 @@ CREATE FUNCTION doc(node) RETURNS doc
 CREATE CAST (node as doc)
 	WITH FUNCTION doc(node);
 
+CREATE FUNCTION node(doc) RETURNS node 
+	as 'MODULE_PATHNAME', 'xmldoc_to_xmlnode'
+	LANGUAGE C
+	IMMUTABLE
+	STRICT;
+
+CREATE CAST (doc as node)
+	WITH FUNCTION node(doc);
 
 CREATE FUNCTION node(pathval) RETURNS node 
 	as 'MODULE_PATHNAME', 'xpathval_to_xmlnode'
