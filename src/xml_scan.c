@@ -11,7 +11,7 @@ static void prepareLiteral(XPathExprOperand operand);
 static void freeNodeSets(XPathExpression expr);
 static void evaluateBinaryOperator(XPathExprOperandValue valueLeft, XPathExprOperandValue valueRight,
 					   XPathExprOperator operator, XPathExprOperandValue result, XMLCompNodeHdr element);
-static bool considerSubScan(XPathElement xpEl, XMLNodeHdr node, XMLScan xscan);
+static bool considerSubScan(XPathElement xpEl, XMLNodeHdr node, XMLScan xscan, bool subScanJustDone);
 static void rememberResult(XMLNodeHdr node, XMLScan scan);
 
 static void substituteAttributes(XPathExpression expr, XMLCompNodeHdr element);
@@ -72,7 +72,6 @@ initXMLScan(XMLScan xscan, XMLScan parent, XPath xpath, XPathHeader xpHdr, XMLCo
 	xscan->depth = 0;
 	xscan->skip = false;
 	xscan->subtreeDone = false;
-	xscan->descsDone = false;
 	xscan->document = document;
 
 	xscan->parent = parent;
@@ -152,7 +151,8 @@ getNextXMLNode(XMLScan xscan, bool removed)
 			XMLNodeHdr	currentNode = NULL;
 
 			/*
-			 * Indicates later in the loop whether sub-scan has just finished.
+			 * Indicates later in the loop whether sub-scan has finished in
+			 * the current iteration.
 			 */
 			bool		subScanDone = false;
 
@@ -197,7 +197,6 @@ getNextXMLNode(XMLScan xscan, bool removed)
 					pfree(xscan->subScan);
 					xscan->subScan = NULL;
 					xscan->skip = true;
-					xscan->descsDone = true;
 					subScanDone = true;
 				}
 			}
@@ -220,15 +219,13 @@ getNextXMLNode(XMLScan xscan, bool removed)
 				 */
 				if (!removed)
 				{
-					if (considerSubScan(xpEl, currentNode, xscan))
+					if (considerSubScan(xpEl, currentNode, xscan, subScanDone))
 					{
 						continue;
 					}
 				}
 
 				xscan->skip = false;
-				/* This applies to the next node. */
-				xscan->descsDone = false;
 
 				/*
 				 * If the node we found last time has been removed, then the
@@ -417,7 +414,7 @@ getNextXMLNode(XMLScan xscan, bool removed)
 			 * No match found. The current path element however might be
 			 * interested in descendants.
 			 */
-			if (considerSubScan(xpEl, currentNode, xscan))
+			if (considerSubScan(xpEl, currentNode, xscan, subScanDone))
 			{
 				continue;
 			}
@@ -907,9 +904,9 @@ finalizeScanForTextNodes(XMLScan xscan)
  * If any of those children has children, new sub-scan is initiated, etc.
  */
 static bool
-considerSubScan(XPathElement xpEl, XMLNodeHdr node, XMLScan xscan)
+considerSubScan(XPathElement xpEl, XMLNodeHdr node, XMLScan xscan, bool subScanJustDone)
 {
-	if (xpEl->descendant && node->kind == XMLNODE_ELEMENT && !xscan->descsDone)
+	if (xpEl->descendant && node->kind == XMLNODE_ELEMENT && !subScanJustDone)
 	{
 		XMLCompNodeHdr el = (XMLCompNodeHdr) node;
 
@@ -919,7 +916,6 @@ considerSubScan(XPathElement xpEl, XMLNodeHdr node, XMLScan xscan)
 			initXMLScan(xscan->subScan, xscan, xscan->xpath, xscan->xpathHeader, el, xscan->document,
 						xscan->resTmp != NULL);
 			xscan->subScan->xpathRoot = xscan->xpathRoot + xscan->depth;
-			xscan->descsDone = false;
 			return true;
 		}
 	}

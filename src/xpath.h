@@ -444,10 +444,14 @@ typedef struct XMLScanData
 	 * checked again.
 	 */
 	bool		skip;
-	/* 'true' if just returned from subtree scan. */
+
+	/*
+	 * 'true' if just returned from lower level of the tree, however the lower
+	 * level was searched within the current scan. Do not confuse with a
+	 * subscan: subscan is a separate scan, starting at the current node.
+	 */
 	bool		subtreeDone;
 
-	bool		descsDone;
 	bool		done;
 
 	/* The document is needed for absolute sub-paths. */
