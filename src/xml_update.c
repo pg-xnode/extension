@@ -44,7 +44,7 @@ xmlnode_add(PG_FUNCTION_ARGS)
 		elog(ERROR, "invalid node type to add: %s", getXMLNodeKindStr(newNode->kind));
 	}
 	docRoot = (XMLCompNodeHdr) XNODE_ROOT(doc);
-	initXMLScan(&xscan, NULL, xpath, xpHdr, docRoot, doc, xpath->descendants > 1);
+	initXMLScan(&xscan, NULL, xpath, xpHdr, docRoot, doc, xpath->descendants > 0);
 	result = updateXMLDocument(&xscan, doc, XMLNODE_ACTION_ADD, newNode, XMLADD_MODE(mode));
 	finalizeXMLScan(&xscan);
 	PG_RETURN_POINTER(result);
@@ -73,7 +73,7 @@ xmlnode_remove(PG_FUNCTION_ARGS)
 		elog(ERROR, "invalid target path");
 	}
 	docRoot = (XMLCompNodeHdr) XNODE_ROOT(doc);
-	initXMLScan(&xscan, NULL, xpath, xpHdr, docRoot, doc, xpath->descendants > 1);
+	initXMLScan(&xscan, NULL, xpath, xpHdr, docRoot, doc, false);
 	result = updateXMLDocument(&xscan, doc, XMLNODE_ACTION_REMOVE, NULL, XMLADD_INVALID);
 
 	finalizeXMLScan(&xscan);

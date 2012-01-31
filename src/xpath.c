@@ -348,7 +348,7 @@ xpath_array(PG_FUNCTION_ARGS)
 
 		xScanCtx = (XMLScanContext) palloc(sizeof(XMLScanContextData));
 		xScanCtx->baseScan = (XMLScan) palloc(sizeof(XMLScanData));
-		initXMLScan(xScanCtx->baseScan, NULL, xpathBase, xpHdrBase, docRoot, doc, xpathBase->descendants > 1);
+		initXMLScan(xScanCtx->baseScan, NULL, xpathBase, xpHdrBase, docRoot, doc, xpathBase->descendants > 0);
 
 		baseTarget = xScanCtx->baseScan->xpath->targNdKind;
 		if (baseTarget != XMLNODE_DOC && baseTarget != XMLNODE_ELEMENT)

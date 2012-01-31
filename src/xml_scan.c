@@ -1019,7 +1019,7 @@ substituteSubpaths(XPathExpression expression, XMLCompNodeHdr element, xmldoc do
 			}
 			else
 			{
-				initXMLScan(&xscanSub, NULL, subPath, xpHdr, element, document, subPath->descendants > 1);
+				initXMLScan(&xscanSub, NULL, subPath, xpHdr, element, document, subPath->descendants > 0);
 				while ((matching = getNextXMLNode(&xscanSub, false)) != NULL)
 				{
 					XMLNodeHdr *array = NULL;
