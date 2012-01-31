@@ -22,7 +22,7 @@ xmlnode_add(PG_FUNCTION_ARGS)
 	XPathExpression exprBase = (XPathExpression) VARDATA(xpathPtr);
 	XPathHeader xpHdr = (XPathHeader) ((char *) exprBase + exprBase->size);
 	XPath		xpath = getSingleXPath(exprBase, xpHdr);
-	xmlnode		newNdVar = (xmlnode) PG_GETARG_POINTER(2);
+	xmlnode		newNdVar = (xmlnode) PG_GETARG_VARLENA_P(2);
 	BpChar	   *modeVar = PG_GETARG_BPCHAR_PP(3);
 	char		mode = *(VARDATA_ANY(modeVar));
 	XMLNodeHdr	newNode;
