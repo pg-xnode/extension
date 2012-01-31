@@ -108,7 +108,8 @@ CREATE FUNCTION doc(node) RETURNS doc
 	STRICT;
 
 CREATE CAST (node as doc)
-	WITH FUNCTION doc(node);
+	WITH FUNCTION doc(node)
+	AS IMPLICIT;
 
 CREATE FUNCTION node(doc) RETURNS node 
 	as 'MODULE_PATHNAME', 'xmldoc_to_xmlnode'
@@ -117,7 +118,8 @@ CREATE FUNCTION node(doc) RETURNS node
 	STRICT;
 
 CREATE CAST (doc as node)
-	WITH FUNCTION node(doc);
+	WITH FUNCTION node(doc)
+	AS IMPLICIT;
 
 CREATE FUNCTION node(pathval) RETURNS node 
 	as 'MODULE_PATHNAME', 'xpathval_to_xmlnode'
@@ -127,7 +129,7 @@ CREATE FUNCTION node(pathval) RETURNS node
 
 CREATE CAST (pathval as node)
 	WITH FUNCTION node(pathval)
-	AS ASSIGNMENT;
+	AS IMPLICIT;
 
 
 CREATE FUNCTION path(@extschema@.path, doc)
