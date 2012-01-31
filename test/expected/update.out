@@ -1,0 +1,362 @@
+SET search_path TO xml;
+SET
+create table a (i int, data doc, targ_path xml.path, new_node node, add_mode add_mode);
+CREATE TABLE
+insert into a values
+(1, '<root><x><b><test1/><x><b><test2/></b></x></b><a><b><test3/></b><d/></a></x></root>', '/root//x/b', '<new/>', 'r'),
+(2, '<root><x><c><test1/><x><b><test2/></b></x></c><a><b><test3/></b><d/></a></x></root>', '/root//x/b', '<new/>', 'b'),
+(3, '<root><x><b><test1/><x><b><test2/></b></x></b><a><b><test3/></b><d/></a></x></root>', '/root//x/b', '<new/>', 'a'),
+(4, '<root><x><b><test1/><x><b><test2/></b></x></b><a><b><test3/></b><d/></a></x></root>', '/root//x//b', '<new/>', 'r'),
+(5, '<root><x><b><test1/><x><b><test2/></b></x></b><a><b><test3/></b><d/></a></x></root>', '/root//x//b', '<new/>', 'a'),
+(6, '<root><x><b><test1/><x><b><test2/></b></x></b><a><b><test3/></b><d/></a></x></root>', '//x//b', '<new/>', 'r'),
+(7, '<root><x><b><test1/><x><b><test2/></b></x></b><a><b><test3/></b><d/></a></x></root>', '//x//b', '<new/>', 'a'),
+(8, '<root><x><c><test1/><x><b><test2/></b></x></c><a><b><test3/></b><d/></a></x></root>', '/root//x/b', '<new/>', 'i');
+INSERT 0 8
+insert into a values
+(9, '<root><x><c><test1/><x><b><test2/></b></x></c><a><b><test3/></b><d/></a></x></root>', '/root//x//b', '<new/>', 'b'),
+(8, '<root><x><b><test1/><x><b><test2/></b></x></b><a><b><test3/></b><d/></a></x></root>', '/root//x//b', '<new/>', 'i'),
+(10, '<root><x><c><test1/><x><b><test2/></b></x></c><a><b><test3/></b><d/></a></x></root>', '//x//b', '<new/>', 'b'),
+(11, '<root><x><b><test1/><x><b><test2/></b></x></b><a><b><test3/></b><d/></a></x></root>', '//x//b', '<new/>', 'i'),
+(11, '<root><x><a/><b/><b><c/></b><x><b i="1"/></x><b/></x></root>', '/root//x//b', '<n/>', 'i');
+INSERT 0 5
+select node_debug_print(data), targ_path, add_mode, new_node, node_debug_print(xml.add(data, targ_path, new_node, add_mode))
+from a
+order by a.i;
+             node_debug_print              |  targ_path  | add_mode | new_node |             node_debug_print              
+-------------------------------------------+-------------+----------+----------+-------------------------------------------
+ root (abs: 81 , rel: 0 , size: 91)       +| /root//x/b  | r        | <new/>   | root (abs: 47 , rel: 0 , size: 57)       +
+  x (abs: 73 , rel: 8 , size: 81)         +|             |          |          |  x (abs: 39 , rel: 8 , size: 47)         +
+   b (abs: 34 , rel: 39 , size: 42)       +|             |          |          |   new (abs: 0 , rel: 39 , size: 8)       +
+    test1 (abs: 0 , rel: 34 , size: 10)   +|             |          |          |   a (abs: 31 , rel: 8 , size: 31)        +
+    x (abs: 27 , rel: 7 , size: 24)       +|             |          |          |    b (abs: 18 , rel: 13 , size: 17)      +
+     b (abs: 20 , rel: 7 , size: 17)      +|             |          |          |     test3 (abs: 8 , rel: 10 , size: 10)  +
+      test2 (abs: 10 , rel: 10 , size: 10)+|             |          |          |    d (abs: 25 , rel: 6 , size: 6)        +
+   a (abs: 65 , rel: 8 , size: 31)        +|             |          |          | 
+    b (abs: 52 , rel: 13 , size: 17)      +|             |          |          | 
+     test3 (abs: 42 , rel: 10 , size: 10) +|             |          |          | 
+    d (abs: 59 , rel: 6 , size: 6)        +|             |          |          | 
+                                           |             |          |          | 
+ root (abs: 81 , rel: 0 , size: 91)       +| /root//x/b  | b        | <new/>   | root (abs: 90 , rel: 0 , size: 100)      +
+  x (abs: 73 , rel: 8 , size: 81)         +|             |          |          |  x (abs: 82 , rel: 8 , size: 90)         +
+   c (abs: 34 , rel: 39 , size: 42)       +|             |          |          |   c (abs: 43 , rel: 39 , size: 51)       +
+    test1 (abs: 0 , rel: 34 , size: 10)   +|             |          |          |    test1 (abs: 0 , rel: 43 , size: 10)   +
+    x (abs: 27 , rel: 7 , size: 24)       +|             |          |          |    x (abs: 35 , rel: 8 , size: 33)       +
+     b (abs: 20 , rel: 7 , size: 17)      +|             |          |          |     new (abs: 10 , rel: 25 , size: 8)    +
+      test2 (abs: 10 , rel: 10 , size: 10)+|             |          |          |     b (abs: 28 , rel: 7 , size: 17)      +
+   a (abs: 65 , rel: 8 , size: 31)        +|             |          |          |      test2 (abs: 18 , rel: 10 , size: 10)+
+    b (abs: 52 , rel: 13 , size: 17)      +|             |          |          |   a (abs: 74 , rel: 8 , size: 31)        +
+     test3 (abs: 42 , rel: 10 , size: 10) +|             |          |          |    b (abs: 61 , rel: 13 , size: 17)      +
+    d (abs: 59 , rel: 6 , size: 6)        +|             |          |          |     test3 (abs: 51 , rel: 10 , size: 10) +
+                                           |             |          |          |    d (abs: 68 , rel: 6 , size: 6)        +
+                                           |             |          |          | 
+ root (abs: 81 , rel: 0 , size: 91)       +| /root//x/b  | a        | <new/>   | root (abs: 99 , rel: 0 , size: 109)      +
+  x (abs: 73 , rel: 8 , size: 81)         +|             |          |          |  x (abs: 90 , rel: 9 , size: 99)         +
+   b (abs: 34 , rel: 39 , size: 42)       +|             |          |          |   b (abs: 43 , rel: 47 , size: 51)       +
+    test1 (abs: 0 , rel: 34 , size: 10)   +|             |          |          |    test1 (abs: 0 , rel: 43 , size: 10)   +
+    x (abs: 27 , rel: 7 , size: 24)       +|             |          |          |    x (abs: 35 , rel: 8 , size: 33)       +
+     b (abs: 20 , rel: 7 , size: 17)      +|             |          |          |     b (abs: 20 , rel: 15 , size: 17)     +
+      test2 (abs: 10 , rel: 10 , size: 10)+|             |          |          |      test2 (abs: 10 , rel: 10 , size: 10)+
+   a (abs: 65 , rel: 8 , size: 31)        +|             |          |          |     new (abs: 27 , rel: 8 , size: 8)     +
+    b (abs: 52 , rel: 13 , size: 17)      +|             |          |          |   new (abs: 51 , rel: 39 , size: 8)      +
+     test3 (abs: 42 , rel: 10 , size: 10) +|             |          |          |   a (abs: 82 , rel: 8 , size: 31)        +
+    d (abs: 59 , rel: 6 , size: 6)        +|             |          |          |    b (abs: 69 , rel: 13 , size: 17)      +
+                                           |             |          |          |     test3 (abs: 59 , rel: 10 , size: 10) +
+                                           |             |          |          |    d (abs: 76 , rel: 6 , size: 6)        +
+                                           |             |          |          | 
+ root (abs: 81 , rel: 0 , size: 91)       +| /root//x//b | r        | <new/>   | root (abs: 38 , rel: 0 , size: 48)       +
+  x (abs: 73 , rel: 8 , size: 81)         +|             |          |          |  x (abs: 30 , rel: 8 , size: 38)         +
+   b (abs: 34 , rel: 39 , size: 42)       +|             |          |          |   new (abs: 0 , rel: 30 , size: 8)       +
+    test1 (abs: 0 , rel: 34 , size: 10)   +|             |          |          |   a (abs: 22 , rel: 8 , size: 22)        +
+    x (abs: 27 , rel: 7 , size: 24)       +|             |          |          |    new (abs: 8 , rel: 14 , size: 8)      +
+     b (abs: 20 , rel: 7 , size: 17)      +|             |          |          |    d (abs: 16 , rel: 6 , size: 6)        +
+      test2 (abs: 10 , rel: 10 , size: 10)+|             |          |          | 
+   a (abs: 65 , rel: 8 , size: 31)        +|             |          |          | 
+    b (abs: 52 , rel: 13 , size: 17)      +|             |          |          | 
+     test3 (abs: 42 , rel: 10 , size: 10) +|             |          |          | 
+    d (abs: 59 , rel: 6 , size: 6)        +|             |          |          | 
+                                           |             |          |          | 
+ root (abs: 81 , rel: 0 , size: 91)       +| /root//x//b | a        | <new/>   | root (abs: 108 , rel: 0 , size: 118)     +
+  x (abs: 73 , rel: 8 , size: 81)         +|             |          |          |  x (abs: 99 , rel: 9 , size: 108)        +
+   b (abs: 34 , rel: 39 , size: 42)       +|             |          |          |   b (abs: 43 , rel: 56 , size: 51)       +
+    test1 (abs: 0 , rel: 34 , size: 10)   +|             |          |          |    test1 (abs: 0 , rel: 43 , size: 10)   +
+    x (abs: 27 , rel: 7 , size: 24)       +|             |          |          |    x (abs: 35 , rel: 8 , size: 33)       +
+     b (abs: 20 , rel: 7 , size: 17)      +|             |          |          |     b (abs: 20 , rel: 15 , size: 17)     +
+      test2 (abs: 10 , rel: 10 , size: 10)+|             |          |          |      test2 (abs: 10 , rel: 10 , size: 10)+
+   a (abs: 65 , rel: 8 , size: 31)        +|             |          |          |     new (abs: 27 , rel: 8 , size: 8)     +
+    b (abs: 52 , rel: 13 , size: 17)      +|             |          |          |   new (abs: 51 , rel: 48 , size: 8)      +
+     test3 (abs: 42 , rel: 10 , size: 10) +|             |          |          |   a (abs: 90 , rel: 9 , size: 40)        +
+    d (abs: 59 , rel: 6 , size: 6)        +|             |          |          |    b (abs: 69 , rel: 21 , size: 17)      +
+                                           |             |          |          |     test3 (abs: 59 , rel: 10 , size: 10) +
+                                           |             |          |          |    new (abs: 76 , rel: 14 , size: 8)     +
+                                           |             |          |          |    d (abs: 84 , rel: 6 , size: 6)        +
+                                           |             |          |          | 
+ root (abs: 81 , rel: 0 , size: 91)       +| //x//b      | r        | <new/>   | root (abs: 38 , rel: 0 , size: 48)       +
+  x (abs: 73 , rel: 8 , size: 81)         +|             |          |          |  x (abs: 30 , rel: 8 , size: 38)         +
+   b (abs: 34 , rel: 39 , size: 42)       +|             |          |          |   new (abs: 0 , rel: 30 , size: 8)       +
+    test1 (abs: 0 , rel: 34 , size: 10)   +|             |          |          |   a (abs: 22 , rel: 8 , size: 22)        +
+    x (abs: 27 , rel: 7 , size: 24)       +|             |          |          |    new (abs: 8 , rel: 14 , size: 8)      +
+     b (abs: 20 , rel: 7 , size: 17)      +|             |          |          |    d (abs: 16 , rel: 6 , size: 6)        +
+      test2 (abs: 10 , rel: 10 , size: 10)+|             |          |          | 
+   a (abs: 65 , rel: 8 , size: 31)        +|             |          |          | 
+    b (abs: 52 , rel: 13 , size: 17)      +|             |          |          | 
+     test3 (abs: 42 , rel: 10 , size: 10) +|             |          |          | 
+    d (abs: 59 , rel: 6 , size: 6)        +|             |          |          | 
+                                           |             |          |          | 
+ root (abs: 81 , rel: 0 , size: 91)       +| //x//b      | a        | <new/>   | root (abs: 108 , rel: 0 , size: 118)     +
+  x (abs: 73 , rel: 8 , size: 81)         +|             |          |          |  x (abs: 99 , rel: 9 , size: 108)        +
+   b (abs: 34 , rel: 39 , size: 42)       +|             |          |          |   b (abs: 43 , rel: 56 , size: 51)       +
+    test1 (abs: 0 , rel: 34 , size: 10)   +|             |          |          |    test1 (abs: 0 , rel: 43 , size: 10)   +
+    x (abs: 27 , rel: 7 , size: 24)       +|             |          |          |    x (abs: 35 , rel: 8 , size: 33)       +
+     b (abs: 20 , rel: 7 , size: 17)      +|             |          |          |     b (abs: 20 , rel: 15 , size: 17)     +
+      test2 (abs: 10 , rel: 10 , size: 10)+|             |          |          |      test2 (abs: 10 , rel: 10 , size: 10)+
+   a (abs: 65 , rel: 8 , size: 31)        +|             |          |          |     new (abs: 27 , rel: 8 , size: 8)     +
+    b (abs: 52 , rel: 13 , size: 17)      +|             |          |          |   new (abs: 51 , rel: 48 , size: 8)      +
+     test3 (abs: 42 , rel: 10 , size: 10) +|             |          |          |   a (abs: 90 , rel: 9 , size: 40)        +
+    d (abs: 59 , rel: 6 , size: 6)        +|             |          |          |    b (abs: 69 , rel: 21 , size: 17)      +
+                                           |             |          |          |     test3 (abs: 59 , rel: 10 , size: 10) +
+                                           |             |          |          |    new (abs: 76 , rel: 14 , size: 8)     +
+                                           |             |          |          |    d (abs: 84 , rel: 6 , size: 6)        +
+                                           |             |          |          | 
+ root (abs: 81 , rel: 0 , size: 91)       +| /root//x/b  | i        | <new/>   | root (abs: 90 , rel: 0 , size: 100)      +
+  x (abs: 73 , rel: 8 , size: 81)         +|             |          |          |  x (abs: 82 , rel: 8 , size: 90)         +
+   c (abs: 34 , rel: 39 , size: 42)       +|             |          |          |   c (abs: 43 , rel: 39 , size: 51)       +
+    test1 (abs: 0 , rel: 34 , size: 10)   +|             |          |          |    test1 (abs: 0 , rel: 43 , size: 10)   +
+    x (abs: 27 , rel: 7 , size: 24)       +|             |          |          |    x (abs: 36 , rel: 7 , size: 33)       +
+     b (abs: 20 , rel: 7 , size: 17)      +|             |          |          |     b (abs: 28 , rel: 8 , size: 26)      +
+      test2 (abs: 10 , rel: 10 , size: 10)+|             |          |          |      test2 (abs: 10 , rel: 18 , size: 10)+
+   a (abs: 65 , rel: 8 , size: 31)        +|             |          |          |      new (abs: 20 , rel: 8 , size: 8)    +
+    b (abs: 52 , rel: 13 , size: 17)      +|             |          |          |   a (abs: 74 , rel: 8 , size: 31)        +
+     test3 (abs: 42 , rel: 10 , size: 10) +|             |          |          |    b (abs: 61 , rel: 13 , size: 17)      +
+    d (abs: 59 , rel: 6 , size: 6)        +|             |          |          |     test3 (abs: 51 , rel: 10 , size: 10) +
+                                           |             |          |          |    d (abs: 68 , rel: 6 , size: 6)        +
+                                           |             |          |          | 
+ root (abs: 81 , rel: 0 , size: 91)       +| /root//x//b | i        | <new/>   | root (abs: 108 , rel: 0 , size: 118)     +
+  x (abs: 73 , rel: 8 , size: 81)         +|             |          |          |  x (abs: 100 , rel: 8 , size: 108)       +
+   b (abs: 34 , rel: 39 , size: 42)       +|             |          |          |   b (abs: 51 , rel: 49 , size: 60)       +
+    test1 (abs: 0 , rel: 34 , size: 10)   +|             |          |          |    test1 (abs: 0 , rel: 51 , size: 10)   +
+    x (abs: 27 , rel: 7 , size: 24)       +|             |          |          |    x (abs: 36 , rel: 15 , size: 33)      +
+     b (abs: 20 , rel: 7 , size: 17)      +|             |          |          |     b (abs: 28 , rel: 8 , size: 26)      +
+      test2 (abs: 10 , rel: 10 , size: 10)+|             |          |          |      test2 (abs: 10 , rel: 18 , size: 10)+
+   a (abs: 65 , rel: 8 , size: 31)        +|             |          |          |      new (abs: 20 , rel: 8 , size: 8)    +
+    b (abs: 52 , rel: 13 , size: 17)      +|             |          |          |    new (abs: 43 , rel: 8 , size: 8)      +
+     test3 (abs: 42 , rel: 10 , size: 10) +|             |          |          |   a (abs: 92 , rel: 8 , size: 40)        +
+    d (abs: 59 , rel: 6 , size: 6)        +|             |          |          |    b (abs: 78 , rel: 14 , size: 26)      +
+                                           |             |          |          |     test3 (abs: 60 , rel: 18 , size: 10) +
+                                           |             |          |          |     new (abs: 70 , rel: 8 , size: 8)     +
+                                           |             |          |          |    d (abs: 86 , rel: 6 , size: 6)        +
+                                           |             |          |          | 
+ root (abs: 81 , rel: 0 , size: 91)       +| /root//x//b | b        | <new/>   | root (abs: 99 , rel: 0 , size: 109)      +
+  x (abs: 73 , rel: 8 , size: 81)         +|             |          |          |  x (abs: 91 , rel: 8 , size: 99)         +
+   c (abs: 34 , rel: 39 , size: 42)       +|             |          |          |   c (abs: 43 , rel: 48 , size: 51)       +
+    test1 (abs: 0 , rel: 34 , size: 10)   +|             |          |          |    test1 (abs: 0 , rel: 43 , size: 10)   +
+    x (abs: 27 , rel: 7 , size: 24)       +|             |          |          |    x (abs: 35 , rel: 8 , size: 33)       +
+     b (abs: 20 , rel: 7 , size: 17)      +|             |          |          |     new (abs: 10 , rel: 25 , size: 8)    +
+      test2 (abs: 10 , rel: 10 , size: 10)+|             |          |          |     b (abs: 28 , rel: 7 , size: 17)      +
+   a (abs: 65 , rel: 8 , size: 31)        +|             |          |          |      test2 (abs: 18 , rel: 10 , size: 10)+
+    b (abs: 52 , rel: 13 , size: 17)      +|             |          |          |   a (abs: 82 , rel: 9 , size: 40)        +
+     test3 (abs: 42 , rel: 10 , size: 10) +|             |          |          |    new (abs: 51 , rel: 31 , size: 8)     +
+    d (abs: 59 , rel: 6 , size: 6)        +|             |          |          |    b (abs: 69 , rel: 13 , size: 17)      +
+                                           |             |          |          |     test3 (abs: 59 , rel: 10 , size: 10) +
+                                           |             |          |          |    d (abs: 76 , rel: 6 , size: 6)        +
+                                           |             |          |          | 
+ root (abs: 81 , rel: 0 , size: 91)       +| //x//b      | b        | <new/>   | root (abs: 99 , rel: 0 , size: 109)      +
+  x (abs: 73 , rel: 8 , size: 81)         +|             |          |          |  x (abs: 91 , rel: 8 , size: 99)         +
+   c (abs: 34 , rel: 39 , size: 42)       +|             |          |          |   c (abs: 43 , rel: 48 , size: 51)       +
+    test1 (abs: 0 , rel: 34 , size: 10)   +|             |          |          |    test1 (abs: 0 , rel: 43 , size: 10)   +
+    x (abs: 27 , rel: 7 , size: 24)       +|             |          |          |    x (abs: 35 , rel: 8 , size: 33)       +
+     b (abs: 20 , rel: 7 , size: 17)      +|             |          |          |     new (abs: 10 , rel: 25 , size: 8)    +
+      test2 (abs: 10 , rel: 10 , size: 10)+|             |          |          |     b (abs: 28 , rel: 7 , size: 17)      +
+   a (abs: 65 , rel: 8 , size: 31)        +|             |          |          |      test2 (abs: 18 , rel: 10 , size: 10)+
+    b (abs: 52 , rel: 13 , size: 17)      +|             |          |          |   a (abs: 82 , rel: 9 , size: 40)        +
+     test3 (abs: 42 , rel: 10 , size: 10) +|             |          |          |    new (abs: 51 , rel: 31 , size: 8)     +
+    d (abs: 59 , rel: 6 , size: 6)        +|             |          |          |    b (abs: 69 , rel: 13 , size: 17)      +
+                                           |             |          |          |     test3 (abs: 59 , rel: 10 , size: 10) +
+                                           |             |          |          |    d (abs: 76 , rel: 6 , size: 6)        +
+                                           |             |          |          | 
+ root (abs: 81 , rel: 0 , size: 91)       +| //x//b      | i        | <new/>   | root (abs: 108 , rel: 0 , size: 118)     +
+  x (abs: 73 , rel: 8 , size: 81)         +|             |          |          |  x (abs: 100 , rel: 8 , size: 108)       +
+   b (abs: 34 , rel: 39 , size: 42)       +|             |          |          |   b (abs: 51 , rel: 49 , size: 60)       +
+    test1 (abs: 0 , rel: 34 , size: 10)   +|             |          |          |    test1 (abs: 0 , rel: 51 , size: 10)   +
+    x (abs: 27 , rel: 7 , size: 24)       +|             |          |          |    x (abs: 36 , rel: 15 , size: 33)      +
+     b (abs: 20 , rel: 7 , size: 17)      +|             |          |          |     b (abs: 28 , rel: 8 , size: 26)      +
+      test2 (abs: 10 , rel: 10 , size: 10)+|             |          |          |      test2 (abs: 10 , rel: 18 , size: 10)+
+   a (abs: 65 , rel: 8 , size: 31)        +|             |          |          |      new (abs: 20 , rel: 8 , size: 8)    +
+    b (abs: 52 , rel: 13 , size: 17)      +|             |          |          |    new (abs: 43 , rel: 8 , size: 8)      +
+     test3 (abs: 42 , rel: 10 , size: 10) +|             |          |          |   a (abs: 92 , rel: 8 , size: 40)        +
+    d (abs: 59 , rel: 6 , size: 6)        +|             |          |          |    b (abs: 78 , rel: 14 , size: 26)      +
+                                           |             |          |          |     test3 (abs: 60 , rel: 18 , size: 10) +
+                                           |             |          |          |     new (abs: 70 , rel: 8 , size: 8)     +
+                                           |             |          |          |    d (abs: 86 , rel: 6 , size: 6)        +
+                                           |             |          |          | 
+ root (abs: 62 , rel: 0 , size: 72)       +| /root//x//b | i        | <n/>     | root (abs: 90 , rel: 0 , size: 100)      +
+  x (abs: 51 , rel: 11 , size: 62)        +|             |          |          |  x (abs: 79 , rel: 11 , size: 90)        +
+   a (abs: 0 , rel: 51 , size: 6)         +|             |          |          |   a (abs: 0 , rel: 79 , size: 6)         +
+   b (abs: 6 , rel: 45 , size: 6)         +|             |          |          |   b (abs: 12 , rel: 67 , size: 13)       +
+   b (abs: 18 , rel: 33 , size: 13)       +|             |          |          |    n (abs: 6 , rel: 6 , size: 6)         +
+    c (abs: 12 , rel: 6 , size: 6)        +|             |          |          |   b (abs: 31 , rel: 48 , size: 20)       +
+   x (abs: 38 , rel: 13 , size: 20)       +|             |          |          |    c (abs: 19 , rel: 12 , size: 6)       +
+    b (abs: 31 , rel: 7 , size: 13)       +|             |          |          |    n (abs: 25 , rel: 6 , size: 6)        +
+     @i (abs: 25 , rel: 6 , size: 6)      +|             |          |          |   x (abs: 59 , rel: 20 , size: 27)       +
+   b (abs: 45 , rel: 6 , size: 6)         +|             |          |          |    b (abs: 51 , rel: 8 , size: 20)       +
+                                           |             |          |          |     @i (abs: 39 , rel: 12 , size: 6)     +
+                                           |             |          |          |     n (abs: 45 , rel: 6 , size: 6)       +
+                                           |             |          |          |   b (abs: 72 , rel: 7 , size: 13)        +
+                                           |             |          |          |    n (abs: 66 , rel: 6 , size: 6)        +
+                                           |             |          |          | 
+(13 rows)
+
+drop table a;
+DROP TABLE
+create table a (i int, data doc, targ_path xml.path);
+CREATE TABLE
+insert into a values 
+(1, '<root><x><b><test1/><x><b><test2/></b></x></b><a><b><test3/></b><d/></a></x></root>', '/root/x/b'),
+(2, '<root><x><b><test1/><x><b><test2/></b></x></b><a><b><test3/></b><d/></a></x></root>', '/root//x/b'),
+(3, '<root><x><c><test1/><x><b><test2/></b></x></c><a><b><test3/></b><d/></a></x></root>', '/root//x/b'),
+(4, '<root><x><c><test1/><b><test2/></b></c><a><b><test3/></b><d/></a><b/></x></root>', '/root//x//b'), 
+(5, '<root><x><c><test1/><b><test2/></b></c><a><b><test3/></b><d/></a><b/><b/></x></root>', '/root//x//b'),
+(6, '<root><x><c><test1/><b><test2/></b></c><a><b><test3/></b><d/></a><b i="1"/><b/></x></root>', '/root//x//b'),
+(7, '<root><x><c><test1/><b><test2/></b></c><a><b><test3/></b><d/></a><b i="1"/><b i="2"/></x></root>', '/root//x//b'),
+(8, '<root><x><c><test1/><b><test2/></b></c><a><b><test3/></b><d/></a><b><c/></b><b><c/></b></x></root>', '/root//x//b'),
+(9, '<a><b d="1" id="1" /><b d="2" id="2"/></a>', '/a/b//@id'),
+(10, '<a><b d="1" id="1" /><b d="2" id="2"/></a>', '//@id'),
+(11, '<a><b d="1" id="1" /><b d="2" id="2"/></a>', '//@*');
+INSERT 0 11
+select node_debug_print(data), targ_path, node_debug_print(xml.remove(data, targ_path))
+from a
+order by a.i;
+             node_debug_print              |  targ_path  |             node_debug_print             
+-------------------------------------------+-------------+------------------------------------------
+ root (abs: 81 , rel: 0 , size: 91)       +| /root/x/b   | root (abs: 38 , rel: 0 , size: 48)      +
+  x (abs: 73 , rel: 8 , size: 81)         +|             |  x (abs: 31 , rel: 7 , size: 38)        +
+   b (abs: 34 , rel: 39 , size: 42)       +|             |   a (abs: 23 , rel: 8 , size: 31)       +
+    test1 (abs: 0 , rel: 34 , size: 10)   +|             |    b (abs: 10 , rel: 13 , size: 17)     +
+    x (abs: 27 , rel: 7 , size: 24)       +|             |     test3 (abs: 0 , rel: 10 , size: 10) +
+     b (abs: 20 , rel: 7 , size: 17)      +|             |    d (abs: 17 , rel: 6 , size: 6)       +
+      test2 (abs: 10 , rel: 10 , size: 10)+|             | 
+   a (abs: 65 , rel: 8 , size: 31)        +|             | 
+    b (abs: 52 , rel: 13 , size: 17)      +|             | 
+     test3 (abs: 42 , rel: 10 , size: 10) +|             | 
+    d (abs: 59 , rel: 6 , size: 6)        +|             | 
+                                           |             | 
+ root (abs: 81 , rel: 0 , size: 91)       +| /root//x/b  | root (abs: 38 , rel: 0 , size: 48)      +
+  x (abs: 73 , rel: 8 , size: 81)         +|             |  x (abs: 31 , rel: 7 , size: 38)        +
+   b (abs: 34 , rel: 39 , size: 42)       +|             |   a (abs: 23 , rel: 8 , size: 31)       +
+    test1 (abs: 0 , rel: 34 , size: 10)   +|             |    b (abs: 10 , rel: 13 , size: 17)     +
+    x (abs: 27 , rel: 7 , size: 24)       +|             |     test3 (abs: 0 , rel: 10 , size: 10) +
+     b (abs: 20 , rel: 7 , size: 17)      +|             |    d (abs: 17 , rel: 6 , size: 6)       +
+      test2 (abs: 10 , rel: 10 , size: 10)+|             | 
+   a (abs: 65 , rel: 8 , size: 31)        +|             | 
+    b (abs: 52 , rel: 13 , size: 17)      +|             | 
+     test3 (abs: 42 , rel: 10 , size: 10) +|             | 
+    d (abs: 59 , rel: 6 , size: 6)        +|             | 
+                                           |             | 
+ root (abs: 81 , rel: 0 , size: 91)       +| /root//x/b  | root (abs: 63 , rel: 0 , size: 73)      +
+  x (abs: 73 , rel: 8 , size: 81)         +|             |  x (abs: 55 , rel: 8 , size: 63)        +
+   c (abs: 34 , rel: 39 , size: 42)       +|             |   c (abs: 16 , rel: 39 , size: 24)      +
+    test1 (abs: 0 , rel: 34 , size: 10)   +|             |    test1 (abs: 0 , rel: 16 , size: 10)  +
+    x (abs: 27 , rel: 7 , size: 24)       +|             |    x (abs: 10 , rel: 6 , size: 6)       +
+     b (abs: 20 , rel: 7 , size: 17)      +|             |   a (abs: 47 , rel: 8 , size: 31)       +
+      test2 (abs: 10 , rel: 10 , size: 10)+|             |    b (abs: 34 , rel: 13 , size: 17)     +
+   a (abs: 65 , rel: 8 , size: 31)        +|             |     test3 (abs: 24 , rel: 10 , size: 10)+
+    b (abs: 52 , rel: 13 , size: 17)      +|             |    d (abs: 41 , rel: 6 , size: 6)       +
+     test3 (abs: 42 , rel: 10 , size: 10) +|             | 
+    d (abs: 59 , rel: 6 , size: 6)        +|             | 
+                                           |             | 
+ root (abs: 81 , rel: 0 , size: 91)       +| /root//x//b | root (abs: 38 , rel: 0 , size: 48)      +
+  x (abs: 72 , rel: 9 , size: 81)         +|             |  x (abs: 30 , rel: 8 , size: 38)        +
+   c (abs: 27 , rel: 45 , size: 35)       +|             |   c (abs: 10 , rel: 20 , size: 17)      +
+    test1 (abs: 0 , rel: 27 , size: 10)   +|             |    test1 (abs: 0 , rel: 10 , size: 10)  +
+    b (abs: 20 , rel: 7 , size: 17)       +|             |   a (abs: 23 , rel: 7 , size: 13)       +
+     test2 (abs: 10 , rel: 10 , size: 10) +|             |    d (abs: 17 , rel: 6 , size: 6)       +
+   a (abs: 58 , rel: 14 , size: 31)       +|             | 
+    b (abs: 45 , rel: 13 , size: 17)      +|             | 
+     test3 (abs: 35 , rel: 10 , size: 10) +|             | 
+    d (abs: 52 , rel: 6 , size: 6)        +|             | 
+   b (abs: 66 , rel: 6 , size: 6)         +|             | 
+                                           |             | 
+ root (abs: 88 , rel: 0 , size: 98)       +| /root//x//b | root (abs: 38 , rel: 0 , size: 48)      +
+  x (abs: 78 , rel: 10 , size: 88)        +|             |  x (abs: 30 , rel: 8 , size: 38)        +
+   c (abs: 27 , rel: 51 , size: 35)       +|             |   c (abs: 10 , rel: 20 , size: 17)      +
+    test1 (abs: 0 , rel: 27 , size: 10)   +|             |    test1 (abs: 0 , rel: 10 , size: 10)  +
+    b (abs: 20 , rel: 7 , size: 17)       +|             |   a (abs: 23 , rel: 7 , size: 13)       +
+     test2 (abs: 10 , rel: 10 , size: 10) +|             |    d (abs: 17 , rel: 6 , size: 6)       +
+   a (abs: 58 , rel: 20 , size: 31)       +|             | 
+    b (abs: 45 , rel: 13 , size: 17)      +|             | 
+     test3 (abs: 35 , rel: 10 , size: 10) +|             | 
+    d (abs: 52 , rel: 6 , size: 6)        +|             | 
+   b (abs: 66 , rel: 12 , size: 6)        +|             | 
+   b (abs: 72 , rel: 6 , size: 6)         +|             | 
+                                           |             | 
+ root (abs: 95 , rel: 0 , size: 105)      +| /root//x//b | root (abs: 38 , rel: 0 , size: 48)      +
+  x (abs: 85 , rel: 10 , size: 95)        +|             |  x (abs: 30 , rel: 8 , size: 38)        +
+   c (abs: 27 , rel: 58 , size: 35)       +|             |   c (abs: 10 , rel: 20 , size: 17)      +
+    test1 (abs: 0 , rel: 27 , size: 10)   +|             |    test1 (abs: 0 , rel: 10 , size: 10)  +
+    b (abs: 20 , rel: 7 , size: 17)       +|             |   a (abs: 23 , rel: 7 , size: 13)       +
+     test2 (abs: 10 , rel: 10 , size: 10) +|             |    d (abs: 17 , rel: 6 , size: 6)       +
+   a (abs: 58 , rel: 27 , size: 31)       +|             | 
+    b (abs: 45 , rel: 13 , size: 17)      +|             | 
+     test3 (abs: 35 , rel: 10 , size: 10) +|             | 
+    d (abs: 52 , rel: 6 , size: 6)        +|             | 
+   b (abs: 72 , rel: 13 , size: 13)       +|             | 
+    @i (abs: 66 , rel: 6 , size: 6)       +|             | 
+   b (abs: 79 , rel: 6 , size: 6)         +|             | 
+                                           |             | 
+ root (abs: 102 , rel: 0 , size: 112)     +| /root//x//b | root (abs: 38 , rel: 0 , size: 48)      +
+  x (abs: 92 , rel: 10 , size: 102)       +|             |  x (abs: 30 , rel: 8 , size: 38)        +
+   c (abs: 27 , rel: 65 , size: 35)       +|             |   c (abs: 10 , rel: 20 , size: 17)      +
+    test1 (abs: 0 , rel: 27 , size: 10)   +|             |    test1 (abs: 0 , rel: 10 , size: 10)  +
+    b (abs: 20 , rel: 7 , size: 17)       +|             |   a (abs: 23 , rel: 7 , size: 13)       +
+     test2 (abs: 10 , rel: 10 , size: 10) +|             |    d (abs: 17 , rel: 6 , size: 6)       +
+   a (abs: 58 , rel: 34 , size: 31)       +|             | 
+    b (abs: 45 , rel: 13 , size: 17)      +|             | 
+     test3 (abs: 35 , rel: 10 , size: 10) +|             | 
+    d (abs: 52 , rel: 6 , size: 6)        +|             | 
+   b (abs: 72 , rel: 20 , size: 13)       +|             | 
+    @i (abs: 66 , rel: 6 , size: 6)       +|             | 
+   b (abs: 85 , rel: 7 , size: 13)        +|             | 
+    @i (abs: 79 , rel: 6 , size: 6)       +|             | 
+                                           |             | 
+ root (abs: 102 , rel: 0 , size: 112)     +| /root//x//b | root (abs: 38 , rel: 0 , size: 48)      +
+  x (abs: 92 , rel: 10 , size: 102)       +|             |  x (abs: 30 , rel: 8 , size: 38)        +
+   c (abs: 27 , rel: 65 , size: 35)       +|             |   c (abs: 10 , rel: 20 , size: 17)      +
+    test1 (abs: 0 , rel: 27 , size: 10)   +|             |    test1 (abs: 0 , rel: 10 , size: 10)  +
+    b (abs: 20 , rel: 7 , size: 17)       +|             |   a (abs: 23 , rel: 7 , size: 13)       +
+     test2 (abs: 10 , rel: 10 , size: 10) +|             |    d (abs: 17 , rel: 6 , size: 6)       +
+   a (abs: 58 , rel: 34 , size: 31)       +|             | 
+    b (abs: 45 , rel: 13 , size: 17)      +|             | 
+     test3 (abs: 35 , rel: 10 , size: 10) +|             | 
+    d (abs: 52 , rel: 6 , size: 6)        +|             | 
+   b (abs: 72 , rel: 20 , size: 13)       +|             | 
+    c (abs: 66 , rel: 6 , size: 6)        +|             | 
+   b (abs: 85 , rel: 7 , size: 13)        +|             | 
+    c (abs: 79 , rel: 6 , size: 6)        +|             | 
+                                           |             | 
+ a (abs: 42 , rel: 0 , size: 50)          +| /a/b//@id   | a (abs: 26 , rel: 0 , size: 34)         +
+  b (abs: 13 , rel: 29 , size: 21)        +|             |  b (abs: 6 , rel: 20 , size: 13)        +
+   @d (abs: 0 , rel: 13 , size: 6)        +|             |   @d (abs: 0 , rel: 6 , size: 6)        +
+   @id (abs: 6 , rel: 7 , size: 7)        +|             |  b (abs: 19 , rel: 7 , size: 13)        +
+  b (abs: 34 , rel: 8 , size: 21)         +|             |   @d (abs: 13 , rel: 6 , size: 6)       +
+   @d (abs: 21 , rel: 13 , size: 6)       +|             | 
+   @id (abs: 27 , rel: 7 , size: 7)       +|             | 
+                                           |             | 
+ a (abs: 42 , rel: 0 , size: 50)          +| //@id       | a (abs: 26 , rel: 0 , size: 34)         +
+  b (abs: 13 , rel: 29 , size: 21)        +|             |  b (abs: 6 , rel: 20 , size: 13)        +
+   @d (abs: 0 , rel: 13 , size: 6)        +|             |   @d (abs: 0 , rel: 6 , size: 6)        +
+   @id (abs: 6 , rel: 7 , size: 7)        +|             |  b (abs: 19 , rel: 7 , size: 13)        +
+  b (abs: 34 , rel: 8 , size: 21)         +|             |   @d (abs: 13 , rel: 6 , size: 6)       +
+   @d (abs: 21 , rel: 13 , size: 6)       +|             | 
+   @id (abs: 27 , rel: 7 , size: 7)       +|             | 
+                                           |             | 
+ a (abs: 42 , rel: 0 , size: 50)          +| //@*        | a (abs: 12 , rel: 0 , size: 20)         +
+  b (abs: 13 , rel: 29 , size: 21)        +|             |  b (abs: 0 , rel: 12 , size: 6)         +
+   @d (abs: 0 , rel: 13 , size: 6)        +|             |  b (abs: 6 , rel: 6 , size: 6)          +
+   @id (abs: 6 , rel: 7 , size: 7)        +|             | 
+  b (abs: 34 , rel: 8 , size: 21)         +|             | 
+   @d (abs: 21 , rel: 13 , size: 6)       +|             | 
+   @id (abs: 27 , rel: 7 , size: 7)       +|             | 
+                                           |             | 
+(11 rows)
+
+drop table a;
+DROP TABLE

@@ -429,35 +429,6 @@ select path('//x/b', '<root><x><b><test1/><x><b><test2/></b></x></b><a><b><test3
 -- of scan and its sub-scan). In this case that would happen for '<b><test2/></b>' if uniqueness wasn't enforced:
 select path('//x//b', '<root><x><b><test1/><x><b><test2/></b></x></b><a><b><test3/></b><d/></a></x></root>');
 
--- Similarly, write functions using the descendant axe...
-select add('<root><x><b><test1/><x><b><test2/></b></x></b><a><b><test3/></b><d/></a></x></root>', '/root//x/b', '<new/>', 'r');
-select add('<root><x><c><test1/><x><b><test2/></b></x></c><a><b><test3/></b><d/></a></x></root>', '/root//x/b', '<new/>', 'b');
-select add('<root><x><b><test1/><x><b><test2/></b></x></b><a><b><test3/></b><d/></a></x></root>', '/root//x/b', '<new/>', 'a');
-select add('<root><x><b><test1/><x><b><test2/></b></x></b><a><b><test3/></b><d/></a></x></root>', '/root//x//b', '<new/>', 'r');
-select add('<root><x><b><test1/><x><b><test2/></b></x></b><a><b><test3/></b><d/></a></x></root>', '/root//x//b', '<new/>', 'a');
-select add('<root><x><b><test1/><x><b><test2/></b></x></b><a><b><test3/></b><d/></a></x></root>', '//x//b', '<new/>', 'r');
-select add('<root><x><b><test1/><x><b><test2/></b></x></b><a><b><test3/></b><d/></a></x></root>', '//x//b', '<new/>', 'a');
-select add('<root><x><c><test1/><x><b><test2/></b></x></c><a><b><test3/></b><d/></a></x></root>', '/root//x/b', '<new/>', 'i');
-
-select remove('<root><x><b><test1/><x><b><test2/></b></x></b><a><b><test3/></b><d/></a></x></root>', '/root/x/b');
-select remove('<root><x><b><test1/><x><b><test2/></b></x></b><a><b><test3/></b><d/></a></x></root>', '/root//x/b');
-select remove('<root><x><c><test1/><x><b><test2/></b></x></c><a><b><test3/></b><d/></a></x></root>', '/root//x/b');
-select remove('<root><x><c><test1/><b><test2/></b></c><a><b><test3/></b><d/></a><b/></x></root>', '/root//x//b'); 
-select remove('<root><x><c><test1/><b><test2/></b></c><a><b><test3/></b><d/></a><b/><b/></x></root>', '/root//x//b');
-select remove('<root><x><c><test1/><b><test2/></b></c><a><b><test3/></b><d/></a><b i="1"/><b/></x></root>', '/root//x//b');
-select remove('<root><x><c><test1/><b><test2/></b></c><a><b><test3/></b><d/></a><b i="1"/><b i="2"/></x></root>', '/root//x//b');
-select remove('<root><x><c><test1/><b><test2/></b></c><a><b><test3/></b><d/></a><b><c/></b><b><c/></b></x></root>', '/root//x//b');
-select remove('<a><b d="1" id="1" /><b d="2" id="2"/></a>', '/a/b//@id');
-select remove('<a><b d="1" id="1" /><b d="2" id="2"/></a>', '//@id');
-select remove('<a><b d="1" id="1" /><b d="2" id="2"/></a>', '//@*');
-
--- Specifically, addition must not take place multiple times for the same node. 
-select add('<root><x><c><test1/><x><b><test2/></b></x></c><a><b><test3/></b><d/></a></x></root>', '/root//x//b', '<new/>', 'b');
-select add('<root><x><b><test1/><x><b><test2/></b></x></b><a><b><test3/></b><d/></a></x></root>', '/root//x//b', '<new/>', 'i');
-select add('<root><x><c><test1/><x><b><test2/></b></x></c><a><b><test3/></b><d/></a></x></root>', '//x//b', '<new/>', 'b');
-select add('<root><x><b><test1/><x><b><test2/></b></x></b><a><b><test3/></b><d/></a></x></root>', '//x//b', '<new/>', 'i');
-select add('<root><x><a/><b/><b><c/></b><x><b i="1"/></x><b/></x></root>', '/root//x//b', '<n/>', 'i');
-
 -- Functions
 
 select path('/root/b[count(a)>1]', '<root><a i="1"><b/></a><a i="2"><b/><b/></a></root>');
