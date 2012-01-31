@@ -1532,6 +1532,7 @@ dumpLocationPath(XPathHeader xpathHdr, StringInfo output, bool debug, unsigned s
 		return;
 	}
 	last = (xpath->targNdKind == XMLNODE_ELEMENT) ? xpath->depth : xpath->depth - 1;
+
 	for (i = 1; i <= last; i++)
 	{
 		unsigned short nameLen;
@@ -1579,6 +1580,15 @@ dumpLocationPath(XPathHeader xpathHdr, StringInfo output, bool debug, unsigned s
 				appendStringInfoString(output, "\nnode test:\t");
 			}
 		}
+
+		o = xpath->elements[i - 1];
+		el = (XPathElement) ((char *) xpath + o);
+
+		if (!debug && el->descendant)
+		{
+			appendStringInfoChar(output, XNODE_CHAR_SLASH);
+		}
+
 		switch (xpath->targNdKind)
 		{
 			case XMLNODE_COMMENT:
@@ -1610,8 +1620,6 @@ dumpLocationPath(XPathHeader xpathHdr, StringInfo output, bool debug, unsigned s
 				}
 				else
 				{
-					o = xpath->elements[i - 1];
-					el = (XPathElement) ((char *) xpath + o);
 					appendStringInfo(output, "@%s", el->name);
 				}
 				break;
@@ -1619,6 +1627,11 @@ dumpLocationPath(XPathHeader xpathHdr, StringInfo output, bool debug, unsigned s
 			default:
 				elog(ERROR, "invalid node kind: %u", xpath->targNdKind);
 				break;
+		}
+
+		if (debug && el->descendant)
+		{
+			appendStringInfoString(output, " (desc.)");
 		}
 	}
 }

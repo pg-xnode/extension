@@ -618,6 +618,10 @@ dumpXMLNodeDebugInternal(char *data, XMLNodeOffset off,
 	if (node->kind != XMLNODE_ELEMENT)
 	{
 		size = getXMLNodeSize(node, true);
+		if (node->kind == XMLNODE_ATTRIBUTE)
+		{
+			appendStringInfoChar(output, '@');
+		}
 		appendStringInfo(output, "%s (abs: %u , rel: %u , size: %u)\n", str, off, offRel, size);
 	}
 }
