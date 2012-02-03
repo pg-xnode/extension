@@ -1083,11 +1083,11 @@ adjustTempResult(XMLScan scan, XMLNodeOffset minimum, int shift)
 	}
 	for (i = 0; i < cont->position; i++)
 	{
-		XMLNodeOffset value = cont->items[i];
+		XMLNodeOffset value = cont->content[i].value.single;
 
 		if (value >= minimum)
 		{
-			cont->items[i] = value + shift;
+			cont->content[i].value.single = value + shift;
 		}
 	}
 }

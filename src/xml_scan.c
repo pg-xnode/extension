@@ -1676,7 +1676,7 @@ isNodeUnique(XMLNodeHdr node, XMLScan scan)
 
 		for (i = 0; i < cont->position; i++)
 		{
-			if (cont->items[i] == nodeOff)
+			if (cont->content[i].value.single == nodeOff)
 			{
 				return false;
 			}

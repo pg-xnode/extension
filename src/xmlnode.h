@@ -98,6 +98,7 @@ typedef struct XMLDeclData
 	int			enc;
 	bool		standalone;
 }	XMLDeclData;
+
 typedef struct XMLDeclData *XMLDecl;
 
 #define XMLDECL_HAS_ENC		(1 << 0)
@@ -176,7 +177,30 @@ extern Datum xmldoc_to_xmlnode(PG_FUNCTION_ARGS);
 extern XMLNodeOffset readXMLNodeOffset(char **input, unsigned char bytes, bool step);
 extern void writeXMLNodeOffset(XMLNodeOffset ref, char **output, unsigned char bytes, bool step);
 
-#define XNODE_PARSER_STACK_CHUNK	16
+#define XNODE_CONTAINER_CHUNK	16
+
+typedef enum XNodeListItemKind
+{
+	XNODE_LIST_ITEM_SINGLE,
+	XNODE_LIST_ITEM_RANGE
+}	XNodeListItemKind;
+
+typedef struct XNodeOffsetRange
+{
+	XMLNodeOffset lower;
+	XMLNodeOffset upper;
+}	XNodeOffsetRange;
+
+typedef struct XNodeListItem
+{
+	XNodeListItemKind kind;
+
+	union
+	{
+		XMLNodeOffset single;
+		XNodeOffsetRange range;
+	}			value;
+}	XNodeListItem;
 
 /*
  * A container to be used as a stack in most cases, but sometimes we used it
@@ -187,9 +211,10 @@ typedef struct XMLNodeContainerData
 {
 	unsigned int size;
 	unsigned int position;
-	XMLNodeOffset *items;
+	XNodeListItem *content;
 }	XMLNodeContainerData;
 typedef struct XMLNodeContainerData *XMLNodeContainer;
+
 
 #define UTF_MAX_WIDTH		4
 

@@ -12,32 +12,35 @@ static void dumpXScanDebug(StringInfo output, XMLScan scan, char *docData, XMLNo
 void
 xmlnodeContainerInit(XMLNodeContainer cont)
 {
-	cont->size = XNODE_PARSER_STACK_CHUNK;
-	cont->items = (XMLNodeOffset *) palloc(cont->size * sizeof(XMLNodeOffset));
+	cont->size = XNODE_CONTAINER_CHUNK;
+	cont->content = (XNodeListItem *) palloc(cont->size * sizeof(XNodeListItem));
 	cont->position = 0;
 }
 
 void
 xmlnodeContainerFree(XMLNodeContainer cont)
 {
-	if (cont->items != NULL)
+	if (cont->content != NULL)
 	{
-		pfree(cont->items);
+		pfree(cont->content);
 	}
 }
 
 void
-xmlnodePush(XMLNodeContainer cont, XMLNodeOffset value)
+xmlnodePush(XMLNodeContainer cont, XMLNodeOffset singleNode)
 {
 	unsigned int pos = cont->position;
+	XNodeListItem *item = cont->content + pos;
 
-	cont->items[pos] = value;
+	item->value.single = singleNode;
+	item->kind = XNODE_LIST_ITEM_SINGLE;
+
 	cont->position++;
 	if (cont->position == cont->size)
 	{
-		cont->size += XNODE_PARSER_STACK_CHUNK;
-		cont->items = (XMLNodeOffset *) repalloc(cont->items, cont->size
-												 * sizeof(XMLNodeOffset));
+		cont->size += XNODE_CONTAINER_CHUNK;
+		cont->content = (XNodeListItem *) repalloc(cont->content, cont->size
+												   * sizeof(XNodeListItem));
 		elog(DEBUG1, "XTreeParserStack reallocated. New size: %u.", cont->size);
 	}
 	return;
@@ -52,7 +55,7 @@ xmlnodePop(XMLNodeContainer cont)
 		elog(ERROR, "Stack is empty.");
 	}
 	cont->position--;
-	return cont->items[cont->position];
+	return cont->content[cont->position].value.single;
 }
 
 /*

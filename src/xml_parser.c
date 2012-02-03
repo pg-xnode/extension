@@ -1088,7 +1088,7 @@ processTag(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowed,
 				unsigned int nameStart,
 							nameLength;
 				XMLNodeHdr	attrNode;
-				XMLNodeOffset *stackItems;
+				XNodeListItem *stackItems;
 				unsigned short int i;
 				char	   *attrName,
 						   *attrValue;
@@ -1161,11 +1161,11 @@ processTag(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowed,
 				/*
 				 * Is the attribute name unique?
 				 */
-				stackItems = &(state->stack.items[stackInit]);
+				stackItems = &(state->stack.content[stackInit]);
 				for (i = 0; i < attributes; i++)
 				{
 					char	   *nameOld;
-					XMLNodeHdr	attrOld = (XMLNodeHdr) (state->tree + *stackItems);
+					XMLNodeHdr	attrOld = (XMLNodeHdr) (state->tree + stackItems->value.single);
 
 					nameOld = (char *) attrOld + sizeof(XMLNodeHdrData);
 					stackItems++;
@@ -2420,7 +2420,7 @@ saveReferences(XMLParserState state, XMLNodeInternal nodeInfo,
 	 * Find out the range of reference values and the corresponding storage.
 	 */
 	XMLNodeOffset dist = nodeInfo->nodeOut -
-	state->stack.items[state->stack.position - children];
+	state->stack.content[state->stack.position - children].value.single;
 	char		bwidth = getXMLNodeOffsetByteWidth(dist);
 	unsigned int refsTotal = children * bwidth;
 	char	   *childOffTarg;
@@ -2510,7 +2510,7 @@ saveRootNodeHeader(XMLParserState state, XMLNodeKind kind)
 	unsigned int i;
 	unsigned int rootHdrSz;
 	XMLCompNodeHdr rootNode;
-	XMLNodeOffset *rootOffSrc;
+	XNodeListItem *rootOffSrc;
 	char	   *rootOffTarg;
 	XMLNodeOffset rootNodeOff = state->dstPos;
 	XMLNodeOffset *rootNodeOffPtr;
@@ -2526,8 +2526,8 @@ saveRootNodeHeader(XMLParserState state, XMLNodeKind kind)
 	 */
 	Assert(state->stack.position >= 1);
 	childCount = state->stack.position;
-	rootOffSrc = state->stack.items;
-	bwidth = getXMLNodeOffsetByteWidth(rootNodeOff - *rootOffSrc);
+	rootOffSrc = state->stack.content;
+	bwidth = getXMLNodeOffsetByteWidth(rootNodeOff - rootOffSrc->value.single);
 	refsTotal = childCount * bwidth;
 	ensureSpace(rootHdrSz + refsTotal, state);
 	state->dstPos += rootHdrSz;
@@ -2544,7 +2544,7 @@ saveRootNodeHeader(XMLParserState state, XMLNodeKind kind)
 	rootOffTarg = XNODE_FIRST_REF(rootNode);
 	for (i = 0; i < childCount; i++)
 	{
-		XMLNodeOffset dist = rootNodeOff - *rootOffSrc;
+		XMLNodeOffset dist = rootNodeOff - rootOffSrc->value.single;
 
 		writeXMLNodeOffset(dist, &rootOffTarg, bwidth, true);
 		rootOffSrc++;
