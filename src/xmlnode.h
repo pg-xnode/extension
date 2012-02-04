@@ -83,12 +83,13 @@ typedef XMLNodeHdrData *XMLNodeHdr;;
  * The array of references is followed either by element name (XMLNODE_ELEMENT) or by document header
  * (XMLNODE_DOC).
  */
-typedef struct XMLCompNodeHdrrData
+typedef struct XMLCompNodeHdrData
 {
 	XMLNodeCommonData common;
 
 	unsigned short int children;
 }	XMLCompNodeHdrData;
+
 typedef XMLCompNodeHdrData *XMLCompNodeHdr;
 
 typedef struct XMLDeclData
