@@ -3,7 +3,7 @@
 #include "xml_update.h"
 #include "xpath.h"
 
-static void adjustTempResult(XMLScan scan, XMLNodeOffset minimum, int shift);
+static void adjustIgnoreList(XMLScan scan, XMLNodeOffset minimum, int shift);
 static void propagateChange(XMLScanOneLevel levelScan, int *shift, int *hdrSizeIncr, char *tree, char *resData,
 			 char **srcCursor, char **resCursor, XMLNodeOffset * newRootOff);
 static void copyXMLNodeOrDocFragment(XMLNodeHdr newNode, unsigned int newNdSize, char **resCursor,
@@ -97,10 +97,16 @@ updateXMLDocument(XMLScan xscan, xmldoc doc, XMLNodeAction action, XMLNodeHdr ne
 		while (targNode != NULL)
 		{
 			XMLScan		scTmp = xscan;
+			XNodeListItem ignore;
 
 			if (action == XMLNODE_ACTION_ADD)
 			{
-				result = xmlnodeAdd(result, xscan, targNode, newNode, addMode, freeSrc);
+				result = xmlnodeAdd(result, xscan, targNode, newNode, addMode, freeSrc, &ignore);
+				if (xscan->ignoreList)
+				{
+					xmlnodeAddListItem(xscan->ignoreList, &ignore);
+				}
+
 			}
 			else if (action == XMLNODE_ACTION_REMOVE)
 			{
@@ -159,11 +165,14 @@ updateXMLDocument(XMLScan xscan, xmldoc doc, XMLNodeAction action, XMLNodeHdr ne
  * 'xscan' is modified so that it points to 'targetNode' in the new
  * (returned) document. 'targNode' must not be NULL
  *
+ * 'ignore' is an output parameter. It represents a new node or node range to be added to ignore list,
+ * in order to prevent infinite recursions.
+ *
  * Well-formedness of the resulting documents needs to be checked.
  */
 xmldoc
 xmlnodeAdd(xmldoc doc, XMLScan xscan, XMLNodeHdr targNode, XMLNodeHdr newNode,
-		   XMLAddMode mode, bool freeSrc)
+		   XMLAddMode mode, bool freeSrc, XNodeListItem * ignore)
 {
 
 	char	   *inputTree = (char *) VARDATA(doc);
@@ -231,7 +240,7 @@ xmlnodeAdd(xmldoc doc, XMLScan xscan, XMLNodeHdr targNode, XMLNodeHdr newNode,
 	}
 
 	/*
-	 * Estimate how much the storage will grow First, find out if some
+	 * Estimate how much the storage will grow. First, find out if some
 	 * references will grow in 'byte width'
 	 */
 	targNdOff = (char *) targNode - inputTree;
@@ -256,6 +265,7 @@ xmlnodeAdd(xmldoc doc, XMLScan xscan, XMLNodeHdr targNode, XMLNodeHdr newNode,
 		}
 		xscTmp = xscTmp->subScan;
 	} while (xscTmp != NULL);
+
 	levelScan--;
 
 	/*
@@ -281,6 +291,16 @@ xmlnodeAdd(xmldoc doc, XMLScan xscan, XMLNodeHdr targNode, XMLNodeHdr newNode,
 	{
 		resultSizeMax -= targNdSize;
 	}
+
+	/*
+	 * Make sure that the new node / subtree is ignored by further scan. For
+	 * simplicity we treat the new node as a range, even if it might only be a
+	 * single node. If a single node is added, we just set the upper limit to
+	 * the last byte that still belongs to that node.
+	 */
+	ignore->kind = XNODE_LIST_ITEM_RANGE;
+	ignore->valid = true;
+
 	if (mode == XMLADD_BEFORE || mode == XMLADD_REPLACE)
 	{
 		result = (char *) palloc(resultSizeMax);
@@ -302,10 +322,56 @@ xmlnodeAdd(xmldoc doc, XMLScan xscan, XMLNodeHdr targNode, XMLNodeHdr newNode,
 		srcCursor += srcIncr;
 		resCursor += srcIncr;
 
+		ignore->value.range.lower = resCursor - resData;
+
 		/*
-		 * Copy the new node(s)
+		 * Copy the new node(s). Once it's done, 'resCursor' points to a
+		 * position right after the new node.
 		 */
 		copyXMLNodeOrDocFragment(newNode, newNdSize, &resCursor, &newNdRoot, &newNdRoots);
+
+		/*
+		 * It's not necessary to compute exact offset of the highest node of a
+		 * subtree. All we need is to ensure that the node following the new
+		 * node/subtree is not included in the 'range to be ignored'.
+		 */
+		ignore->value.range.upper = resCursor - 1 - resData;
+
+		if (mode == XMLADD_REPLACE && xscan->ignoreList)
+		{
+			/*
+			 * Remove the original (target) node from the ignore list.
+			 *
+			 * It could cause problems when a subtree has been replaced by any
+			 * kind of smaller node or subtree. In such a case the
+			 * corresponding ignore list item could start pointing to a valid
+			 * node behind the new node and continuing scan would skip it.
+			 */
+			XNodeListItem *item = xscan->ignoreList->content;
+			unsigned int listSize = xscan->ignoreList->size;
+			unsigned short i;
+
+			for (i = 0; i < listSize; i++)
+			{
+				/*
+				 * Only a node found during the last scan can be found here
+				 * (nodes found during previous scans have been added to
+				 * ignore list or replaced).
+				 *
+				 * Node range, added during (some of) previous update(s) is
+				 * not expected here, because a scan must have taken place in
+				 * between and such a scan is not supposed to return any node
+				 * from 'ignored range'.
+				 */
+				Assert(item->kind == XNODE_LIST_ITEM_SINGLE);
+
+				if (item->valid && item->value.single == targNdOff)
+				{
+					item->valid = false;
+				}
+				item++;
+			}
+		}
 
 		srcIncr = targNdSize;
 
@@ -327,7 +393,7 @@ xmlnodeAdd(xmldoc doc, XMLScan xscan, XMLNodeHdr targNode, XMLNodeHdr newNode,
 			 * of the target node. That makes no difference, as the references
 			 * to target node never point before 'srcCursor'.
 			 */
-			adjustTempResult(xscan, (XMLNodeOffset) (srcCursor - inputTree), shift);
+			adjustIgnoreList(xscan, (XMLNodeOffset) (srcCursor - inputTree), shift);
 		}
 		else
 		{
@@ -341,7 +407,7 @@ xmlnodeAdd(xmldoc doc, XMLScan xscan, XMLNodeHdr targNode, XMLNodeHdr newNode,
 			 * Those pointing to the removed node can be ignored because no
 			 * scan will find them later anyway.
 			 */
-			adjustTempResult(xscan, (XMLNodeOffset) (srcCursor - inputTree + targNdSize), shift);
+			adjustIgnoreList(xscan, (XMLNodeOffset) (srcCursor - inputTree + targNdSize), shift);
 		}
 
 		/* Move behind the target node */
@@ -371,16 +437,16 @@ xmlnodeAdd(xmldoc doc, XMLScan xscan, XMLNodeHdr targNode, XMLNodeHdr newNode,
 		 * is added AFTER, the target node's position doesn't change.
 		 * Therefore '+ 1' to the minimum increased position.
 		 */
-		adjustTempResult(xscan, (XMLNodeOffset) (srcCursor - inputTree + 1), newNdSize);
+		adjustIgnoreList(xscan, (XMLNodeOffset) (srcCursor - inputTree + 1), newNdSize);
 		srcCursor += srcIncr;
 		resCursor += srcIncr;
 
 		shift = newNdSize;
 
-		/*
-		 * ... and copy the new node
-		 */
+		/* ... and copy the new node */
+		ignore->value.range.lower = resCursor - resData;
 		copyXMLNodeOrDocFragment(newNode, newNdSize, &resCursor, &newNdRoot, &newNdRoots);
+		ignore->value.range.upper = resCursor - 1 - resData;
 	}
 	else if (mode == XMLADD_INTO)
 	{
@@ -408,10 +474,10 @@ xmlnodeAdd(xmldoc doc, XMLScan xscan, XMLNodeHdr targNode, XMLNodeHdr newNode,
 		srcCursor += srcIncr;
 		resCursor += srcIncr;
 
-		/*
-		 * Copy the new node
-		 */
+		/* Copy the new node. */
+		ignore->value.range.lower = resCursor - resData;
 		copyXMLNodeOrDocFragment(newNode, newNdSize, &resCursor, &newNdRoot, &newNdRoots);
+		ignore->value.range.upper = resCursor - 1 - resData;
 
 		/*
 		 * 'srcCursor' now points at the (still empty) target element, which
@@ -419,7 +485,7 @@ xmlnodeAdd(xmldoc doc, XMLScan xscan, XMLNodeHdr targNode, XMLNodeHdr newNode,
 		 * target node and all the following must be adjusted.
 		 */
 		shift = newNdSize;
-		adjustTempResult(xscan, (XMLNodeOffset) (srcCursor - inputTree), shift);
+		adjustIgnoreList(xscan, (XMLNodeOffset) (srcCursor - inputTree), shift);
 
 		/*
 		 * Copy the target node header now
@@ -509,7 +575,7 @@ xmlnodeAdd(xmldoc doc, XMLScan xscan, XMLNodeHdr targNode, XMLNodeHdr newNode,
 			 * already by 'shift') need to be additionally shifted, because
 			 * addition of a new node increases the target node header.
 			 */
-			adjustTempResult(xscan, (XMLNodeOffset) (srcCursor - inputTree + shift), intoHdrSzIncr);
+			adjustIgnoreList(xscan, (XMLNodeOffset) (srcCursor - inputTree + shift), intoHdrSzIncr);
 			shift += intoHdrSzIncr;
 		}
 	}
@@ -811,7 +877,7 @@ xmlnodeAdd(xmldoc doc, XMLScan xscan, XMLNodeHdr targNode, XMLNodeHdr newNode,
 	 * References to 'srcCursor' or higher (increased earlier by 'shift') need
 	 * to be adjusted to additional shift 'hdrSizeIncr'
 	 */
-	adjustTempResult(xscan, (XMLNodeOffset) (srcCursor - inputTree + shift), hdrSizeIncr);
+	adjustIgnoreList(xscan, (XMLNodeOffset) (srcCursor - inputTree + shift), hdrSizeIncr);
 	shift += hdrSizeIncr;
 
 	if (newNode->kind != XMLNODE_ATTRIBUTE && (parentTarg->common.flags & XNODE_EMPTY) &&
@@ -1072,10 +1138,10 @@ xmlnodeRemove(xmldoc doc, XMLScan xscan, XMLNodeHdr targNode, bool freeSrc)
  * 'minimum' - the minimum offset value affected
  */
 static void
-adjustTempResult(XMLScan scan, XMLNodeOffset minimum, int shift)
+adjustIgnoreList(XMLScan scan, XMLNodeOffset minimum, int shift)
 {
 	unsigned short i;
-	XMLNodeContainer cont = scan->resTmp;
+	XMLNodeContainer cont = scan->ignoreList;
 
 	if (cont == NULL)
 	{
@@ -1083,12 +1149,25 @@ adjustTempResult(XMLScan scan, XMLNodeOffset minimum, int shift)
 	}
 	for (i = 0; i < cont->position; i++)
 	{
-		XMLNodeOffset value = cont->content[i].value.single;
+		XNodeListItem *item = cont->content + i;
 
-		if (value >= minimum)
+		if (item->kind == XNODE_LIST_ITEM_SINGLE)
 		{
-			cont->content[i].value.single = value + shift;
+			if (item->value.single >= minimum)
+			{
+				item->value.single += shift;
+			}
 		}
+		else
+		{
+			/* This is a node range */
+			if (item->value.range.lower >= minimum)
+			{
+				item->value.range.lower += shift;
+				item->value.range.upper += shift;
+			}
+		}
+
 	}
 }
 

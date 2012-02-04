@@ -27,13 +27,24 @@ xmlnodeContainerFree(XMLNodeContainer cont)
 }
 
 void
-xmlnodePush(XMLNodeContainer cont, XMLNodeOffset singleNode)
+xmlnodePushSingle(XMLNodeContainer cont, XMLNodeOffset singleNode)
+{
+	XNodeListItem itemNew;
+
+	itemNew.kind = XNODE_LIST_ITEM_SINGLE;
+	itemNew.valid = true;
+	itemNew.value.single = singleNode;
+
+	xmlnodeAddListItem(cont, &itemNew);
+}
+
+void
+xmlnodeAddListItem(XMLNodeContainer cont, XNodeListItem * itemNew)
 {
 	unsigned int pos = cont->position;
 	XNodeListItem *item = cont->content + pos;
 
-	item->value.single = singleNode;
-	item->kind = XNODE_LIST_ITEM_SINGLE;
+	memcpy(item, itemNew, sizeof(XNodeListItem));
 
 	cont->position++;
 	if (cont->position == cont->size)
@@ -41,9 +52,8 @@ xmlnodePush(XMLNodeContainer cont, XMLNodeOffset singleNode)
 		cont->size += XNODE_CONTAINER_CHUNK;
 		cont->content = (XNodeListItem *) repalloc(cont->content, cont->size
 												   * sizeof(XNodeListItem));
-		elog(DEBUG1, "XTreeParserStack reallocated. New size: %u.", cont->size);
+		elog(DEBUG1, "node container reallocated. New size: %u.", cont->size);
 	}
-	return;
 }
 
 XMLNodeOffset

@@ -459,10 +459,15 @@ typedef struct XMLScanData
 
 	/*
 	 * Intermediate resulting node-set. This is used in special cases where
-	 * the scan algorithm might return some nodes multiple times. If this scan
-	 * has sub-scan(s), they all share an instance of the container.
+	 * the scan algorithm might return some nodes multiple times.
+	 *
+	 * New nodes are also added to the the ignore list in order to prevent
+	 * infinite recursions during the addition.
+	 *
+	 * If the current scan has sub-scan(s), they all share an instance of the
+	 * container.
 	 */
-	XMLNodeContainer resTmp;
+	XMLNodeContainer ignoreList;
 
 	/* Direct child in the scan hierarchy. */
 	struct XMLScanData *subScan;

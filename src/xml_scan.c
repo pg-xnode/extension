@@ -12,7 +12,7 @@ static void freeNodeSets(XPathExpression expr);
 static void evaluateBinaryOperator(XPathExprOperandValue valueLeft, XPathExprOperandValue valueRight,
 					   XPathExprOperator operator, XPathExprOperandValue result, XMLCompNodeHdr element);
 static bool considerSubScan(XPathElement xpEl, XMLNodeHdr node, XMLScan xscan, bool subScanJustDone);
-static void rememberResult(XMLNodeHdr node, XMLScan scan);
+static void addNodeToIgnoreList(XMLNodeHdr node, XMLScan scan);
 
 static void substituteAttributes(XPathExpression expr, XMLCompNodeHdr element);
 static void substituteSubpaths(XPathExpression expression, XMLCompNodeHdr element, xmldoc document,
@@ -30,7 +30,7 @@ static void compareNumToStr(double num, char *numStr, XPathExprOperator operator
 				XPathExprOperandValue result);
 static bool compareValueToNodeSet(XPathExprOperandValue value, XPathNodeSet ns, XPathExprOperator operator);
 
-static bool isNodeUnique(XMLNodeHdr node, XMLScan scan);
+static bool isOnIgnoreList(XMLNodeHdr node, XMLScan scan);
 
 /*
  * 'xscan' - the scan to be initialized 'xpath' - location path to be used
@@ -84,17 +84,17 @@ initXMLScan(XMLScan xscan, XMLScan parent, XPath xpath, XPathHeader xpHdr, XMLCo
 		 */
 		if (xscan->parent == NULL)
 		{
-			xscan->resTmp = (XMLNodeContainer) palloc(sizeof(XMLNodeContainerData));
-			xmlnodeContainerInit(xscan->resTmp);
+			xscan->ignoreList = (XMLNodeContainer) palloc(sizeof(XMLNodeContainerData));
+			xmlnodeContainerInit(xscan->ignoreList);
 		}
 		else
 		{
-			xscan->resTmp = xscan->parent->resTmp;
+			xscan->ignoreList = xscan->parent->ignoreList;
 		}
 	}
 	else
 	{
-		xscan->resTmp = NULL;
+		xscan->ignoreList = NULL;
 	}
 
 
@@ -109,10 +109,10 @@ finalizeXMLScan(XMLScan xscan)
 		pfree(xscan->state);
 		xscan->state = NULL;
 	}
-	if (xscan->resTmp != NULL && xscan->parent == NULL)
+	if (xscan->ignoreList != NULL && xscan->parent == NULL)
 	{
-		xmlnodeContainerFree(xscan->resTmp);
-		pfree(xscan->resTmp);
+		xmlnodeContainerFree(xscan->ignoreList);
+		pfree(xscan->ignoreList);
 	}
 }
 
@@ -181,11 +181,11 @@ getNextXMLNode(XMLScan xscan, bool removed)
 				XMLNodeHdr	subNode = getNextXMLNode(xscan->subScan, removed);
 
 				/*
-				 * isNodeUnique() is not used here on return because the check
-				 * has been performed when returning from the getNextXMLNode()
-				 * above.
+				 * isOnIgnoreList() is not used here on return because the
+				 * check has been performed when returning from the
+				 * getNextXMLNode() above.
 				 *
-				 * rememberResult() is not used bellow for the same reason.
+				 * addToIgnoreList() is not used bellow for the same reason.
 				 */
 				if (subNode != NULL)
 				{
@@ -259,10 +259,10 @@ getNextXMLNode(XMLScan xscan, bool removed)
 				char	   *nameTest = xpEl->name;
 
 				if (XPATH_LAST_LEVEL(xscan) && xscan->xpath->targNdKind == XMLNODE_NODE &&
-					isNodeUnique(currentNode, xscan))
+					!isOnIgnoreList(currentNode, xscan))
 				{
 					xscan->skip = true;
-					rememberResult(currentNode, xscan);
+					addNodeToIgnoreList(currentNode, xscan);
 					return currentNode;
 				}
 				if (strcmp(name, nameTest) == 0)
@@ -336,26 +336,26 @@ getNextXMLNode(XMLScan xscan, bool removed)
 						 * the current match means it's a different node that
 						 * just moved to the offset of the original one.
 						 */
-							 (removed || isNodeUnique(currentNode, xscan)))
+							 (removed || !isOnIgnoreList(currentNode, xscan)))
 					{
 						/*
 						 * We're at the end of the xpath.
 						 */
 						xscan->skip = true;
 						/* Return the matching node. */
-						rememberResult(currentNode, xscan);
+						addNodeToIgnoreList(currentNode, xscan);
 						return currentNode;
 					}
 				}
 			}
-			else if (XPATH_LAST_LEVEL(xscan) && isNodeUnique(currentNode, xscan))
+			else if (XPATH_LAST_LEVEL(xscan) && !isOnIgnoreList(currentNode, xscan))
 			{
 				if (currentNode->kind == xscan->xpath->targNdKind)
 				{
 					if (currentNode->kind == XMLNODE_TEXT || currentNode->kind == XMLNODE_COMMENT)
 					{
 						xscan->skip = true;
-						rememberResult(currentNode, xscan);
+						addNodeToIgnoreList(currentNode, xscan);
 						return currentNode;
 					}
 					else if (currentNode->kind == XMLNODE_PI)
@@ -368,14 +368,14 @@ getNextXMLNode(XMLScan xscan, bool removed)
 							if (strcmp(piTarget, piTargTest) == 0)
 							{
 								xscan->skip = true;
-								rememberResult(currentNode, xscan);
+								addNodeToIgnoreList(currentNode, xscan);
 								return currentNode;
 							}
 						}
 						else
 						{
 							xscan->skip = true;
-							rememberResult(currentNode, xscan);
+							addNodeToIgnoreList(currentNode, xscan);
 							return currentNode;
 						}
 
@@ -385,7 +385,7 @@ getNextXMLNode(XMLScan xscan, bool removed)
 						if (xscan->xpath->allAttributes)
 						{
 							xscan->skip = true;
-							rememberResult(currentNode, xscan);
+							addNodeToIgnoreList(currentNode, xscan);
 							return currentNode;
 						}
 						else
@@ -396,7 +396,7 @@ getNextXMLNode(XMLScan xscan, bool removed)
 							if (strcmp(attrNameTest, attrName) == 0)
 							{
 								xscan->skip = true;
-								rememberResult(currentNode, xscan);
+								addNodeToIgnoreList(currentNode, xscan);
 								return currentNode;
 							}
 						}
@@ -405,7 +405,7 @@ getNextXMLNode(XMLScan xscan, bool removed)
 				else if (xscan->xpath->targNdKind == XMLNODE_NODE && currentNode->kind != XMLNODE_ATTRIBUTE)
 				{
 					xscan->skip = true;
-					rememberResult(currentNode, xscan);
+					addNodeToIgnoreList(currentNode, xscan);
 					return currentNode;
 				}
 			}
@@ -914,7 +914,7 @@ considerSubScan(XPathElement xpEl, XMLNodeHdr node, XMLScan xscan, bool subScanJ
 		{
 			xscan->subScan = (XMLScan) palloc(sizeof(XMLScanData));
 			initXMLScan(xscan->subScan, xscan, xscan->xpath, xscan->xpathHeader, el, xscan->document,
-						xscan->resTmp != NULL);
+						xscan->ignoreList != NULL);
 			xscan->subScan->xpathRoot = xscan->xpathRoot + xscan->depth;
 			return true;
 		}
@@ -923,11 +923,11 @@ considerSubScan(XPathElement xpEl, XMLNodeHdr node, XMLScan xscan, bool subScanJ
 }
 
 static void
-rememberResult(XMLNodeHdr node, XMLScan scan)
+addNodeToIgnoreList(XMLNodeHdr node, XMLScan scan)
 {
-	if (scan->resTmp != NULL)
+	if (scan->ignoreList != NULL)
 	{
-		xmlnodePush(scan->resTmp, XNODE_OFFSET(node, scan->document));
+		xmlnodePushSingle(scan->ignoreList, XNODE_OFFSET(node, scan->document));
 	}
 }
 
@@ -1665,26 +1665,43 @@ compareValueToNodeSet(XPathExprOperandValue value, XPathNodeSet ns, XPathExprOpe
 }
 
 static bool
-isNodeUnique(XMLNodeHdr node, XMLScan scan)
+isOnIgnoreList(XMLNodeHdr node, XMLScan scan)
 {
 	XMLNodeOffset nodeOff = XNODE_OFFSET(node, scan->document);
 
-	if (scan->resTmp != NULL)
+	if (scan->ignoreList != NULL)
 	{
-		XMLNodeContainer cont = scan->resTmp;
+		XMLNodeContainer cont = scan->ignoreList;
 		unsigned short i;
 
 		for (i = 0; i < cont->position; i++)
 		{
-			if (cont->content[i].value.single == nodeOff)
+			XNodeListItem *item = cont->content + i;
+
+			if (!item->valid)
 			{
-				return false;
+				continue;
+			}
+
+			if (item->kind == XNODE_LIST_ITEM_SINGLE)
+			{
+				if (item->value.single == nodeOff)
+				{
+					return true;
+				}
+			}
+			else
+			{
+				if (item->value.range.lower <= nodeOff && item->value.range.upper >= nodeOff)
+				{
+					return true;
+				}
 			}
 		}
-		return true;
+		return false;
 	}
 	else
 	{
-		return true;
+		return false;
 	}
 }

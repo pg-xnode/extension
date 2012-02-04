@@ -201,7 +201,7 @@ xmlnodeParseDoc(XMLParserState state)
 				 | TOKEN_STAG);
 	if (nodeInfo.tokenType != TOKEN_WHITESPACE && nodeInfo.tokenType != TOKEN_XMLDECL)
 	{
-		xmlnodePush(&(state->stack), nodeInfo.nodeOut);
+		xmlnodePushSingle(&(state->stack), nodeInfo.nodeOut);
 	}
 	if ((nodeInfo.tokenType == TOKEN_XMLDECL) || ((nodeInfo.tokenType
 												   & TOKEN_MISC) != 0))
@@ -214,7 +214,7 @@ xmlnodeParseDoc(XMLParserState state)
 			processToken(state, &nodeInfo, TOKEN_MISC | TOKEN_DTD | TOKEN_STAG);
 			if (nodeInfo.tokenType != TOKEN_WHITESPACE)
 			{
-				xmlnodePush(&(state->stack), nodeInfo.nodeOut);
+				xmlnodePushSingle(&(state->stack), nodeInfo.nodeOut);
 			}
 		} while ((nodeInfo.tokenType & TOKEN_MISC) != 0);
 	}
@@ -228,7 +228,7 @@ xmlnodeParseDoc(XMLParserState state)
 			processToken(state, &nodeInfo, TOKEN_MISC | TOKEN_DTD | TOKEN_STAG);
 			if (nodeInfo.tokenType != TOKEN_WHITESPACE)
 			{
-				xmlnodePush(&(state->stack), nodeInfo.nodeOut);
+				xmlnodePushSingle(&(state->stack), nodeInfo.nodeOut);
 			}
 		} while ((nodeInfo.tokenType & TOKEN_MISC) != 0);
 	}
@@ -269,7 +269,7 @@ xmlnodeParseDoc(XMLParserState state)
 		}
 		if (nodeInfo.tokenType != TOKEN_WHITESPACE)
 		{
-			xmlnodePush(&(state->stack), nodeInfo.nodeOut);
+			xmlnodePushSingle(&(state->stack), nodeInfo.nodeOut);
 		}
 		nextChar(state, true);
 	} while (!XNODE_INPUT_END(state));
@@ -287,7 +287,7 @@ xmlnodeParseNode(XMLParserState state)
 
 	nodeInfo.entPredef = false;
 	processToken(state, &nodeInfo, maskAll);
-	xmlnodePush(&state->stack, nodeInfo.nodeOut);
+	xmlnodePushSingle(&state->stack, nodeInfo.nodeOut);
 	nextChar(state, true);
 
 	while (!XNODE_INPUT_END(state))
@@ -337,7 +337,7 @@ xmlnodeParseNode(XMLParserState state)
 			 */
 			if (!(nodeInfo.tokenType & (TOKEN_TEXT | TOKEN_REFERENCE)))
 			{
-				xmlnodePush(&state->stack, nodeInfo.nodeOut);
+				xmlnodePushSingle(&state->stack, nodeInfo.nodeOut);
 			}
 			if (!XNODE_INPUT_END(state))
 			{
@@ -357,7 +357,7 @@ xmlnodeParseNode(XMLParserState state)
 			 * Process any other node type.
 			 */
 			processToken(state, &nodeInfo, maskAll);
-			xmlnodePush(&state->stack, nodeInfo.nodeOut);
+			xmlnodePushSingle(&state->stack, nodeInfo.nodeOut);
 			nextChar(state, true);
 
 			/*
@@ -877,7 +877,7 @@ processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowe
 					}
 					if (childTag.headerSaved)
 					{
-						xmlnodePush(&state->stack, childTag.nodeOut);
+						xmlnodePushSingle(&state->stack, childTag.nodeOut);
 						children++;
 					}
 				}
@@ -1136,7 +1136,7 @@ processTag(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowed,
 				 *
 				 */
 
-				xmlnodePush(&state->stack, state->dstPos);
+				xmlnodePushSingle(&state->stack, state->dstPos);
 				if (allowed == TOKEN_XMLDECL)
 				{
 					if (attributes == 0)

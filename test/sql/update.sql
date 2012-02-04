@@ -20,13 +20,39 @@ insert into a values
 (8, '<root><x><b><test1/><x><b><test2/></b></x></b><a><b><test3/></b><d/></a></x></root>', '/root//x//b', '<new/>', 'i'),
 (10, '<root><x><c><test1/><x><b><test2/></b></x></c><a><b><test3/></b><d/></a></x></root>', '//x//b', '<new/>', 'b'),
 (11, '<root><x><b><test1/><x><b><test2/></b></x></b><a><b><test3/></b><d/></a></x></root>', '//x//b', '<new/>', 'i'),
-(11, '<root><x><a/><b/><b><c/></b><x><b i="1"/></x><b/></x></root>', '/root//x//b', '<n/>', 'i');
+(12, '<root><x><a/><b/><b><c/></b><x><b i="1"/></x><b/></x></root>', '/root//x//b', '<n/>', 'i');
 
 select node_debug_print(data), targ_path, add_mode, new_node, node_debug_print(xml.add(data, targ_path, new_node, add_mode))
 from a
 order by a.i;
 
--- Node removal
+
+-- Add a node that matches the xpath.
+
+update a set new_node='<b/>';
+
+select node_debug_print(data), targ_path, add_mode, new_node, node_debug_print(xml.add(data, targ_path, new_node, add_mode))
+from a
+order by a.i;
+
+-- Add a subtree that contains matching nodes (i.e.  infinite recursion could take place).
+
+update a set new_node='<x><b><x/></b></x>';
+
+select node_debug_print(data), targ_path, add_mode, new_node, node_debug_print(xml.add(data, targ_path, new_node, add_mode))
+from a
+order by a.i;
+
+-- Similar to the previous one, just a document fragment is added instead of a single (though compound) node.
+
+update a set new_node='<x><b><x/></b></x><b><x><b/></x></b>';
+
+select node_debug_print(data), targ_path, add_mode, new_node, node_debug_print(xml.add(data, targ_path, new_node, add_mode))
+from a
+order by a.i;
+
+-- And finally test node removal
+
 drop table a;
 create table a (i int, data doc, targ_path xml.path);
 

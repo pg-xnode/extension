@@ -9,7 +9,8 @@
 
 extern void xmlnodeContainerInit(XMLNodeContainer cont);
 extern void xmlnodeContainerFree(XMLNodeContainer cont);
-extern void xmlnodePush(XMLNodeContainer stack, XMLNodeOffset value);
+extern void xmlnodePushSingle(XMLNodeContainer stack, XMLNodeOffset value);
+extern void xmlnodeAddListItem(XMLNodeContainer cont, XNodeListItem * itemNew);
 extern XMLNodeOffset xmlnodePop(XMLNodeContainer stack);
 
 extern unsigned int getXMLNodeSize(XMLNodeHdr node, bool subtree);

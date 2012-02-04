@@ -193,6 +193,8 @@ typedef struct XNodeOffsetRange
 
 typedef struct XNodeListItem
 {
+	bool		valid;			/* Only applicable when the containing list is
+								 * used as 'ignore list'. */
 	XNodeListItemKind kind;
 
 	union
