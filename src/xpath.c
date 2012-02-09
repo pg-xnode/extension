@@ -13,7 +13,8 @@
 
 static void retrieveColumnPaths(XMLScanContext xScanCtx, ArrayType *pathsColArr, int columns);
 static ArrayType *getResultArray(XMLScanContext ctx, XMLNodeOffset baseNodeOff);
-static xpathval getXPathExprValue(xmldoc document, bool *notNull, XPathExprOperandValue res);
+static xpathval getXPathExprValue(XPathExprState exprState, xmldoc document, bool *notNull,
+				  XPathExprOperandValue res);
 
 
 /* The order must follow XPathValueType */
@@ -258,7 +259,7 @@ xpath_single(PG_FUNCTION_ARGS)
 {
 	xpath		xpathIn = (xpath) PG_GETARG_POINTER(0);
 	XPathExpression expr = (XPathExpression) VARDATA(xpathIn);
-	XPathExpression exprCopy;
+	XPathExprState exprState;
 	XPathHeader xpHdr = (XPathHeader) ((char *) expr + expr->size);
 	xmldoc		doc = (xmldoc) PG_GETARG_VARLENA_P(1);
 	bool		notNull;
@@ -269,10 +270,10 @@ xpath_single(PG_FUNCTION_ARGS)
 	{
 		elog(ERROR, "neither relative paths nor attributes expected in main expression");
 	}
-	exprCopy = prepareXPathExpression(expr, (XMLCompNodeHdr) XNODE_ROOT(doc), doc, xpHdr, NULL);
-	evaluateXPathExpression(exprCopy, NULL, (XMLCompNodeHdr) XNODE_ROOT(doc), 0, &resData);
-	result = getXPathExprValue(doc, &notNull, &resData);
-
+	exprState = prepareXPathExpression(expr, (XMLCompNodeHdr) XNODE_ROOT(doc), doc, xpHdr, NULL);
+	evaluateXPathExpression(exprState, exprState->expr, NULL, (XMLCompNodeHdr) XNODE_ROOT(doc), 0, &resData);
+	result = getXPathExprValue(exprState, doc, &notNull, &resData);
+	freeExpressionState(exprState);
 	if (resData.type == XPATH_VAL_NODESET)
 	{
 		if (notNull)
@@ -432,7 +433,7 @@ xpath_array(PG_FUNCTION_ARGS)
 }
 
 void
-xpathValCastToBool(XPathExprOperandValue valueSrc, XPathExprOperandValue valueDst)
+xpathValCastToBool(XPathExprState exprState, XPathExprOperandValue valueSrc, XPathExprOperandValue valueDst)
 {
 	valueDst->type = XPATH_VAL_BOOLEAN;
 	switch (valueSrc->type)
@@ -446,7 +447,8 @@ xpathValCastToBool(XPathExprOperandValue valueSrc, XPathExprOperandValue valueDs
 			break;
 
 		case XPATH_VAL_STRING:
-			valueDst->v.boolean = (!valueSrc->isNull && (strlen(valueSrc->v.string.str) > 0));
+			valueDst->v.boolean = (!valueSrc->isNull &&
+								   (strlen((char *) getXPathOperandValue(exprState, valueSrc->v.stringId, XPATH_VAR_STRING)) > 0));
 			break;
 
 		case XPATH_VAL_NODESET:
@@ -468,7 +470,7 @@ xpathValCastToBool(XPathExprOperandValue valueSrc, XPathExprOperandValue valueDs
 }
 
 void
-xpathValCastToStr(XPathExprOperandValue valueSrc, XPathExprOperandValue valueDst)
+xpathValCastToStr(XPathExprState exprState, XPathExprOperandValue valueSrc, XPathExprOperandValue valueDst)
 {
 	valueDst->type = XPATH_VAL_STRING;
 	valueDst->isNull = valueSrc->isNull;
@@ -479,21 +481,7 @@ xpathValCastToStr(XPathExprOperandValue valueSrc, XPathExprOperandValue valueDst
 
 			if (!valueSrc->isNull)
 			{
-				if (valueSrc->v.string.mustFree)
-				{
-					char	   *src = valueSrc->v.string.str;
-					unsigned int len = sizeof(src) + 1;
-					char	   *dst = (char *) palloc(len);
-
-					memcpy(dst, src, len);
-					valueDst->v.string.str = dst;
-				}
-				else
-				{
-					valueDst->v.string.str = valueSrc->v.string.str;
-				}
-
-				valueDst->v.string.mustFree = valueSrc->v.string.mustFree;
+				valueDst->v.stringId = valueSrc->v.stringId;
 				return;
 			}
 			break;
@@ -506,24 +494,36 @@ xpathValCastToStr(XPathExprOperandValue valueSrc, XPathExprOperandValue valueDst
 			if (!valueSrc->isNull)
 			{
 				XPathNodeSet ns = &valueSrc->v.nodeSet;
+				char	   *nodeStr;
 
 				/*
-				 * If the node-set contains multiple nodes,only the first on
+				 * If the node-set contains multiple nodes, only the first one
 				 * is used (http://www.w3.org/TR/1999/REC-xpath-19991116/#sect
 				 * ion-String-Functions)
 				 */
-				XMLNodeHdr	node = ns->count == 1 ? ns->nodes.single : ns->nodes.array[0];
+				XMLNodeHdr	node;
 
-				if (node->kind == XMLNODE_ELEMENT)
+				if (ns->count == 1)
 				{
-					valueDst->v.string.str = getElementNodeStr((XMLCompNodeHdr) node);
-					valueDst->v.string.mustFree = true;
+					node = (XMLNodeHdr) getXPathOperandValue(exprState, ns->nodes.nodeId, XPATH_VAR_NODE_SINGLE);
 				}
 				else
 				{
-					valueDst->v.string.str = getNonElementNodeStr(node);
-					valueDst->v.string.mustFree = false;
+					XMLNodeHdr *array = (XMLNodeHdr *) getXPathOperandValue(exprState, ns->nodes.arrayId,
+													   XPATH_VAR_NODE_ARRAY);
+
+					node = array[0];
 				}
+
+				if (node->kind == XMLNODE_ELEMENT)
+				{
+					nodeStr = getElementNodeStr((XMLCompNodeHdr) node);
+				}
+				else
+				{
+					nodeStr = getNonElementNodeStr(node);
+				}
+				valueDst->v.stringId = getXPathOperandId(exprState, nodeStr, XPATH_VAR_STRING);
 			}
 			break;
 
@@ -538,7 +538,7 @@ xpathValCastToStr(XPathExprOperandValue valueSrc, XPathExprOperandValue valueDst
  * Neither null value nor NaN strings expected.
  */
 void
-xpathValCastToNum(XPathExprOperandValue valueSrc, XPathExprOperandValue valueDst)
+xpathValCastToNum(XPathExprState exprState, XPathExprOperandValue valueSrc, XPathExprOperandValue valueDst)
 {
 	valueDst->type = XPATH_VAL_NUMBER;
 	switch (valueSrc->type)
@@ -549,7 +549,8 @@ xpathValCastToNum(XPathExprOperandValue valueSrc, XPathExprOperandValue valueDst
 
 		case XPATH_VAL_STRING:
 			Assert(operand->common.castToNumber);
-			valueDst->v.num = xnodeGetNumValue(valueSrc->v.string.str);
+			valueDst->v.num = xnodeGetNumValue((char *) getXPathOperandValue(exprState, valueSrc->v.stringId,
+														  XPATH_VAR_STRING));
 			break;
 
 		default:
@@ -558,23 +559,56 @@ xpathValCastToNum(XPathExprOperandValue valueSrc, XPathExprOperandValue valueDst
 	}
 }
 
-/*
- * XPathExprOperandValue is used so that we can access 'isNull; attribute.
- * However, XPATH_VAL_STRING is the only value type accepted.
- */
-void
-xpathStrFree(XPathExprOperandValue strValue)
+unsigned short
+getXPathOperandId(XPathExprState exprState, void *value, XPathExprVar varKind)
 {
-	if (!strValue->isNull)
+	if (exprState->count[varKind] == exprState->countMax[varKind])
 	{
-		Assert(strValue->type == XPATH_VAL_STRING);
-		if (strValue->v.string.mustFree)
-		{
-			pfree(strValue->v.string.str);
-		}
+		elog(ERROR, "getXPathOperandId() called too many times for variable kind %u", varKind);
 	}
+
+	switch (varKind)
+	{
+		case XPATH_VAR_STRING:
+			exprState->strings[exprState->count[varKind]] = (char *) value;
+			break;
+
+		case XPATH_VAR_NODE_SINGLE:
+			exprState->nodes[exprState->count[varKind]] = (XMLNodeHdr) value;
+			break;
+
+		case XPATH_VAR_NODE_ARRAY:
+			exprState->nodeSets[exprState->count[varKind]] = (XMLNodeHdr *) value;
+			break;
+
+		default:
+			elog(ERROR, "unrecognized kind of variable: %u", varKind);
+			break;
+	}
+	return exprState->count[varKind]++;
 }
 
+void *
+getXPathOperandValue(XPathExprState exprState, unsigned short id, XPathExprVar varKind)
+{
+	Assert(id < exprState->countMax[varKind]);
+
+	switch (varKind)
+	{
+		case XPATH_VAR_STRING:
+			return exprState->strings[id];
+
+		case XPATH_VAR_NODE_SINGLE:
+			return exprState->nodes[id];
+
+		case XPATH_VAR_NODE_ARRAY:
+			return exprState->nodeSets[id];
+
+		default:
+			elog(ERROR, "unrecognized kind of variable: %u", varKind);
+			return NULL;
+	}
+}
 
 /*
  * Get column paths from array.
@@ -657,12 +691,14 @@ getResultArray(XMLScanContext ctx, XMLNodeOffset baseNodeOff)
 		XPathHeader xpHdr = (XPathHeader) ((char *) expr + expr->size);
 		bool		colNotNull = false;
 		XMLCompNodeHdr baseNode = (XMLCompNodeHdr) ((char *) VARDATA(doc) + baseNodeOff);
-		XPathExpression exprCopy = prepareXPathExpression(expr, baseNode, doc, xpHdr, ctx->baseScan);
+		XPathExprState exprState = prepareXPathExpression(expr, baseNode, doc, xpHdr, ctx->baseScan);
 		XPathExprOperandValueData resData;
 
-		evaluateXPathExpression(exprCopy, XMLSCAN_CURRENT_LEVEL(ctx->baseScan),
+		evaluateXPathExpression(exprState, exprState->expr, XMLSCAN_CURRENT_LEVEL(ctx->baseScan),
 		(XMLCompNodeHdr) ((char *) VARDATA(doc) + baseNodeOff), 0, &resData);
-		colValue = getXPathExprValue(doc, &colNotNull, &resData);
+		colValue = getXPathExprValue(exprState, doc, &colNotNull, &resData);
+		freeExpressionState(exprState);
+
 		ctx->colResults[i] = PointerGetDatum(colValue);
 		ctx->colResNulls[i] = !colNotNull;
 		notNull = (notNull || colNotNull);
@@ -700,7 +736,7 @@ getResultArray(XMLScanContext ctx, XMLNodeOffset baseNodeOff)
 }
 
 static xpathval
-getXPathExprValue(xmldoc document, bool *notNull, XPathExprOperandValue res)
+getXPathExprValue(XPathExprState exprState, xmldoc document, bool *notNull, XPathExprOperandValue res)
 {
 	xpathval	retValue = NULL;
 	XPathValue	xpval = NULL;
@@ -767,7 +803,8 @@ getXPathExprValue(xmldoc document, bool *notNull, XPathExprOperandValue res)
 					unsigned int nodeSize;
 					XMLNodeOffset root;
 
-					firstNode = res->v.nodeSet.nodes.single;
+					firstNode = (XMLNodeHdr) getXPathOperandValue(exprState, res->v.nodeSet.nodes.nodeId,
+													  XPATH_VAR_NODE_SINGLE);
 					nodeSize = getXMLNodeSize(firstNode, true);
 					resSize = VARHDRSZ + sizeof(XPathValueData) + nodeSize;
 					output = (char *) palloc(resSize);
@@ -795,12 +832,15 @@ getXPathExprValue(xmldoc document, bool *notNull, XPathExprOperandValue res)
 					nodeSizes = (unsigned int *) palloc(j * sizeof(unsigned int));
 					for (k = 0; k < j; k++)
 					{
+						XMLNodeHdr *array = (XMLNodeHdr *) getXPathOperandValue(exprState,
+						 res->v.nodeSet.nodes.arrayId, XPATH_VAR_NODE_ARRAY);
+
 						if (k == XMLNODE_MAX_CHILDREN)
 						{
 							elog(ERROR, "Maximum number of %u children exceeded for node document fragment.",
 								 XMLNODE_MAX_CHILDREN);
 						}
-						node = res->v.nodeSet.nodes.array[k];
+						node = array[k];
 						nodeSizes[k] = getXMLNodeSize(node, true);
 						nodeSizeTotal += nodeSizes[k];
 					}
@@ -823,9 +863,11 @@ getXPathExprValue(xmldoc document, bool *notNull, XPathExprOperandValue res)
 					{
 						XMLNodeOffset root,
 									dist;
+						XMLNodeHdr *nodeArray = (XMLNodeHdr *) getXPathOperandValue(exprState,
+						 res->v.nodeSet.nodes.arrayId, XPATH_VAR_NODE_ARRAY);
 						char	   *ndTarget = outTmp + targetPos;
 
-						node = res->v.nodeSet.nodes.array[k];
+						node = nodeArray[k];
 						copyXMLNode(node, ndTarget, false, &root);
 						dist = nodeSizeTotal - (targetPos + root);
 						writeXMLNodeOffset(dist, &refTarget, bwidth, true);
@@ -866,15 +908,15 @@ getXPathExprValue(xmldoc document, bool *notNull, XPathExprOperandValue res)
 		}
 		else if (res->type == XPATH_VAL_STRING)
 		{
-			unsigned int len = strlen(res->v.string.str);
+			char	   *resStr = (char *) getXPathOperandValue(exprState, res->v.stringId, XPATH_VAR_STRING);
+			unsigned int len = strlen(resStr);
 
 			resSize = VARHDRSZ + sizeof(XPathValueData) + len;
 			output = (char *) palloc(resSize);
 			xpval = (XPathValue) VARDATA(output);
-			memcpy(xpval->v.strVal, res->v.string.str, len);
+			memcpy(xpval->v.strVal, resStr, len);
 			xpval->v.strVal[len] = '\0';
 			xpval->type = res->type;
-			xpathStrFree(res);
 			*notNull = true;
 		}
 		else

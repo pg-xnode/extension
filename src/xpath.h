@@ -45,12 +45,12 @@ extern Datum xpath_array(PG_FUNCTION_ARGS);
  * effect is that the XPath expressions can be stored in a table as a regular
  * type (and possibly used as something like a 'named query').
  */
-typedef unsigned short XPathOffset;
+typedef uint16 XPathOffset;
 
 typedef struct XPathData
 {
 	bool		relative;
-	unsigned short depth;		/* 'Number of path elements (steps) */
+	uint8		depth;			/* 'Number of path elements (steps) */
 
 	/*
 	 * How many elements (steps) require search for descendants. It's useful
@@ -58,10 +58,11 @@ typedef struct XPathData
 	 * some nodes might be reached by multiple scan - subscan combinations and
 	 * therefore uniqueness of nodes returned has to be checked.
 	 */
-	unsigned short descendants;
-	unsigned short size;		/* Size of the whole XPath, including this
+	uint8		descendants;
+	uint32		size;			/* Size of the whole XPath, including this
 								 * structure */
-	XMLNodeKind targNdKind;
+	uint8		targNdKind;		/* 'uint8' just for storage, values are listed
+								 * in 'enum XMLNodeKind' */
 	bool		allAttributes;
 	bool		piTestValue;
 	XPathOffset elements[1];
@@ -73,7 +74,7 @@ typedef struct XPathData *XPath;
 
 typedef struct XPathHeaderData
 {
-	unsigned short pathCount;
+	uint8		pathCount;
 	XPathOffset paths[1];
 }	XPathHeaderData;
 
@@ -119,7 +120,7 @@ typedef struct XPathValueData
 	 * Even though 'char' is used for storage, 'XPathValueType' is the actual
 	 * type.
 	 */
-	unsigned char type;
+	uint8		type;
 	union
 	{
 		/*
@@ -127,7 +128,7 @@ typedef struct XPathValueData
 		 * stored here) stargs.
 		 */
 		XMLNodeOffset nodeSetRoot;
-		double		numVal;
+		float8		numVal;
 		bool		booVal;
 		char		strVal[1];
 	}			v;
@@ -144,37 +145,47 @@ extern Datum xpathval_to_xmlnode(PG_FUNCTION_ARGS);
 
 
 /*
+ * For internal purposes only.
+ * Used to convert variable value to id and back.
+ */
+typedef enum XPathExprVar
+{
+	XPATH_VAR_STRING,
+	XPATH_VAR_NODE_SINGLE,
+	XPATH_VAR_NODE_ARRAY
+}	XPathExprVar;
+
+/*
  * All nodes in the set are supposed to be of the same kind
  */
 typedef struct XPathNodeSetData
 {
-	unsigned short count;
+	uint32		count;
 	bool		isDocument;
 	union
 	{
-		XMLNodeHdr	single;
-		XMLNodeHdr *array;
+		/*
+		 * The following fields both reference subscripts in the corresponding
+		 * arrays allocated temporarily in 'XPathExprStateData'.
+		 *
+		 * The reason for not using pointers is that XPathNodeSetData is used
+		 * for storage. It doesn't matter that this union is transient (values
+		 * are substituted at 'prepare time'.)
+		 *
+		 * XPATH_VAR_NODE_SINGLE and XPATH_VAR_NODE_ARRAY (see XPathExprVar
+		 * enumeration above) are used to convert the ids to values and vice
+		 * versa.
+		 */
+		unsigned short nodeId;
+		unsigned short arrayId;
 	}			nodes;
 }	XPathNodeSetData;
 
 typedef struct XPathNodeSetData *XPathNodeSet;
 
-typedef struct XPathStringData
-{
-	char	   *str;
-
-	/*
-	 * Sometimes 'str' just points to inside an existing node, sometimes it
-	 * has been palloc'd separate.
-	 */
-	bool		mustFree;
-}	XPathStringData;
-
-typedef XPathStringData *XPathString;
 
 #define XPATH_FUNC_NAME_MAX_LEN 16
 #define XPATH_FUNC_MAX_ARGS		4
-
 
 typedef enum XPathFunctionId
 {
@@ -183,19 +194,36 @@ typedef enum XPathFunctionId
 	XPATH_FUNC_COUNT
 }	XPathFunctionId;
 
+
 typedef union XPathExprGenericValue
 {
 	bool		boolean;
-	double		num;
-	XPathStringData string;
-	unsigned short path;
+	float8		num;
+
+	/*
+	 * 0-based index in an array that gets palloc'd right before expression
+	 * evaluation. This is a transient variable and we set it before
+	 * expression gets evaluated.
+	 *
+	 * (char *) could be used instead, however that would make size of the
+	 * operand platform (compiler) dependent. The current concept is that the
+	 * XPath expression is retrieved from storage, copied and used. (No
+	 * conversion to a special type used for evaluation only.)
+	 *
+	 * 'stringId' can represent either string literal or attribute value. In
+	 * either case XPATH_VAR_STRING value of XPathExprVar enumeration is used.
+	 */
+	uint16		stringId;
+
+	uint16		path;
 	XPathNodeSetData nodeSet;
-	XPathFunctionId funcId;
+	uint8		funcId;
 }	XPathExprGenericValue;
 
 typedef struct XPathExprOperandValueData
 {
-	unsigned char type;
+	uint8		type;			/* Which member of the 'union
+								 * XPathExprGenericValue'. */
 
 	/*
 	 * isNull - true when element being tested does contain node (attribute,
@@ -219,11 +247,11 @@ typedef struct XPathExprOperandValueData *XPathExprOperandValue;
  * The literal string (either string constant or attribute name) is stored
  * immediately after the operand structure
  */
-#define XPATH_GEN_VALUE_STRING(value) (((char *) (value)) + sizeof(XPathExprOperandValueData))
+#define XPATH_STRING_LITERAL(value) (((char *) (value)) + sizeof(XPathExprOperandValueData))
 
 typedef struct XPathExprOperandData
 {
-	unsigned char type;
+	uint8		type;
 
 	/*
 	 * substituted - true if attribute name has already been substituted with
@@ -235,8 +263,9 @@ typedef struct XPathExprOperandData
 	 * If the structure is followed by a string (literal or attribute name),
 	 * its length (including terminating NULL) is includes here.
 	 */
-	unsigned short size;
-	/* value must be the last attribute of this structure */
+	uint16		size;
+
+	/* Value must be the last attribute of this structure */
 	XPathExprOperandValueData value;
 }	XPathExprOperandData;
 
@@ -264,9 +293,9 @@ typedef enum XPathExprOperatorId
  */
 typedef struct XPathExprOperatorData
 {
-	XPathExprOperatorId id;
-	unsigned char precedence;
-	XPathValueType resType;
+	uint8		id;
+	uint8		precedence;
+	uint8		resType;
 }	XPathExprOperatorData;
 
 typedef struct XPathExprOperatorData *XPathExprOperator;
@@ -282,28 +311,6 @@ typedef struct XPathExprOperatorTextData
 
 typedef struct XPathExprOperatorTextData *XPathExprOperatorText;
 
-
-typedef void (*XpathFuncImpl) (unsigned short nargs, XPathExprOperandValue args, XPathExprOperandValue result);
-
-typedef struct XPathFunctionData
-{
-	XPathFunctionId id;
-	char		name[XPATH_FUNC_NAME_MAX_LEN];
-	unsigned short nargs;		/* Number of arguments */
-	XPathValueType argTypes[XPATH_FUNC_MAX_ARGS];
-	XpathFuncImpl impl;
-	XPathValueType resType;
-	bool		predicateOnly;	/* May the function only appear within a
-								 * predicate? */
-}	XPathFunctionData;
-
-typedef struct XPathFunctionData *XPathFunction;
-
-/* Total number of XPath functions the parser can recognize. */
-#define XPATH_FUNCTIONS			3
-
-XPathFunctionData xpathFunctions[XPATH_FUNCTIONS];
-
 /*
  * If type is XPATH_OPERAND_EXPR_TOP, the header is followed by array of
  * offsets pointing to variables (attributes or text nodes).
@@ -312,13 +319,15 @@ XPathFunctionData xpathFunctions[XPATH_FUNCTIONS];
  */
 typedef struct XPathExpressionData
 {
-	unsigned char type;
-	unsigned char flags;
-	unsigned short size;
-	unsigned short variables;
-	unsigned short members;
+	uint8		type;
+	uint8		flags;
+	uint16		size;
+	uint16		variables;
+	uint16		members;
 
-	unsigned short npaths;
+	uint16		nlits;			/* Number of string literals. */
+
+	uint16		npaths;
 
 	/*
 	 * 'true' if there's no relative path in the expression nor an attribute
@@ -326,16 +335,15 @@ typedef struct XPathExpressionData
 	 */
 	bool		mainExprAbs;
 
-	unsigned short nfuncs;
-	bool		hasNodesets;
+	uint16		nfuncs;
 
 	/*
 	 * Identifier of a function to be applied when the expression (argument
-	 * list) is done. Only set if type is XPATH_OPERAND_FUNC
+	 * list) is evaluated. Only set if type is XPATH_OPERAND_FUNC
 	 */
-	XPathFunctionId funcId;
+	uint8		funcId;
 
-	XPathValueType valType;
+	uint8		valType;
 }	XPathExpressionData;
 
 typedef struct XPathExpressionData *XPathExpression;
@@ -426,8 +434,8 @@ typedef struct XMLScanData
 	XPath		xpath;
 
 	/*
-	 * Even if the current 'xpath' expression is known, we need the XPathHdr
-	 * sometimes to get sub-path(s).
+	 * Even if the current 'xpath' expression is known, we need the
+	 * XPathHeader sometimes to get sub-path(s).
 	 */
 	XPathHeader xpathHeader;
 	unsigned short xpathRoot;
@@ -503,19 +511,66 @@ extern void finalizeXMLScan(XMLScan xscan);
 extern void initScanForTextNodes(XMLScan xscan, XMLCompNodeHdr root);
 extern void finalizeScanForTextNodes(XMLScan xscan);
 
-extern XPathExpression prepareXPathExpression(XPathExpression exprOrig, XMLCompNodeHdr ctxElem,
+/*
+ * Expression evaluation state.
+ */
+typedef struct XPathExprStateData
+{
+	XPathExpression expr;
+
+	unsigned short count[3];
+	unsigned short countMax[3];
+
+	char	  **strings;
+	XMLNodeHdr *nodes;
+	XMLNodeHdr **nodeSets;
+}	XPathExprStateData;
+
+typedef struct XPathExprStateData *XPathExprState;
+
+
+extern XPathExprState prepareXPathExpression(XPathExpression exprOrig, XMLCompNodeHdr ctxElem,
 					   xmldoc document, XPathHeader xpHdr, XMLScan xscan);
-extern void evaluateXPathExpression(XPathExpression expr, XMLScanOneLevel scan,
+extern void evaluateXPathExpression(XPathExprState exprState, XPathExpression expr, XMLScanOneLevel scan,
 						XMLCompNodeHdr element, unsigned short recursionLevel, XPathExprOperandValue result);
 
-extern void xpathValCastToBool(XPathExprOperandValue valueSrc, XPathExprOperandValue valueDst);
-extern void xpathValCastToNum(XPathExprOperandValue valueSrc, XPathExprOperandValue valueDst);
-extern void xpathValCastToStr(XPathExprOperandValue valueSrc, XPathExprOperandValue valueDst);
+extern void freeExpressionState(XPathExprState state);
 
-extern void xpathStrFree(XPathExprOperandValue strValue);
+extern void xpathValCastToBool(XPathExprState exprState, XPathExprOperandValue valueSrc,
+				   XPathExprOperandValue valueDst);
+extern void xpathValCastToNum(XPathExprState exprState, XPathExprOperandValue valueSrc,
+				  XPathExprOperandValue valueDst);
+extern void xpathValCastToStr(XPathExprState exprState, XPathExprOperandValue valueSrc,
+				  XPathExprOperandValue valueDst);
 
+extern unsigned short getXPathOperandId(XPathExprState exprState, void *value, XPathExprVar varKind);
+extern void *getXPathOperandValue(XPathExprState exprState, unsigned short id, XPathExprVar varKind);
 
-extern void xpathCount(unsigned short nargs, XPathExprOperandValue args, XPathExprOperandValue result);
-extern void xpathContains(unsigned short nargs, XPathExprOperandValue args, XPathExprOperandValue result);
+typedef void (*XpathFuncImpl) (XPathExprState exprState, unsigned short nargs, XPathExprOperandValue args,
+										   XPathExprOperandValue result);
+
+typedef struct XPathFunctionData
+{
+	XPathFunctionId id;
+	char		name[XPATH_FUNC_NAME_MAX_LEN];
+	unsigned short nargs;		/* Number of arguments */
+	XPathValueType argTypes[XPATH_FUNC_MAX_ARGS];
+	XpathFuncImpl impl;
+	XPathValueType resType;
+	bool		predicateOnly;	/* May the function only appear within a
+								 * predicate? */
+}	XPathFunctionData;
+
+typedef struct XPathFunctionData *XPathFunction;
+
+/* Total number of XPath functions the parser can recognize. */
+#define XPATH_FUNCTIONS			3
+
+XPathFunctionData xpathFunctions[XPATH_FUNCTIONS];
+
+extern void xpathCount(XPathExprState exprState, unsigned short nargs, XPathExprOperandValue args,
+		   XPathExprOperandValue result);
+extern void xpathContains(XPathExprState exprState, unsigned short nargs, XPathExprOperandValue args,
+			  XPathExprOperandValue result);
 
 #endif   /* XPATH_H_ */

@@ -125,16 +125,17 @@ parseXPathExpression(XPathExpression exprCurrent, XPathParserState state, char t
 	bool		subExprExpl = (*state->c == XNODE_CHAR_LBRKT_RND && firstOperator == NULL);
 
 	checkExpressionBuffer(*outPos);
+	exprCurrent->nlits = 0;
 	exprCurrent->npaths = 0;
 	exprCurrent->nfuncs = 0;
 
 	if (!isSubExpr)
 	{
 		exprCurrent->type = XPATH_OPERAND_EXPR_TOP;
-		exprCurrent->hasNodesets = false;
 		exprCurrent->variables = 0;
 		firstMembOff += XPATH_EXPR_VAR_MAX * sizeof(XPathOffset);
 	}
+
 	if (!isSubExpr || subExprExpl)
 	{
 		nextChar(state, false);
@@ -241,6 +242,7 @@ parseXPathExpression(XPathExpression exprCurrent, XPathParserState state, char t
 			nextOperator = parseXPathExpression(subExpr, state, term, operator, output, outPos, true, false, paths,
 												pathCnt, mainExpr);
 
+			exprTop->nlits += subExpr->nlits;
 			exprTop->npaths += subExpr->npaths;
 			exprTop->nfuncs += subExpr->nfuncs;
 
@@ -261,6 +263,7 @@ parseXPathExpression(XPathExpression exprCurrent, XPathParserState state, char t
 					nextOperator = parseXPathExpression(subExpr, state, term, operator, output, outPos, true, false,
 												   paths, pathCnt, mainExpr);
 
+					exprTop->nlits += subExpr->nlits;
 					exprTop->npaths += subExpr->npaths;
 					exprTop->nfuncs += subExpr->nfuncs;
 
@@ -335,7 +338,7 @@ parseXPathExpression(XPathExpression exprCurrent, XPathParserState state, char t
 
 	/*
 	 * This covers the main expression only. For predicate expressions the
-	 * ssame is done by parseLocationPath() function.
+	 * same is done by parseLocationPath() function.
 	 */
 	if (mainExpr && !isSubExpr && exprTop->variables < XPATH_EXPR_VAR_MAX)
 	{
@@ -896,6 +899,7 @@ readExpressionOperand(XPathExpression exprTop,
 		parseXPathExpression(subExpr, state, XNODE_CHAR_RBRKT_RND, NULL, output, outPos, true, false, paths,
 							 pathCnt, mainExpr);
 
+		exprTop->nlits += subExpr->nlits;
 		exprTop->npaths += subExpr->npaths;
 		exprTop->nfuncs += subExpr->nfuncs;
 
@@ -931,7 +935,6 @@ readExpressionOperand(XPathExpression exprTop,
 			 * choose the correct casts is already complex enough.
 			 */
 			op->value.type = XPATH_VAL_STRING;
-			op->value.v.string.mustFree = false;
 			nextChar(state, false);
 
 			if (!XNODE_VALID_NAME_START(state->c))
@@ -1080,7 +1083,6 @@ readExpressionOperand(XPathExpression exprTop,
 		op->type = XPATH_OPERAND_LITERAL;
 		op->value.type = XPATH_VAL_STRING;
 		op->value.isNull = false;
-		op->value.v.string.mustFree = false;
 
 		nextChar(state, false);
 		while (*state->c != qMark)
@@ -1179,6 +1181,10 @@ checkExprOperand(XPathExpression exprTop, XPathExprOperand operand, bool mainExp
 			}
 		}
 		exprTop->nfuncs++;
+	}
+	else if (operand->type == XPATH_OPERAND_LITERAL)
+	{
+		exprTop->nlits++;
 	}
 }
 
@@ -1472,7 +1478,7 @@ dumpXPathExpression(XPathExpression expr, XPathHeader xpathHdr, StringInfo outpu
 			switch (opnd->type)
 			{
 				case XPATH_OPERAND_ATTRIBUTE:
-					appendStringInfo(output, "\n    attribute: %s", XPATH_GEN_VALUE_STRING(&opnd->value));
+					appendStringInfo(output, "\n    attribute: %s", XPATH_STRING_LITERAL(&opnd->value));
 					break;
 
 				case XPATH_OPERAND_PATH:
@@ -1691,7 +1697,7 @@ dumpXPathExprOperand(char **input, XPathHeader xpathHdr, StringInfo output, unsi
 		case XPATH_OPERAND_LITERAL:
 			if (operand->value.type == XPATH_VAL_STRING)
 			{
-				appendStringInfo(output, "\"%s\"", XPATH_GEN_VALUE_STRING(&operand->value));
+				appendStringInfo(output, "\"%s\"", XPATH_STRING_LITERAL(&operand->value));
 			}
 			else if (operand->value.type == XPATH_VAL_NUMBER)
 			{
@@ -1709,7 +1715,7 @@ dumpXPathExprOperand(char **input, XPathHeader xpathHdr, StringInfo output, unsi
 
 		case XPATH_OPERAND_ATTRIBUTE:
 			size = operand->size;
-			appendStringInfo(output, "%c%s", XNODE_CHAR_AT, XPATH_GEN_VALUE_STRING(&operand->value));
+			appendStringInfo(output, "%c%s", XNODE_CHAR_AT, XPATH_STRING_LITERAL(&operand->value));
 			*input += size;
 			break;
 

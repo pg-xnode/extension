@@ -3,32 +3,34 @@
 #include "xpath.h"
 #include "xmlnode_util.h"
 
-static unsigned int evaluateXPathOperand(XPathExprOperand operand, XMLScanOneLevel scan, XMLCompNodeHdr element,
-				unsigned short recursionLevel, XPathExprOperandValue result);
-static void evaluateXPathFunction(XPathExpression funcExpr, XMLScanOneLevel scan, XMLCompNodeHdr element,
-				unsigned short recursionLevel, XPathExprOperandValue result);
-static void prepareLiteral(XPathExprOperand operand);
-static void freeNodeSets(XPathExpression expr);
-static void evaluateBinaryOperator(XPathExprOperandValue valueLeft, XPathExprOperandValue valueRight,
+static unsigned int evaluateXPathOperand(XPathExprState exprState, XPathExprOperand operand, XMLScanOneLevel scan,
+					 XMLCompNodeHdr element, unsigned short recursionLevel, XPathExprOperandValue result);
+static void evaluateXPathFunction(XPathExprState exprState, XPathExpression funcExpr, XMLScanOneLevel scan,
+					  XMLCompNodeHdr element, unsigned short recursionLevel, XPathExprOperandValue result);
+static void prepareLiteral(XPathExprState exprState, XPathExprOperand operand);
+static void evaluateBinaryOperator(XPathExprState exprState, XPathExprOperandValue valueLeft, XPathExprOperandValue valueRight,
 					   XPathExprOperator operator, XPathExprOperandValue result, XMLCompNodeHdr element);
+
 static bool considerSubScan(XPathElement xpEl, XMLNodeHdr node, XMLScan xscan, bool subScanJustDone);
 static void addNodeToIgnoreList(XMLNodeHdr node, XMLScan scan);
 
-static void substituteAttributes(XPathExpression expr, XMLCompNodeHdr element);
-static void substituteSubpaths(XPathExpression expression, XMLCompNodeHdr element, xmldoc document,
-				   XPathHeader xpHdr);
+static void substituteAttributes(XPathExprState exprState, XMLCompNodeHdr element);
+static void substituteSubpaths(XPathExprState exprState, XPathExpression expression, XMLCompNodeHdr element,
+				   xmldoc document, XPathHeader xpHdr);
 static void substituteFunctions(XPathExpression expression, XMLScan xscan);
 
-static void compareNumValues(XPathExprOperandValue valueLeft, XPathExprOperandValue valueRight,
-				 XPathExprOperator operator, XPathExprOperandValue result);
+static void compareNumValues(XPathExprState exprState, XPathExprOperandValue valueLeft,
+				 XPathExprOperandValue valueRight, XPathExprOperator operator, XPathExprOperandValue result);
 static void compareNumbers(double numLeft, double numRight, XPathExprOperator operator,
 			   XPathExprOperandValue result);
-static bool compareNodeSets(XPathNodeSet ns1, XPathNodeSet ns2, XPathExprOperator operator);
+static bool compareNodeSets(XPathExprState exprState, XPathNodeSet ns1, XPathNodeSet ns2, XPathExprOperator operator);
 static bool compareElements(XMLCompNodeHdr elLeft, XMLCompNodeHdr elRight);
-static bool compareValueToNode(XPathExprOperandValue value, XMLNodeHdr node, XPathExprOperator operator);
+static bool compareValueToNode(XPathExprState exprState, XPathExprOperandValue value, XMLNodeHdr node,
+				   XPathExprOperator operator);
 static void compareNumToStr(double num, char *numStr, XPathExprOperator operator,
 				XPathExprOperandValue result);
-static bool compareValueToNodeSet(XPathExprOperandValue value, XPathNodeSet ns, XPathExprOperator operator);
+static bool compareValueToNodeSet(XPathExprState exprState, XPathExprOperandValue value, XPathNodeSet ns,
+					  XPathExprOperator operator);
 
 static bool isOnIgnoreList(XMLNodeHdr node, XMLScan scan);
 
@@ -276,14 +278,13 @@ getNextXMLNode(XMLScan xscan, bool removed)
 									resultBool;
 						XPathExpression exprOrig = (XPathExpression) ((char *) xpEl + sizeof(XPathElementData) +
 														   strlen(nameTest));
-						XPathExpression expr = prepareXPathExpression(exprOrig, currentElement,
+						XPathExprState exprState = prepareXPathExpression(exprOrig, currentElement,
 								 xscan->document, xscan->xpathHeader, xscan);
 
-						evaluateXPathExpression(expr, scanLevel, currentElement, 0, &result);
-						freeNodeSets(expr);
-						pfree(expr);
-						xpathValCastToBool(&result, &resultBool);
+						evaluateXPathExpression(exprState, exprState->expr, scanLevel, currentElement, 0, &result);
+						xpathValCastToBool(exprState, &result, &resultBool);
 						passed = resultBool.v.boolean;
+						freeExpressionState(exprState);
 					}
 					if (!passed)
 					{
@@ -456,30 +457,73 @@ getNextXMLNode(XMLScan xscan, bool removed)
 
 
 /*
- * Return a copy of an expression, prepared for evaluation. That is, all
- * variables are substituted in the resulting expression according to the
- * context element.
+ * Returns expression state, containing a (mutable) copy of an expression as well as
+ * values of operands that had to be substituted.
  *
  * The function does process all sub-expressions (implicit / explicit) and
  * (sub)paths. When it tries to substitute node-sets for sub-paths, it has to
  * process predicate expressions of those sub-paths (which can again contain
  * sub-paths, etc.)
  */
-XPathExpression
+XPathExprState
 prepareXPathExpression(XPathExpression exprOrig, XMLCompNodeHdr ctxElem,
 					   xmldoc document, XPathHeader xpHdr, XMLScan xscan)
 {
 	XPathExpression expr = (XPathExpression) palloc(exprOrig->size);
+	XPathExprState state = (XPathExprState) palloc(sizeof(XPathExprStateData));
+	unsigned int size;
+	unsigned short countMax;
 
 	memcpy(expr, exprOrig, exprOrig->size);
+	state->expr = expr;
+
+	countMax = expr->variables + expr->nlits;
+	state->countMax[XPATH_VAR_STRING] = countMax;
+	if (countMax > 0)
+	{
+		size = countMax * sizeof(char *);
+		state->strings = (char **) palloc(size);
+		memset(state->strings, 0, size);
+	}
+	else
+	{
+		state->strings = NULL;
+	}
+	state->count[XPATH_VAR_STRING] = 0;
 
 	/* Replace attribute names with the values found in the current node.  */
-	substituteAttributes(expr, ctxElem);
+	substituteAttributes(state, ctxElem);
+
+	/*
+	 * At the moment we don't know whether all paths will become node sets,
+	 * single nodes or combination of both. Thus both arrays must be sized to
+	 * the number of paths.
+	 */
+	countMax = expr->npaths;
+	state->countMax[XPATH_VAR_NODE_SINGLE] = countMax;
+	state->countMax[XPATH_VAR_NODE_ARRAY] = countMax;
+	if (countMax > 0)
+	{
+		size = countMax * sizeof(XMLNodeHdr);
+		state->nodes = (XMLNodeHdr *) palloc(size);
+		memset(state->nodes, 0, size);
+
+		size = countMax * sizeof(XMLNodeHdr *);
+		state->nodeSets = (XMLNodeHdr **) palloc(size);
+		memset(state->nodeSets, 0, size);
+	}
+	else
+	{
+		state->nodes = NULL;
+		state->nodeSets = NULL;
+	}
+	state->count[XPATH_VAR_NODE_SINGLE] = 0;
+	state->count[XPATH_VAR_NODE_ARRAY] = 0;
 
 	if (expr->npaths > 0)
 	{
 		/* Replace paths with matching node-sets. */
-		substituteSubpaths(expr, ctxElem, document, xpHdr);
+		substituteSubpaths(state, expr, ctxElem, document, xpHdr);
 	}
 	if (expr->nfuncs)
 	{
@@ -489,7 +533,7 @@ prepareXPathExpression(XPathExpression exprOrig, XMLCompNodeHdr ctxElem,
 		 */
 		substituteFunctions(expr, xscan);
 	}
-	return expr;
+	return state;
 }
 
 
@@ -498,7 +542,7 @@ prepareXPathExpression(XPathExpression exprOrig, XMLCompNodeHdr ctxElem,
  * evaluating. In general - a context node.
  */
 void
-evaluateXPathExpression(XPathExpression expr, XMLScanOneLevel scan,
+evaluateXPathExpression(XPathExprState exprState, XPathExpression expr, XMLScanOneLevel scan,
 						XMLCompNodeHdr element, unsigned short recursionLevel, XPathExprOperandValue result)
 {
 	unsigned short i;
@@ -516,8 +560,8 @@ evaluateXPathExpression(XPathExpression expr, XMLScanOneLevel scan,
 		currentPtr += varSize;
 	}
 	currentOpnd = (XPathExprOperand) currentPtr;
-	prepareLiteral(currentOpnd);
-	currentSize = evaluateXPathOperand(currentOpnd, scan, element, recursionLevel, result);
+	prepareLiteral(exprState, currentOpnd);
+	currentSize = evaluateXPathOperand(exprState, currentOpnd, scan, element, recursionLevel, result);
 
 	if (expr->members == 1)
 	{
@@ -553,10 +597,10 @@ evaluateXPathExpression(XPathExpression expr, XMLScanOneLevel scan,
 			firstOp = operator->id;
 		}
 		currentOpnd = (XPathExprOperand) currentPtr;
-		prepareLiteral(currentOpnd);
+		prepareLiteral(exprState, currentOpnd);
 
-		currentSize = evaluateXPathOperand(currentOpnd, scan, element, recursionLevel, &currentVal);
-		evaluateBinaryOperator(result, &currentVal, operator, &resTmp, element);
+		currentSize = evaluateXPathOperand(exprState, currentOpnd, scan, element, recursionLevel, &currentVal);
+		evaluateBinaryOperator(exprState, result, &currentVal, operator, &resTmp, element);
 		memcpy(result, &resTmp, sizeof(XPathExprOperandValueData));
 
 		/*
@@ -586,8 +630,40 @@ evaluateXPathExpression(XPathExpression expr, XMLScanOneLevel scan,
 }
 
 
+void
+freeExpressionState(XPathExprState state)
+{
+	if (state->strings)
+	{
+		pfree(state->strings);
+	}
+
+	if (state->nodes)
+	{
+		pfree(state->nodes);
+	}
+
+	if (state->nodeSets)
+	{
+		unsigned short i;
+
+		for (i = 0; i < state->countMax[XPATH_VAR_NODE_ARRAY]; i++)
+		{
+			XMLNodeHdr *ns = state->nodeSets[i];
+
+			if (ns == NULL)
+			{
+				break;
+			}
+			pfree(ns);
+		}
+		pfree(state->nodeSets);
+	}
+	pfree(state);
+}
+
 static unsigned int
-evaluateXPathOperand(XPathExprOperand operand, XMLScanOneLevel scan, XMLCompNodeHdr element,
+evaluateXPathOperand(XPathExprState exprState, XPathExprOperand operand, XMLScanOneLevel scan, XMLCompNodeHdr element,
 				 unsigned short recursionLevel, XPathExprOperandValue result)
 {
 	unsigned int resSize;
@@ -595,12 +671,12 @@ evaluateXPathOperand(XPathExprOperand operand, XMLScanOneLevel scan, XMLCompNode
 
 	if (operand->type == XPATH_OPERAND_EXPR_SUB)
 	{
-		evaluateXPathExpression(expr, scan, element, recursionLevel + 1, result);
+		evaluateXPathExpression(exprState, expr, scan, element, recursionLevel + 1, result);
 		resSize = expr->size;
 	}
 	else if (operand->type == XPATH_OPERAND_FUNC)
 	{
-		evaluateXPathFunction(expr, scan, element, recursionLevel + 1, result);
+		evaluateXPathFunction(exprState, expr, scan, element, recursionLevel + 1, result);
 		resSize = expr->size;
 	}
 	else
@@ -612,8 +688,8 @@ evaluateXPathOperand(XPathExprOperand operand, XMLScanOneLevel scan, XMLCompNode
 }
 
 static void
-evaluateXPathFunction(XPathExpression funcExpr, XMLScanOneLevel scan, XMLCompNodeHdr element,
-				 unsigned short recursionLevel, XPathExprOperandValue result)
+evaluateXPathFunction(XPathExprState exprState, XPathExpression funcExpr, XMLScanOneLevel scan,
+					  XMLCompNodeHdr element, unsigned short recursionLevel, XPathExprOperandValue result)
 {
 
 	char	   *c = (char *) funcExpr + sizeof(XPathExpressionData);
@@ -634,21 +710,17 @@ evaluateXPathFunction(XPathExpression funcExpr, XMLScanOneLevel scan, XMLCompNod
 		{
 			XPathExpression subExpr = (XPathExpression) opnd;
 
-			evaluateXPathExpression(subExpr, scan, element, recursionLevel, argsTmp);
+			evaluateXPathExpression(exprState, subExpr, scan, element, recursionLevel, argsTmp);
 			opndSize = subExpr->size;
 		}
 		else
 		{
 			memcpy(argsTmp, &opnd->value, sizeof(XPathExprOperandValueData));
 
-			/*
-			 * prepareLiteral() can't be used here because we're setting a
-			 * separate chunk of memory (not the expression buffer).
-			 */
 			if (opnd->type == XPATH_OPERAND_LITERAL && opnd->value.type == XPATH_VAL_STRING)
 			{
-				argsTmp->v.string.str = XPATH_GEN_VALUE_STRING(&opnd->value);
-				argsTmp->v.string.mustFree = false;
+				argsTmp->v.stringId = getXPathOperandId(exprState, XPATH_STRING_LITERAL(&opnd->value),
+														XPATH_VAR_STRING);
 			}
 			opndSize = opnd->size;
 		}
@@ -658,7 +730,7 @@ evaluateXPathFunction(XPathExpression funcExpr, XMLScanOneLevel scan, XMLCompNod
 
 	funcId = funcExpr->funcId;
 	function = &xpathFunctions[funcId];
-	function->impl(function->nargs, args, result);
+	function->impl(exprState, function->nargs, args, result);
 }
 
 /*
@@ -666,42 +738,17 @@ evaluateXPathFunction(XPathExpression funcExpr, XMLScanOneLevel scan, XMLCompNod
  * or is it a copy.
  */
 static void
-prepareLiteral(XPathExprOperand operand)
+prepareLiteral(XPathExprState exprState, XPathExprOperand operand)
 {
 	if (operand->type == XPATH_OPERAND_LITERAL && operand->value.type == XPATH_VAL_STRING)
 	{
-		operand->value.v.string.str = XPATH_GEN_VALUE_STRING(&operand->value);
-		operand->value.v.string.mustFree = false;
+		operand->value.v.stringId = getXPathOperandId(exprState, XPATH_STRING_LITERAL(&operand->value),
+													  XPATH_VAR_STRING);
 	}
 }
 
 static void
-freeNodeSets(XPathExpression expr)
-{
-	XPathOffset *varOffPtr = (XPathOffset *) ((char *) expr + sizeof(XPathExpressionData));
-	unsigned short i;
-
-	Assert(expr->type == XPATH_OPERAND_EXPR_TOP);
-
-	if (!expr->hasNodesets)
-	{
-		return;
-	}
-	for (i = 0; i < expr->variables; i++)
-	{
-		XPathExprOperand opnd = (XPathExprOperand) ((char *) expr + *varOffPtr);
-
-		if (opnd->value.type == XPATH_VAL_NODESET && !opnd->value.v.nodeSet.isDocument && !opnd->value.isNull
-			&& opnd->value.v.nodeSet.count > 1)
-		{
-			pfree(opnd->value.v.nodeSet.nodes.array);
-		}
-		varOffPtr++;
-	}
-}
-
-static void
-evaluateBinaryOperator(XPathExprOperandValue valueLeft, XPathExprOperandValue valueRight,
+evaluateBinaryOperator(XPathExprState exprState, XPathExprOperandValue valueLeft, XPathExprOperandValue valueRight,
 					   XPathExprOperator operator, XPathExprOperandValue result, XMLCompNodeHdr element)
 {
 
@@ -720,9 +767,9 @@ evaluateBinaryOperator(XPathExprOperandValue valueLeft, XPathExprOperandValue va
 		/*
 		 * Subexpression is currently the only type of operand of boolean type
 		 */
-		xpathValCastToBool(valueLeft, &valueTmp);
+		xpathValCastToBool(exprState, valueLeft, &valueTmp);
 		left = valueTmp.v.boolean;
-		xpathValCastToBool(valueRight, &valueTmp);
+		xpathValCastToBool(exprState, valueRight, &valueTmp);
 		right = valueTmp.v.boolean;
 
 		result->type = XPATH_VAL_BOOLEAN;
@@ -746,9 +793,9 @@ evaluateBinaryOperator(XPathExprOperandValue valueLeft, XPathExprOperandValue va
 			 * As we don't know which one is boolean and which one is
 			 * something else, cast both values to boolean
 			 */
-			xpathValCastToBool(valueLeft, &valueTmp);
+			xpathValCastToBool(exprState, valueLeft, &valueTmp);
 			boolLeft = valueTmp.v.boolean;
-			xpathValCastToBool(valueRight, &valueTmp);
+			xpathValCastToBool(exprState, valueRight, &valueTmp);
 			boolRight = valueTmp.v.boolean;
 			;
 			equal = boolLeft == boolRight;
@@ -757,7 +804,7 @@ evaluateBinaryOperator(XPathExprOperandValue valueLeft, XPathExprOperandValue va
 		}
 		else if (typeLeft == XPATH_VAL_NUMBER || typeRight == XPATH_VAL_NUMBER)
 		{
-			compareNumValues(valueLeft, valueRight, operator, result);
+			compareNumValues(exprState, valueLeft, valueRight, operator, result);
 			return;
 		}
 		else
@@ -771,7 +818,7 @@ evaluateBinaryOperator(XPathExprOperandValue valueLeft, XPathExprOperandValue va
 				XPathNodeSet nsRight = &valueRight->v.nodeSet;
 
 				/*
-				 * Document is not a typical nod-eset, let's exclude it first.
+				 * Document is not a typical node-set, let's exclude it first.
 				 */
 				if (nsLeft->isDocument || nsRight->isDocument)
 				{
@@ -783,7 +830,8 @@ evaluateBinaryOperator(XPathExprOperandValue valueLeft, XPathExprOperandValue va
 					result->v.boolean = false;
 					return;
 				}
-				result->v.boolean = compareNodeSets(&valueLeft->v.nodeSet, &valueRight->v.nodeSet, operator);
+				result->v.boolean = compareNodeSets(exprState, &valueLeft->v.nodeSet, &valueRight->v.nodeSet,
+													operator);
 				return;
 			}
 			else if (typeLeft == XPATH_VAL_NODESET || typeRight == XPATH_VAL_NODESET)
@@ -830,7 +878,7 @@ evaluateBinaryOperator(XPathExprOperandValue valueLeft, XPathExprOperandValue va
 					result->v.boolean = false;
 					return;
 				}
-				result->v.boolean = compareValueToNodeSet(nonSetValue, nodeSet, operator);
+				result->v.boolean = compareValueToNodeSet(exprState, nonSetValue, nodeSet, operator);
 				return;
 			}
 
@@ -843,8 +891,8 @@ evaluateBinaryOperator(XPathExprOperandValue valueLeft, XPathExprOperandValue va
 				char	   *strLeft,
 						   *strRight;
 
-				strLeft = valueLeft->v.string.str;
-				strRight = valueRight->v.string.str;
+				strLeft = getXPathOperandValue(exprState, valueLeft->v.stringId, XPATH_VAR_STRING);
+				strRight = getXPathOperandValue(exprState, valueRight->v.stringId, XPATH_VAR_STRING);
 
 				equal = strcmp(strLeft, strRight) == 0;
 				result->v.boolean = (operator->id == XPATH_EXPR_OPERATOR_EQ) ? equal : !equal;
@@ -864,7 +912,7 @@ evaluateBinaryOperator(XPathExprOperandValue valueLeft, XPathExprOperandValue va
 	else if (operator->id == XPATH_EXPR_OPERATOR_LT || operator->id == XPATH_EXPR_OPERATOR_GT ||
 			 operator->id == XPATH_EXPR_OPERATOR_LTE || operator->id == XPATH_EXPR_OPERATOR_GTE)
 	{
-		compareNumValues(valueLeft, valueRight, operator, result);
+		compareNumValues(exprState, valueLeft, valueRight, operator, result);
 		result->type = XPATH_VAL_BOOLEAN;
 		return;
 	}
@@ -934,13 +982,19 @@ addNodeToIgnoreList(XMLNodeHdr node, XMLScan scan)
 /*
  * Replace attribute names in the expression with actual values (i.e. with
  * values that the current element contains).
+ *
+ * 'exprState' contains the expath expression.
+ * 'exprState' also receives array of attribute values referenced by the expression variables.
+ * By return time the referencing variables (expression operands) have obtained
+ * the appropriate subscripts for this array.
  */
 static void
-substituteAttributes(XPathExpression expr, XMLCompNodeHdr element)
+substituteAttributes(XPathExprState exprState, XMLCompNodeHdr element)
 {
 	unsigned short childrenLeft = element->children;
 	char	   *childFirst = XNODE_FIRST_REF(element);
 	char	   *chldOffPtr = childFirst;
+	unsigned short attrNr = 0;
 
 	while (childrenLeft > 0)
 	{
@@ -951,12 +1005,12 @@ substituteAttributes(XPathExpression expr, XMLCompNodeHdr element)
 		{
 			char	   *attrName = XNODE_CONTENT(child);
 			unsigned short i;
-			XPathOffset *varOffPtr = (XPathOffset *) ((char *) expr +
+			XPathOffset *varOffPtr = (XPathOffset *) ((char *) exprState->expr +
 												sizeof(XPathExpressionData));
 
-			for (i = 0; i < expr->variables; i++)
+			for (i = 0; i < exprState->expr->variables; i++)
 			{
-				XPathExprOperand opnd = (XPathExprOperand) ((char *) expr +
+				XPathExprOperand opnd = (XPathExprOperand) ((char *) exprState->expr +
 															*varOffPtr);
 
 				if (opnd->substituted)
@@ -964,13 +1018,18 @@ substituteAttributes(XPathExpression expr, XMLCompNodeHdr element)
 					varOffPtr++;
 					continue;
 				}
+
 				if (opnd->type == XPATH_OPERAND_ATTRIBUTE &&
-				 strcmp(attrName, XPATH_GEN_VALUE_STRING(&opnd->value)) == 0)
+					strcmp(attrName, XPATH_STRING_LITERAL(&opnd->value)) == 0)
 				{
 					char	   *attrValue = attrName + strlen(attrName) + 1;
 
-					opnd->value.v.string.str = attrValue;
-					opnd->value.v.string.mustFree = false;
+					if (exprState->strings[exprState->count[XPATH_VAR_STRING] + attrNr] == NULL)
+					{
+						exprState->strings[exprState->count[XPATH_VAR_STRING] + attrNr] = attrValue;
+					}
+
+					opnd->value.v.stringId = attrNr;
 					opnd->substituted = true;
 					opnd->value.isNull = false;
 					opnd->value.type = XPATH_VAL_STRING;
@@ -978,9 +1037,19 @@ substituteAttributes(XPathExpression expr, XMLCompNodeHdr element)
 				}
 				varOffPtr++;
 			}
+
+			/*
+			 * If at least one variable references the current attribute, the
+			 * potential next attribute needs a new unique number.
+			 */
+			if (exprState->strings[exprState->count[XPATH_VAR_STRING] + attrNr] != NULL)
+			{
+				attrNr++;
+			}
 		}
 		childrenLeft--;
 	}
+	exprState->count[XPATH_VAR_STRING] += attrNr;
 }
 
 /*
@@ -991,7 +1060,7 @@ substituteAttributes(XPathExpression expr, XMLCompNodeHdr element)
  * using 'expression' when the substitution is complete.
  */
 static void
-substituteSubpaths(XPathExpression expression, XMLCompNodeHdr element, xmldoc document,
+substituteSubpaths(XPathExprState exprState, XPathExpression expression, XMLCompNodeHdr element, xmldoc document,
 				   XPathHeader xpHdr)
 {
 	unsigned short i,
@@ -1028,7 +1097,8 @@ substituteSubpaths(XPathExpression expression, XMLCompNodeHdr element, xmldoc do
 
 					if (count == 0)
 					{
-						opnd->value.v.nodeSet.nodes.single = matching;
+						opnd->value.v.nodeSet.nodes.nodeId = getXPathOperandId(exprState, matching,
+													  XPATH_VAR_NODE_SINGLE);
 					}
 					else if (count == 1)
 					{
@@ -1038,32 +1108,35 @@ substituteSubpaths(XPathExpression expression, XMLCompNodeHdr element, xmldoc do
 						 */
 						arrSize = (element->children > count) ? element->children : 2;
 						array = (XMLNodeHdr *) palloc(sizeof(XMLNodeHdr) * arrSize);
-						array[0] = opnd->value.v.nodeSet.nodes.single;
+						array[0] = getXPathOperandValue(exprState, opnd->value.v.nodeSet.nodes.nodeId,
+													  XPATH_VAR_NODE_SINGLE);
 						array[1] = matching;
-						opnd->value.v.nodeSet.nodes.array = array;
+						opnd->value.v.nodeSet.nodes.arrayId = getXPathOperandId(exprState, array,
+													   XPATH_VAR_NODE_ARRAY);
 					}
 					else
 					{
+						unsigned short arrayId = opnd->value.v.nodeSet.nodes.arrayId;
+						XMLNodeHdr *array = getXPathOperandValue(exprState, arrayId, XPATH_VAR_NODE_ARRAY);
+
 						if (count >= arrSize)
 						{
 							/*
-							 * This estimate might be o.k. whether the node
-							 * has few or many children
+							 * Estimate like this might be o.k. whether the
+							 * node has few or many children
 							 */
 							arrSize = count + (count >> 1) + 1;
-							array = (XMLNodeHdr *) repalloc(opnd->value.v.nodeSet.nodes.array,
-											   sizeof(XMLNodeHdr) * arrSize);
-							opnd->value.v.nodeSet.nodes.array = array;
 
+							array = (XMLNodeHdr *) repalloc(array, sizeof(XMLNodeHdr) * arrSize);
+							exprState->nodeSets[arrayId] = array;
 						}
-						opnd->value.v.nodeSet.nodes.array[count] = matching;
+						array[count] = matching;
 					}
 					count++;
 				}
 				opnd->value.isNull = (count == 0);
 				opnd->value.v.nodeSet.count = count;
 				opnd->value.v.nodeSet.isDocument = false;
-				expression->hasNodesets = (expression->hasNodesets || count > 1);
 				finalizeXMLScan(&xscanSub);
 			}
 			opnd->substituted = true;
@@ -1127,7 +1200,7 @@ substituteFunctions(XPathExpression expression, XMLScan xscan)
  * a string or a node-set.
  */
 static void
-compareNumValues(XPathExprOperandValue valueLeft, XPathExprOperandValue valueRight,
+compareNumValues(XPathExprState exprState, XPathExprOperandValue valueLeft, XPathExprOperandValue valueRight,
 				 XPathExprOperator operator, XPathExprOperandValue result)
 {
 
@@ -1176,7 +1249,7 @@ compareNumValues(XPathExprOperandValue valueLeft, XPathExprOperandValue valueRig
 			{
 				XPathExprOperandValueData valueTmp;
 
-				xpathValCastToNum(valueNonNum, &valueTmp);
+				xpathValCastToNum(exprState, valueNonNum, &valueTmp);
 				num2 = valueTmp.v.num;
 				if (reverse)
 				{
@@ -1233,7 +1306,7 @@ compareNumValues(XPathExprOperandValue valueLeft, XPathExprOperandValue valueRig
 
 				}
 			}
-			result->v.boolean = compareValueToNodeSet(valueNum, &valueNonNum->v.nodeSet, operator);
+			result->v.boolean = compareValueToNodeSet(exprState, valueNum, &valueNonNum->v.nodeSet, operator);
 			return;
 		}
 		else
@@ -1298,13 +1371,35 @@ compareNumbers(double numLeft, double numRight, XPathExprOperator operator,
  * http://www.w3.org/TR/1999/REC-xpath-19991116/#booleans
  */
 static bool
-compareNodeSets(XPathNodeSet ns1, XPathNodeSet ns2, XPathExprOperator operator)
+compareNodeSets(XPathExprState exprState, XPathNodeSet ns1, XPathNodeSet ns2, XPathExprOperator operator)
 {
-	XMLNodeHdr *arrayOuter = (ns1->count > 1) ? ns1->nodes.array : &(ns1->nodes.single);
-	XMLNodeHdr *arrayInner = (ns2->count > 1) ? ns2->nodes.array : &(ns2->nodes.single);
+	XMLNodeHdr	node1,
+				node2;
+	XMLNodeHdr *arrayOuter,
+			   *arrayInner;
 	XPathNodeSet nsOuter = ns1;
 	XPathNodeSet nsInner = ns2;
 	unsigned short i;
+
+	if (ns1->count > 1)
+	{
+		arrayOuter = (XMLNodeHdr *) getXPathOperandValue(exprState, ns1->nodes.arrayId, XPATH_VAR_NODE_ARRAY);
+	}
+	else
+	{
+		node1 = (XMLNodeHdr) getXPathOperandValue(exprState, ns1->nodes.nodeId, XPATH_VAR_NODE_SINGLE);
+		arrayOuter = &node1;
+	}
+
+	if (ns2->count > 1)
+	{
+		arrayInner = (XMLNodeHdr *) getXPathOperandValue(exprState, ns2->nodes.arrayId, XPATH_VAR_NODE_ARRAY);
+	}
+	else
+	{
+		node2 = (XMLNodeHdr) getXPathOperandValue(exprState, ns2->nodes.nodeId, XPATH_VAR_NODE_SINGLE);
+		arrayInner = &node2;
+	}
 
 	for (i = 0; i < nsOuter->count; i++)
 	{
@@ -1358,9 +1453,8 @@ compareNodeSets(XPathNodeSet ns1, XPathNodeSet ns2, XPathExprOperator operator)
 				valueOuter.type = XPATH_VAL_STRING;
 				valueOuter.isNull = false;
 				valueOuter.castToNumber = false;
-				valueOuter.v.string.str = nodeStr;
-				valueOuter.v.string.mustFree = false;
-				if (compareValueToNode(&valueOuter, nodeInner, operator))
+				valueOuter.v.stringId = getXPathOperandId(exprState, nodeStr, XPATH_VAR_STRING);
+				if (compareValueToNode(exprState, &valueOuter, nodeInner, operator))
 				{
 					return true;
 				}
@@ -1479,7 +1573,8 @@ compareElements(XMLCompNodeHdr elLeft, XMLCompNodeHdr elRight)
  * the caller must switch the direction.
  */
 static bool
-compareValueToNode(XPathExprOperandValue value, XMLNodeHdr node, XPathExprOperator operator)
+compareValueToNode(XPathExprState exprState, XPathExprOperandValue value, XMLNodeHdr node,
+				   XPathExprOperator operator)
 {
 	bool		match = false;
 
@@ -1496,7 +1591,7 @@ compareValueToNode(XPathExprOperandValue value, XMLNodeHdr node, XPathExprOperat
 
 		if (value->type == XPATH_VAL_STRING)
 		{
-			char	   *cStr = value->v.string.str;
+			char	   *cStr = (char *) getXPathOperandValue(exprState, value->v.stringId, XPATH_VAR_STRING);
 			XMLScanData textScan;
 
 			strLen = strlen(cStr);
@@ -1588,7 +1683,8 @@ compareValueToNode(XPathExprOperandValue value, XMLNodeHdr node, XPathExprOperat
 		}
 		if (value->type == XPATH_VAL_STRING)
 		{
-			match = strcmp(value->v.string.str, nodeStr) == 0;
+			match = strcmp((char *) getXPathOperandValue(exprState, value->v.stringId, XPATH_VAR_STRING),
+						   nodeStr) == 0;
 		}
 		else
 		{
@@ -1641,10 +1737,22 @@ compareNumToStr(double num, char *numStr, XPathExprOperator operator, XPathExprO
  * round, the caller must switch the direction.
  */
 static bool
-compareValueToNodeSet(XPathExprOperandValue value, XPathNodeSet ns, XPathExprOperator operator)
+compareValueToNodeSet(XPathExprState exprState, XPathExprOperandValue value, XPathNodeSet ns,
+					  XPathExprOperator operator)
 {
-	XMLNodeHdr *array = (ns->count > 1) ? ns->nodes.array : &(ns->nodes.single);
+	XMLNodeHdr *array;
 	unsigned short i;
+
+	if (ns->count > 1)
+	{
+		array = (XMLNodeHdr *) getXPathOperandValue(exprState, ns->nodes.arrayId, XPATH_VAR_NODE_ARRAY);
+	}
+	else
+	{
+		XMLNodeHdr	node = (XMLNodeHdr) getXPathOperandValue(exprState, ns->nodes.nodeId, XPATH_VAR_NODE_SINGLE);
+
+		array = &node;
+	}
 
 	if (!(operator->id == XPATH_EXPR_OPERATOR_EQ || operator->id == XPATH_EXPR_OPERATOR_NEQ ||
 		  operator->id == XPATH_EXPR_OPERATOR_LT || operator->id == XPATH_EXPR_OPERATOR_GT ||
@@ -1656,7 +1764,7 @@ compareValueToNodeSet(XPathExprOperandValue value, XPathNodeSet ns, XPathExprOpe
 	{
 		XMLNodeHdr	node = array[i];
 
-		if (compareValueToNode(value, node, operator))
+		if (compareValueToNode(exprState, value, node, operator))
 		{
 			return true;
 		}

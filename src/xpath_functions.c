@@ -24,7 +24,7 @@ XPathFunctionData xpathFunctions[] = {
 };
 
 void
-xpathCount(unsigned short nargs, XPathExprOperandValue args, XPathExprOperandValue result)
+xpathCount(XPathExprState exprState, unsigned short nargs, XPathExprOperandValue args, XPathExprOperandValue result)
 {
 	XPathNodeSet nodeSet = &args->v.nodeSet;
 
@@ -42,17 +42,29 @@ xpathCount(unsigned short nargs, XPathExprOperandValue args, XPathExprOperandVal
 }
 
 extern void
-xpathContains(unsigned short nargs, XPathExprOperandValue args, XPathExprOperandValue result)
+xpathContains(XPathExprState exprState, unsigned short nargs, XPathExprOperandValue args,
+			  XPathExprOperandValue result)
 {
 	XPathExprOperandValueData argLeft,
 				argRight;
 	bool		leftEmpty,
 				rightEmpty;
+	char	   *argLeftStr = NULL,
+			   *argRightStr = NULL;
 
-	xpathValCastToStr(args, &argLeft);
-	xpathValCastToStr(args + 1, &argRight);
-	leftEmpty = (argLeft.isNull || strlen(argLeft.v.string.str) == 0);
-	rightEmpty = (argRight.isNull || strlen(argRight.v.string.str) == 0);
+	xpathValCastToStr(exprState, args, &argLeft);
+	if (!argLeft.isNull)
+	{
+		argLeftStr = (char *) getXPathOperandValue(exprState, argLeft.v.stringId, XPATH_VAR_STRING);
+	}
+	leftEmpty = (argLeft.isNull || strlen(argLeftStr) == 0);
+
+	xpathValCastToStr(exprState, args + 1, &argRight);
+	if (!argRight.isNull)
+	{
+		argRightStr = (char *) getXPathOperandValue(exprState, argRight.v.stringId, XPATH_VAR_STRING);
+	}
+	rightEmpty = (argRight.isNull || strlen(argRightStr) == 0);
 
 	result->type = XPATH_VAL_BOOLEAN;
 	result->isNull = false;
@@ -71,8 +83,6 @@ xpathContains(unsigned short nargs, XPathExprOperandValue args, XPathExprOperand
 	}
 	else
 	{
-		result->v.boolean = (strstr(argLeft.v.string.str, argRight.v.string.str) != NULL);
+		result->v.boolean = (strstr(argLeftStr, argRightStr) != NULL);
 	}
-	xpathStrFree(&argLeft);
-	xpathStrFree(&argRight);
 }

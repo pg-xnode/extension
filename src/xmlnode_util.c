@@ -624,7 +624,7 @@ dumpXMLNodeDebugInternal(char *data, XMLNodeOffset off,
 			break;
 
 		default:
-			elog(INFO, "unrecognized node kind %u", node->kind);
+			elog(ERROR, "unrecognized node kind %u", node->kind);
 			break;
 	}
 

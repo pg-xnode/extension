@@ -47,23 +47,24 @@ typedef enum XMLNodeKind
 	XMLNODE_NODE
 }	XMLNodeKind;
 
-typedef unsigned int XMLNodeOffset;
+typedef uint32 XMLNodeOffset;
 
 typedef struct XMLNodeCommonData
 {
 	/*
 	 * XMLNodeKind would be expected here, but char is used to save space.
 	 */
-	unsigned char kind;
-	unsigned char flags;
+	uint8		kind;
+	uint8		flags;
 }	XMLNodeCommonData;
 
 /*
- * For the following node types, content follows the structure immediately
+ * For simple (non-compound) node types, content follows the structure immediately
  * (there are no references to children).
  */
 typedef XMLNodeCommonData XMLNodeHdrData;
-typedef XMLNodeHdrData *XMLNodeHdr;;
+
+typedef XMLNodeHdrData *XMLNodeHdr;
 
 /*
  * A compound node, i.e node containing other node(s).
@@ -87,16 +88,16 @@ typedef struct XMLCompNodeHdrData
 {
 	XMLNodeCommonData common;
 
-	unsigned short int children;
+	uint16		children;
 }	XMLCompNodeHdrData;
 
 typedef XMLCompNodeHdrData *XMLCompNodeHdr;
 
 typedef struct XMLDeclData
 {
-	unsigned char flags;
-	unsigned char version;
-	int			enc;
+	uint8		flags;
+	uint8		version;
+	uint8		enc;
 	bool		standalone;
 }	XMLDeclData;
 
