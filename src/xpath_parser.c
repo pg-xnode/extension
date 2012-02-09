@@ -125,14 +125,15 @@ parseXPathExpression(XPathExpression exprCurrent, XPathParserState state, char t
 	bool		subExprExpl = (*state->c == XNODE_CHAR_LBRKT_RND && firstOperator == NULL);
 
 	checkExpressionBuffer(*outPos);
-	exprCurrent->nlits = 0;
-	exprCurrent->npaths = 0;
-	exprCurrent->nfuncs = 0;
 
 	if (!isSubExpr)
 	{
 		exprCurrent->type = XPATH_OPERAND_EXPR_TOP;
 		exprCurrent->variables = 0;
+
+		exprCurrent->nlits = 0;
+		exprCurrent->npaths = 0;
+		exprCurrent->nfuncs = 0;
 		firstMembOff += XPATH_EXPR_VAR_MAX * sizeof(XPathOffset);
 	}
 
@@ -181,8 +182,8 @@ parseXPathExpression(XPathExpression exprCurrent, XPathParserState state, char t
 		/*
 		 * All operators of the same priority have the same result type.
 		 * Therefore, in order to determine type of the whole expression, we
-		 * need to check any operator at the top level. So we check the first
-		 * one.
+		 * need to check any operator at the current level. So we check the
+		 * first one.
 		 */
 		exprCurrent->valType = firstOperator->resType;
 
@@ -242,10 +243,6 @@ parseXPathExpression(XPathExpression exprCurrent, XPathParserState state, char t
 			nextOperator = parseXPathExpression(subExpr, state, term, operator, output, outPos, true, false, paths,
 												pathCnt, mainExpr);
 
-			exprTop->nlits += subExpr->nlits;
-			exprTop->npaths += subExpr->npaths;
-			exprTop->nfuncs += subExpr->nfuncs;
-
 			readOperator = (nextOperator == NULL);
 
 			if (nextOperator)
@@ -262,10 +259,6 @@ parseXPathExpression(XPathExpression exprCurrent, XPathParserState state, char t
 					subExpr->members = 1;
 					nextOperator = parseXPathExpression(subExpr, state, term, operator, output, outPos, true, false,
 												   paths, pathCnt, mainExpr);
-
-					exprTop->nlits += subExpr->nlits;
-					exprTop->npaths += subExpr->npaths;
-					exprTop->nfuncs += subExpr->nfuncs;
 
 					if (nextOperator)
 					{
@@ -898,10 +891,6 @@ readExpressionOperand(XPathExpression exprTop,
 		checkExpressionBuffer(*outPos);
 		parseXPathExpression(subExpr, state, XNODE_CHAR_RBRKT_RND, NULL, output, outPos, true, false, paths,
 							 pathCnt, mainExpr);
-
-		exprTop->nlits += subExpr->nlits;
-		exprTop->npaths += subExpr->npaths;
-		exprTop->nfuncs += subExpr->nfuncs;
 
 		subExpr->type = XPATH_OPERAND_EXPR_SUB;
 		subExpr->flags = XPATH_SUBEXPRESSION_EXPLICIT;

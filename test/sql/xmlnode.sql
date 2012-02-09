@@ -175,7 +175,7 @@ insert into paths (id, path) values (0, '/c[@cd != @e != "a" and @b and @c or @f
 (7, '/a[@a or ((@e)  != "a" = @k or @l)]/b/text()'),
 -- ... don't forget to use (predicate) subpaths
 (8, '/a[ab/cd/@a!=b=c/a[@a=@b=a[@c and (@b or @c)]] = @a]'),
--- check if 'hasSubpaths' is propagated from subexpressions (both explicit and implicit)
+-- check if 'npaths' is propagated from subexpressions (both explicit and implicit)
 (9, '/a[@a and @b or (@c=a[@e=@f])]'),
 (10, '/a[@a and @b or (@c=a[@e=f])]'),
 (11, '/a[@a and @b or @c=a[@e=@f]]'),
