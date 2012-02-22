@@ -8,6 +8,8 @@ DATA = xnode--0.5.9.sql
 
 #REGRESS = xnode
 
-PG_CONFIG = /usr/local/pgsql/bin/pg_config
+ifndef PG_CONFIG
+PG_CONFIG = pg_config
+endif
 PGXS := $(shell $(PG_CONFIG) --pgxs)
 include $(PGXS)

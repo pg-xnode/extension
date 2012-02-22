@@ -29,6 +29,60 @@
    </itemizedlist>
    <productname>pg_xnode</productname> doesn't rely on any third-party library.
   </para>
+  <caution>
+   <para>
+    The current version is not ready for use in production environments. The extension may be
+    subject to significant changes, including those of the binary data format. Migration from
+    versions lower than <productnumber>1.0</productnumber> won't be supported.
+   </para>
+   <para>
+    In addition, comprehensive testing has to be performed before <productnumber>1.0</productnumber>
+    gets released.
+   </para>
+  </caution>
+ </sect1>
+ 
+ <sect1>
+  <title>Installation</title>
+  <para>
+   Make sure <productname>PostgreSQL</productname> database server is installed
+   (the current version of <productname>pg_xnode</productname> has been developed on top of
+   <productname>PostgreSQL</productname> <productnumber>9.1</productnumber>).
+   <orderedlist>
+    <listitem>
+     <para>
+      Extract the archive.
+     </para>
+    </listitem>
+   	<listitem>
+   	 <para>
+   	  <userinput>make</userinput>
+   	 </para>
+   	</listitem>
+   	<listitem>
+   	 <para>
+   	  <userinput>sudo make install</userinput>
+   	  <footnote>
+   	   <para>
+   	    If <firstterm>PATH</firstterm> environment variable doesn't seem to contain
+   	  	<productname>pg_xnode</productname>, specify the full path, e.g.
+   	    <userinput>sudo env PG_CONFIG=/usr/local/pgsql/bin/pg_config make install</userinput>
+   	   </para>
+   	  </footnote>
+   	 </para>
+   	</listitem>
+   	<listitem>
+   	 <para>
+   	  Connect to your database.
+   	 </para>
+   	</listitem>
+   	<listitem>
+   	 <para>
+   	  <userinput>CREATE EXTENSION xnode;</userinput>
+   	 </para>
+   	</listitem>
+   </orderedlist>
+  </para>
  </sect1>
  
  <sect1>
