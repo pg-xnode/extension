@@ -1,3 +1,7 @@
+/*
+ * Copyright (C) 2012, Antonin Houska
+ */
+
 #ifndef XPATH_H_
 #define XPATH_H_
 

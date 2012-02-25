@@ -35,6 +35,10 @@ bool		xpathCasts[4][4] = {
 	{true, false, true, true}
 };
 
+/*
+ * Copyright (C) 2012, Antonin Houska
+ */
+
 PG_FUNCTION_INFO_V1(xpath_in);
 
 Datum

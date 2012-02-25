@@ -1,3 +1,7 @@
+/*
+ * Copyright (C) 2012, Antonin Houska
+ */
+
 #ifndef XMLNODE_H
 #define XMLNODE_H
 

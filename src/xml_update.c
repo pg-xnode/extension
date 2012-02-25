@@ -1,3 +1,7 @@
+/*
+ * Copyright (C) 2012, Antonin Houska
+ */
+
 #include "xmlnode.h"
 #include "xmlnode_util.h"
 #include "xml_update.h"

@@ -7,7 +7,9 @@
  * itself, the parser first saves child nodes.
  *
  * This 'child first' order prevents us from having to copy nodes during
- * parsing. Some functions, such as getFirstLeaf() do rely on such ordering..
+ * parsing. Some functions, such as getFirstLeaf() do rely on such ordering.
+ *
+ * Copyright (C) 2012, Antonin Houska
  */
 
 /*

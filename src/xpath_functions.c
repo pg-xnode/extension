@@ -1,3 +1,7 @@
+/*
+ * Copyright (C) 2012, Antonin Houska
+ */
+
 #include "postgres.h"
 
 #include "xpath.h"
