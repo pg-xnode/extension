@@ -1,7 +1,7 @@
 build:
 	make -C src xnode.so
 
-install: pg_xnode
+install: build
 	make -C src install
 
 clean:
