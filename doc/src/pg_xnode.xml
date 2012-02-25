@@ -79,6 +79,19 @@
    	<listitem>
    	 <para>
    	  <userinput>CREATE EXTENSION xnode;</userinput>
+   	  <footnote>
+   	   <para>
+   	    If earlier version already exists where version number &lt;=1.0, then the extension
+   	    must be dropped (with <literal>CASCADE</literal> option) and re-created.
+   	    If the <literal>CREATE</literal> command step is skipped in such a case instead, then
+   	    data in obsolete format remain in the database and <productname>pg_node</productname>'s
+   	    behaviour becomes undefined.   
+   	   </para>
+   	   <para>
+   	   	This only applies to pre-releases. Migration functionality will be delivered
+   	   	for versions &gt; 1.0;  
+   	   </para>
+   	  </footnote>
    	 </para>
    	</listitem>
    </orderedlist>
@@ -95,17 +108,39 @@
   <sect2>
    <title><literal>xml.node</literal></title>
    <para>
-    <literal>xml.node</literal>
-     <literal>xml.node</literal> type represents a node of XML document tree.
-     Following are the valid node kinds: <firstterm>document</firstterm>,
-     <firstterm>document type declaration (DTD)</firstterm>, <firstterm>element</firstterm>,
-     <firstterm>attribute</firstterm>, <firstterm>comment</firstterm>,
-     <firstterm>character data (CDATA)</firstterm>, <firstterm>processing instruction (PI)</firstterm>
-     and <firstterm>text node</firstterm>.
+    <literal>xml.node</literal> type represents a node of XML document tree.
+    Following are the valid node kinds: <firstterm>document</firstterm>,
+    <firstterm>document type declaration (DTD)</firstterm>, <firstterm>element</firstterm>,
+    <firstterm>attribute</firstterm>, <firstterm>comment</firstterm>,
+    <firstterm>character data (CDATA)</firstterm>, <firstterm>processing instruction (PI)</firstterm>
+    and <firstterm>text node</firstterm>.
    </para>
    <para>
-    A special node type <firstterm>document fragment</firstterm> exists to represent
+    Special node type <firstterm>document fragment</firstterm> exists to represent
     a set of nodes.
+   </para>
+   <para>
+    Example:
+    <programlisting>
+CREATE TABLE nodes (
+        data    xml.node
+);
+
+INSERT INTO nodes
+VALUES ('&lt;element/&gt;'), ('&lt;!--comment--&gt;'), ('plain text'), ('&lt;?app?&gt;');
+
+SELECT *
+FROM nodes;
+    </programlisting>
+    <screen>
+          data      
+----------------
+ &lt;element/&gt;
+ &lt;!--comment--&gt;
+ plain text
+ &lt;?app?&gt;
+(4 rows)
+    </screen>
    </para>
   </sect2>
   
@@ -113,88 +148,129 @@
    <title><literal>xml.doc</literal></title>
    <para>
     <literal>xml.doc</literal> represents well-formed XML document.
+    <footnote>
+     <para>
+      Unlike other node kinds (comment, element, etc.) there's no polymorphism between
+      <literal>xml.node</literal> and <literal>xml.doc</literal>. That is, functions do not
+      consider <literal>xml.doc</literal> a special case of <literal>xml.node</literal>. However
+      an implicit <literal>xml.node:xml.doc</literal> cast exists for cases where conversion to 
+      a well-formed XML document does make sense.  
+     </para>
+    </footnote>
    </para>
    <para>
-    Unlike other node kinds (comment, element, etc.) there's no polymorphism between
-    <literal>xml.node</literal> and <literal>xml.doc</literal>. That is, functions do not
-    consider <literal>xml.doc</literal> a special case of <literal>xml.node</literal>.
+    Example:
+    <programlisting>
+CREATE TABLE ecosystems (
+	id	int,
+	data	xml.doc
+);
+     
+INSERT INTO ecosystems VALUES (1,
+	'&lt;zoo city="Wien"&gt;&lt;pinguin name="Pingu"/&gt;&lt;elephant name="Sandeep"/&gt;&lt;/zoo&gt;');
+	
+INSERT INTO ecosystems VALUES (2,
+	'&lt;africa&gt;&lt;hipo weight="2584"/&gt;&lt;elephant age="28"/&gt;&lt;/africa&gt;');
+
+INSERT INTO ecosystems VALUES (3,
+	'&lt;zoo city="Dublin"&gt;&lt;rhino/&gt;&lt;giraffe/&gt;&lt;elephant name="Yasmin"/&gt;&lt;/zoo&gt;');
+    </programlisting>
    </para>
   </sect2>
   
   <sect2>
-   <title><literal>xml.path</literal></title>
-   <para>
-    <literal>xml.path</literal> represents parsed (compiled) XPath expression.
-   </para>
-  </sect2>
-
-  <sect2>
    <title><literal>xml.pathval</literal></title>
    <para>
-    <literal>xml.pathval</literal> represents a result of <literal>xml.path()</literal> function.
+    <literal>xml.pathval</literal> represents a result of <literal>xml.path()</literal> functions
+    (see bellow). Depending on the XPath used for a search, the <literal>xml.pathval</literal> value
+    contains value of one of the following types: number, string, boolean,
+    <literal>xml.node</literal>.
    </para>
   </sect2>
  </sect1>
 
  <sect1>
-  <title>Functions</title>
-
-   <sect2>
-    <title><literal>xml.node_kind()</literal></title>
+  <title>Functions</title>     
+  <sect2>
+   <title><literal>xml.node_kind()</literal></title>
 <synopsis>
 xml.node_kind(xml.node node) returns text
 </synopsis>
-    <para>
-     Returns textual expression for the kind of <literal>node</literal>, e.g. element, comment, etc.
-    </para>
-   </sect2>
- 
-   <sect2>
-    <title><literal>xml.node_debug_print()</literal></title>
-<synopsis>
-xml.node_debug_print(xml.node node) returns text
-</synopsis>
-    <para>
-     Shows tree structure of <literal>node</literal> tree. Instead of content, position
-     (offset) of each node in the binary value is displayed, as well as its size. 
-    </para>
-   </sect2>
-     
-   <sect2>
-    <title><literal>xml.path()</literal> - scalar</title>
+   <para>
+    Returns textual expression for the kind of <literal>node</literal>, e.g. element, comment, etc.
+   </para>
+   <para>
+    Example:
+    <programlisting>
+SELECT xml.node_kind(data)
+FROM nodes;   
+    </programlisting>
+    <screen>
+           node_kind        
+------------------------
+ XML element
+ XML comment
+ text node
+ processing instruction
+(4 rows)
+    </screen>
+   </para>
+  </sect2>
+  <sect2>
+   <title><literal>xml.path()</literal> - scalar</title>
 <synopsis>
 xml.path(xml.path xpath, xml.doc document) returns xml.pathval
 </synopsis>
-    <para>
-     Returns result of XPath expression (passed as <literal>xpath</literal>)
-     applied to <literal>document</literal>.
-     If <literal>xpath</literal> is a location path and there are multiple qualifying nodes
-     in the document then the returned<function>xml.pathval</function> contains a document fragment
-     containing all the qualifying nodes.
-    </para>
-   </sect2>
+   <para>
+    Returns result of XPath expression (passed as <literal>xpath</literal>)
+    applied to <literal>document</literal>.
+    If <literal>xpath</literal> is a location path and there are multiple qualifying nodes
+    in the document then the returned<function>xml.pathval</function> contains a document fragment
+    containing all the qualifying nodes.
+   </para>
+   <para>
+    Example:
+    <programlisting>
+SELECT xml.path('//elephant', e.data)
+FROM ecosystems e;
+    </programlisting>
+    <screen>
+         elephants          
+----------------------------
+ &lt;elephant name="Sandeep"/&gt;
+ &lt;elephant age="28"/&gt;
+ &lt;elephant name="Yasmin"/&gt;
+(3 rows)
+    </screen>
+   </para>
+  </sect2>
    
-   <sect2>
-    <title><literal>xml.path()</literal> - vector</title>
+  <sect2>
+   <title><literal>xml.path()</literal> - vector</title>
 <synopsis>
 xml.path(xml.path basePath, xml.path[] columnPaths, xml.doc doc) returns xml.pathval[]
 </synopsis>
-    <para>
-     Returns table-like output. For each occurrence of <literal>basePath</literal> in
-     <literal>doc</literal> an array of <literal>xml.pathval</literal> values is returned
-     where n-th element is value of relative XPath expression passed as n-th element of
-     <literal>columnPaths</literal>. All values of <literal>columnPaths</literal> array
-     are relative to <literal>basePath</literal>.
-    </para>
-   </sect2>
- 
-  <sect2>
-   <title><literal>xml.path_debug_print()</literal></title>
-<synopsis>
-xml.path_debug_print(xml.path xpath) returns text
-</synopsis>
    <para>
-    Returns text string showing structure of XPath expression passed as <literal>xpath</literal>. 
+    Returns table-like output. For each occurrence of <literal>basePath</literal> in
+    <literal>doc</literal> an array of <literal>xml.pathval</literal> values is returned
+    where n-th element is value of relative XPath expression passed as n-th element of
+    <literal>columnPaths</literal>. All values of <literal>columnPaths</literal> array
+    are relative to <literal>basePath</literal>.
+   </para>
+   <para>
+    Example:
+    <programlisting>
+SELECT xml.path('/zoo',
+	'{"@city", "count(elephant)", "count(pinguin)"}', e.data) as counts
+FROM ecosystems e;
+    </programlisting>
+    <screen>
+           counts           
+----------------------------
+ {Wien,1.000000,1.000000}
+ {Dublin,1.000000,0.000000}
+(2 rows)
+    </screen>
    </para>
   </sect2>
  
@@ -222,6 +298,22 @@ xml.add(xml.doc doc, xml.path path, xml.node newNode, xml.add_mode mode) returns
     A document is returned where all the additions have been done as required
     in the input parameters.
    </para>
+   <para>
+    Example:
+    <programlisting>
+UPDATE ecosystems e
+SET data=xml.add(e.data, '/africa', '&lt;gorilla/&gt;', 'i')
+where e.id=2;
+
+SELECT data FROM ecosystems e where e.id=2;
+    </programlisting>
+    <screen>
+                                     data                                     
+------------------------------------------------------------------------------
+ &lt;africa&gt;&lt;hipo weight="2584"/&gt;&lt;elephant age="28"/&gt;&lt;gorilla/&gt;&lt;/africa&gt;
+(1 row)
+    </screen>
+   </para>
   </sect2>
  
   <sect2>
@@ -235,6 +327,47 @@ xml.remove(xml.doc doc, xml.path path) returns xml.doc
    <para>
     A document is returned where all the removals have been done as required
     in the input parameters.
+   </para>
+   <para>
+    Example:
+    <programlisting>
+UPDATE ecosystems e
+SET data=xml.remove(e.data, '/zoo/elephant')
+WHERE e.id in (1, 3);
+
+SELECT xml.path('count(/zoo/elephant)', data)
+FROM ecosystems e
+WHERE e.id in (1, 3);
+    </programlisting>
+    <screen>
+   path   
+----------
+ 0.000000
+ 0.000000
+(2 rows)
+
+    </screen>
+   </para>
+  </sect2>
+ 
+  <sect2>
+   <title><literal>xml.node_debug_print()</literal></title>
+<synopsis>
+xml.node_debug_print(xml.node node) returns text
+</synopsis>
+   <para>
+    Shows tree structure of <literal>node</literal> tree. Instead of content, position
+    (offset) of each node in the binary value is displayed, as well as its size. 
+   </para>
+  </sect2>
+  
+  <sect2>
+   <title><literal>xml.path_debug_print()</literal></title>
+<synopsis>
+xml.path_debug_print(xml.path xpath) returns text
+</synopsis>
+   <para>
+    Returns text string showing structure of XPath expression passed as <literal>xpath</literal>. 
    </para>
   </sect2>
  </sect1>
