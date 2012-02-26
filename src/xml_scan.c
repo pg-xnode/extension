@@ -1097,7 +1097,8 @@ substituteSubpaths(XPathExprState exprState, XPathExpression expression, XMLComp
 				{
 					XMLNodeHdr *array = NULL;
 
-					Assert(matching->type == xscanSub.xpath.targNdType);
+					Assert((matching->kind == xscanSub.xpath->targNdKind && xscanSub.xpath->targNdKind != XMLNODE_NODE)
+						   || xscanSub.xpath->targNdKind == XMLNODE_NODE);
 
 					if (count == 0)
 					{
@@ -1690,13 +1691,14 @@ compareValueToNode(XPathExprState exprState, XPathExprOperandValue value, XMLNod
 			match = strcmp((char *) getXPathOperandValue(exprState, value->v.stringId, XPATH_VAR_STRING),
 						   nodeStr) == 0;
 		}
+		else if (value->type == XPATH_VAL_NUMBER)
+		{
+			compareNumToStr(value->v.num, nodeStr, operator, &result);
+			return result.v.boolean;
+		}
 		else
 		{
-			if (strlen(nodeStr) > 0)
-			{
-				compareNumToStr(value->v.num, nodeStr, operator, &result);
-				return result.v.boolean;
-			}
+			elog(ERROR, "unrecognized type of value to be compared to a node: %u", value->type);
 		}
 	}
 
@@ -1716,6 +1718,9 @@ compareNumToStr(double num, char *numStr, XPathExprOperator operator, XPathExprO
 	char	   *end;
 	double		numValue = strtod(numStr, &end);
 
+	result->type = XPATH_VAL_BOOLEAN;
+	result->v.boolean = false;
+
 	if (end > numStr)
 	{
 		/* only whitespaces are accepted after the number */
@@ -1732,6 +1737,11 @@ compareNumToStr(double num, char *numStr, XPathExprOperator operator, XPathExprO
 		{
 			compareNumbers(num, numValue, operator, result);
 		}
+	}
+	else
+	{
+		/* 'numStr' does not represent valid number. */
+		result->v.boolean = (operator->id == XPATH_EXPR_OPERATOR_NEQ);
 	}
 }
 

@@ -552,7 +552,6 @@ xpathValCastToNum(XPathExprState exprState, XPathExprOperandValue valueSrc, XPat
 			break;
 
 		case XPATH_VAL_STRING:
-			Assert(operand->common.castToNumber);
 			valueDst->v.num = xnodeGetNumValue((char *) getXPathOperandValue(exprState, valueSrc->v.stringId,
 														  XPATH_VAR_STRING));
 			break;
@@ -768,8 +767,6 @@ getXPathExprValue(XPathExprState exprState, xmldoc document, bool *notNull, XPat
 						sizeNew;
 			char	   *output,
 					   *targ;
-
-			Assert(xpath->targNdKind == XMLNODE_DOC);
 
 			rootOffOrig = XNODE_ROOT_OFFSET(document);
 			rootOrig = (XMLCompNodeHdr) XNODE_ROOT(document);

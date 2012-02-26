@@ -257,8 +257,6 @@ xmlnodeAdd(xmldoc doc, XMLScan xscan, XMLNodeHdr targNode, XMLNodeHdr newNode,
 		for (i = 0; i <= xscTmp->depth; i++)
 		{
 			levelNode = levelScan->parent;
-			Assert((i == 0 && levelNode->common.kind == XMLNODE_DOC) ||
-				   (i > 0 && levelNode->common.kind == XMLNODE_ELEMENT));
 
 			/*
 			 * Let's expect the worst - each reference size to grow to the
@@ -344,7 +342,8 @@ xmlnodeAdd(xmldoc doc, XMLScan xscan, XMLNodeHdr targNode, XMLNodeHdr newNode,
 		if (mode == XMLADD_REPLACE && xscan->ignoreList)
 		{
 			/*
-			 * Remove the original (target) node from the ignore list.
+			 * Remove the original target node (added during a scan) from the
+			 * ignore list.
 			 *
 			 * It could cause problems when a subtree has been replaced by any
 			 * kind of smaller node or subtree. In such a case the
@@ -352,26 +351,26 @@ xmlnodeAdd(xmldoc doc, XMLScan xscan, XMLNodeHdr targNode, XMLNodeHdr newNode,
 			 * node behind the new node and continuing scan would skip it.
 			 */
 			XNodeListItem *item = xscan->ignoreList->content;
-			unsigned int listSize = xscan->ignoreList->size;
+			unsigned int listSize = xscan->ignoreList->position;
 			unsigned short i;
 
 			for (i = 0; i < listSize; i++)
 			{
-				/*
-				 * Only a node found during the last scan can be found here
-				 * (nodes found during previous scans have been added to
-				 * ignore list or replaced).
-				 *
-				 * Node range, added during (some of) previous update(s) is
-				 * not expected here, because a scan must have taken place in
-				 * between and such a scan is not supposed to return any node
-				 * from 'ignored range'.
-				 */
-				Assert(item->kind == XNODE_LIST_ITEM_SINGLE);
-
-				if (item->valid && item->value.single == targNdOff)
+				if (item->valid)
 				{
-					item->valid = false;
+					/*
+					 * As mentioned above, only those 'ignore list items'
+					 * should be removed now that scan (getNextXMLNode) has
+					 * added. Therefore we don't care about ranges: those can
+					 * only be added to the list by this function. If that
+					 * happens, such a range remains valid (it represents tne
+					 * new, possibly smaller subtree, as opposed to the
+					 * original one).
+					 */
+					if (item->kind == XNODE_LIST_ITEM_SINGLE && item->value.single == targNdOff)
+					{
+						item->valid = false;
+					}
 				}
 				item++;
 			}
