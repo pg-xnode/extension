@@ -167,7 +167,7 @@ CREATE TABLE ecosystems (
 );
      
 INSERT INTO ecosystems VALUES (1,
-	'&lt;zoo city="Wien"&gt;&lt;pinguin name="Pingu"/&gt;&lt;elephant name="Sandeep"/&gt;&lt;/zoo&gt;');
+	'&lt;zoo city="Wien"&gt;&lt;penguin name="Pingu"/&gt;&lt;elephant name="Sandeep"/&gt;&lt;/zoo&gt;');
 	
 INSERT INTO ecosystems VALUES (2,
 	'&lt;africa&gt;&lt;hipo weight="2584"/&gt;&lt;elephant age="28"/&gt;&lt;/africa&gt;');
@@ -261,7 +261,7 @@ xml.path(xml.path basePath, xml.path[] columnPaths, xml.doc doc) returns xml.pat
     Example:
     <programlisting>
 SELECT xml.path('/zoo',
-	'{"@city", "count(elephant)", "count(pinguin)"}', e.data) as counts
+	'{"@city", "count(elephant)", "count(penguin)"}', e.data) as counts
 FROM ecosystems e;
     </programlisting>
     <screen>

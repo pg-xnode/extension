@@ -1,14 +1,14 @@
 pg_xnode
 ========
 
-pg_xnode is an extension, allowing users of PostgreSQL database server to store XML documents and their parts in binary form. Such binary data can be queried and/or modified with no need to convert them back to textual form.
+pg_xnode is an extension, allowing users of PostgreSQL database server to store XML documents and their parts in binary form. Such binary data can be queried and/or modified with no need to pass them to any external application or library (whether in binary or textual form).
 
 This extension does not depend on any external (3rd party) XML / XPath tools.
 
 
 User information:
 
-https://docs.google.com/file/d/0B_OYVXdUGipJdXEtVnJOMkJRaUNlV29FYzE4VXdnQQ/edit?pli=1
+https://docs.google.com/open?id=0B_OYVXdUGipJdTB1UWdmSTdUQVctWExIMEJjS2tXQQ
 
 
 Development information:
