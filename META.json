@@ -1,0 +1,34 @@
+{
+   "name": "pg_xnode",
+   "abstract": "Extension to support binary XML",
+   "description": "This extension contains set of data types to store XML document and its parts (nodes). It also implements XML parser and XPath processor.",
+   "version": "0.6.0",
+   "maintainer": [
+      "Antonin Houska <antonin.houska@gmail.com>"
+   ],
+   "license": "bsd",
+   "provides": {
+      "pg_xnode": {
+         "file": "src/xnode--0.6.sql",
+         "docfile": "doc/pg_xnode_0.6.pdf",
+         "version": "0.6.0"
+      }
+   },
+   "resources": {
+      "bugtracker": {
+         "web": "https://github.com/ahouska/pg_xnode/issues/"
+      },
+      "repository": {
+        "url": "git://github.com/ahouska/pg_xnode.git",
+        "web": "http://github.com/ahouska/pg_xnode/",
+        "type": "git"
+      }
+   },
+   "generated_by": "Antonin Houska",
+   "meta-spec": {
+      "version": "1.0.0",
+      "url": "http://pgxn.org/meta/spec.txt"
+   },
+   "tags": ["XML", "XPath"],
+   "release_status": "unstable"
+}
