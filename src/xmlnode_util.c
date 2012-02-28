@@ -132,6 +132,12 @@ getXMLNodeSize(XMLNodeHdr node, bool subtree)
 			result = sizeof(XMLNodeHdrData);
 			content = (char *) node + result;
 			result += strlen(content) + 1;
+
+			if (node->kind == XMLNODE_PI && (node->flags & XNODE_PI_HAS_VALUE))
+			{
+				content += strlen(content) + 1;
+				result += strlen(content) + 1;
+			}
 			return result;
 
 		case XMLNODE_ATTRIBUTE:
@@ -280,6 +286,12 @@ copyXMLNode(XMLNodeHdr node, char *target, bool xmlnode, XMLNodeOffset * root)
 			default:
 				elog(ERROR, "unable to copy node of type %u", node->kind);
 				break;
+		}
+
+		if (node->kind == XMLNODE_PI && (node->flags & XNODE_PI_HAS_VALUE))
+		{
+			content += cntLen;
+			cntLen += strlen(content) + 1;
 		}
 		start = (char *) node;
 	}
