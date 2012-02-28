@@ -193,7 +193,9 @@ typedef struct XPathNodeSetData *XPathNodeSet;
 
 typedef enum XPathFunctionId
 {
-	XPATH_FUNC_POSITION = 0,
+	XPATH_FUNC_TRUE = 0,
+	XPATH_FUNC_FALSE,
+	XPATH_FUNC_POSITION,
 	XPATH_FUNC_CONTAINS,
 	XPATH_FUNC_COUNT
 }	XPathFunctionId;
@@ -572,13 +574,15 @@ typedef struct XPathFunctionData
 typedef struct XPathFunctionData *XPathFunction;
 
 /* Total number of XPath functions the parser can recognize. */
-#define XPATH_FUNCTIONS			3
+#define XPATH_FUNCTIONS			5
 
 XPathFunctionData xpathFunctions[XPATH_FUNCTIONS];
 
 /*
  * First, functions with no arguments.
  */
+extern void xpathTrue(XMLScan xscan, XPathExprOperandValue result);
+extern void xpathFalse(XMLScan xscan, XPathExprOperandValue result);
 extern void xpathPosition(XMLScan xscan, XPathExprOperandValue result);
 
 

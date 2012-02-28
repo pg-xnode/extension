@@ -7,25 +7,56 @@
 #include "xpath.h"
 
 XPathFunctionData xpathFunctions[] = {
-	{XPATH_FUNC_POSITION,
+	{
+		XPATH_FUNC_TRUE,
+		"true", 0,
+		{0, 0, 0, 0},
+		xpathTrue,
+		XPATH_VAL_BOOLEAN, true
+	},
+	{
+		XPATH_FUNC_FALSE,
+		"false", 0,
+		{0, 0, 0, 0},
+		xpathFalse,
+		XPATH_VAL_BOOLEAN, true
+	},
+	{
+		XPATH_FUNC_POSITION,
 		"position", 0,
 		{0, 0, 0, 0},
 		xpathPosition,
 		XPATH_VAL_NUMBER, true
 	},
-	{XPATH_FUNC_CONTAINS,
+	{
+		XPATH_FUNC_CONTAINS,
 		"contains", 2,
 		{XPATH_VAL_STRING, XPATH_VAL_STRING, 0, 0},
 		xpathContains,
 		XPATH_VAL_BOOLEAN, false
 	},
-	{XPATH_FUNC_COUNT,
+	{
+		XPATH_FUNC_COUNT,
 		"count", 1,
 		{XPATH_VAL_NODESET, 0, 0, 0},
 		xpathCount,
 		XPATH_VAL_NUMBER, false
 	}
 };
+
+void
+xpathTrue(XMLScan xscan, XPathExprOperandValue result)
+{
+	result->type = XPATH_VAL_NUMBER;
+	result->v.boolean = true;
+}
+
+void
+xpathFalse(XMLScan xscan, XPathExprOperandValue result)
+{
+	result->type = XPATH_VAL_NUMBER;
+	result->v.boolean = false;
+}
 
 void
 xpathPosition(XMLScan xscan, XPathExprOperandValue result)
