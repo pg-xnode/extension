@@ -10,7 +10,7 @@ XPathFunctionData xpathFunctions[] = {
 	{XPATH_FUNC_POSITION,
 		"position", 0,
 		{0, 0, 0, 0},
-		NULL,
+		xpathPosition,
 		XPATH_VAL_NUMBER, true
 	},
 	{XPATH_FUNC_CONTAINS,
@@ -26,6 +26,16 @@ XPathFunctionData xpathFunctions[] = {
 		XPATH_VAL_NUMBER, false
 	}
 };
+
+void
+xpathPosition(XMLScan xscan, XPathExprOperandValue result)
+{
+	XMLScanOneLevel scanLevel = XMLSCAN_CURRENT_LEVEL(xscan);
+
+	result->type = XPATH_VAL_NUMBER;
+	result->v.num = scanLevel->matches;
+}
+
 
 void
 xpathCount(XPathExprState exprState, unsigned short nargs, XPathExprOperandValue args, XPathExprOperandValue result)

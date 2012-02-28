@@ -703,7 +703,7 @@ evaluateXPathFunction(XPathExprState exprState, XPathExpression funcExpr, XMLSca
 	XPathExprOperandValue argsTmp = args;
 	XPathFunctionId funcId;
 	XPathFunction function;
-
+	XpathFuncImpl funcImpl;
 
 	for (i = 0; i < funcExpr->members; i++)
 	{
@@ -734,7 +734,8 @@ evaluateXPathFunction(XPathExprState exprState, XPathExpression funcExpr, XMLSca
 
 	funcId = funcExpr->funcId;
 	function = &xpathFunctions[funcId];
-	function->impl(exprState, function->nargs, args, result);
+	funcImpl = (XpathFuncImpl) function->impl;
+	funcImpl(exprState, function->nargs, args, result);
 }
 
 /*
@@ -1175,20 +1176,20 @@ substituteFunctions(XPathExpression expression, XMLScan xscan)
 		if (opnd->type == XPATH_OPERAND_FUNC_NOARG)
 		{
 			XPathFunctionId funcId = opnd->value.v.funcId;
-			XMLScanOneLevel scanLevel;
+			XPathFunction func;
+			XpathFuncImplNoArgs funcImpl;
 
-			switch (funcId)
+			if (funcId >= XPATH_FUNCTIONS)
 			{
-				case XPATH_FUNC_POSITION:
-					opnd->value.type = XPATH_VAL_NUMBER;
-					scanLevel = XMLSCAN_CURRENT_LEVEL(xscan);
-					opnd->value.v.num = scanLevel->matches;
-					break;
-
-				default:
-					elog(ERROR, "unexpected function id: %u", funcId);
-					break;
+				elog(ERROR, "unrecognized function id: %u", funcId);
 			}
+
+			func = &xpathFunctions[funcId];
+			Assert(func->nargs == 0);
+
+			funcImpl = (XpathFuncImplNoArgs) func->impl;
+			funcImpl(xscan, &opnd->value);
+
 			opnd->substituted = true;
 			processed++;
 			if (processed == expression->nfuncs)

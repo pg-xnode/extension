@@ -552,6 +552,7 @@ extern void *getXPathOperandValue(XPathExprState exprState, unsigned short id, X
 
 typedef void (*XpathFuncImpl) (XPathExprState exprState, unsigned short nargs, XPathExprOperandValue args,
 										   XPathExprOperandValue result);
+typedef void (*XpathFuncImplNoArgs) (XMLScan scan, XPathExprOperandValue result);
 
 typedef struct XPathFunctionData
 {
@@ -559,7 +560,10 @@ typedef struct XPathFunctionData
 	char		name[XPATH_FUNC_NAME_MAX_LEN];
 	unsigned short nargs;		/* Number of arguments */
 	XPathValueType argTypes[XPATH_FUNC_MAX_ARGS];
-	XpathFuncImpl impl;
+
+	/* Either *XpathFuncImpl or *XpathFuncImplNoArgs */
+	void	   *impl;
+
 	XPathValueType resType;
 	bool		predicateOnly;	/* May the function only appear within a
 								 * predicate? */
@@ -572,6 +576,15 @@ typedef struct XPathFunctionData *XPathFunction;
 
 XPathFunctionData xpathFunctions[XPATH_FUNCTIONS];
 
+/*
+ * First, functions with no arguments.
+ */
+extern void xpathPosition(XMLScan xscan, XPathExprOperandValue result);
+
+
+/*
+ * And then those with non-empty argument list.
+ */
 extern void xpathCount(XPathExprState exprState, unsigned short nargs, XPathExprOperandValue args,
 		   XPathExprOperandValue result);
 extern void xpathContains(XPathExprState exprState, unsigned short nargs, XPathExprOperandValue args,
