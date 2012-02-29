@@ -47,14 +47,14 @@ XPathFunctionData xpathFunctions[] = {
 void
 xpathTrue(XMLScan xscan, XPathExprOperandValue result)
 {
-	result->type = XPATH_VAL_NUMBER;
+	result->type = XPATH_VAL_BOOLEAN;
 	result->v.boolean = true;
 }
 
 void
 xpathFalse(XMLScan xscan, XPathExprOperandValue result)
 {
-	result->type = XPATH_VAL_NUMBER;
+	result->type = XPATH_VAL_BOOLEAN;
 	result->v.boolean = false;
 }
 
