@@ -42,6 +42,7 @@ extern Datum xpath_array(PG_FUNCTION_ARGS);
 #define XPATH_EXPR_VAR_MAX					16
 
 #define XPATH_LAST_LEVEL(xsc) ((xsc->depth + 1) == (xsc->xpath->depth - xsc->xpathRoot))
+#define XPATH_CURRENT_LEVEL(xsc)  ((XPathElement) ((char *) xsc->xpath + xsc->xpath->elements[xsc->xpathRoot + xsc->depth]))
 
 /*
  * The primary purpose of 'xpath' type is to avoid repeated parsing of the
@@ -196,6 +197,7 @@ typedef enum XPathFunctionId
 	XPATH_FUNC_TRUE = 0,
 	XPATH_FUNC_FALSE,
 	XPATH_FUNC_POSITION,
+	XPATH_FUNC_LAST,
 	XPATH_FUNC_CONTAINS,
 	XPATH_FUNC_COUNT
 }	XPathFunctionId;
@@ -429,7 +431,12 @@ typedef struct XMLScanOneLevelData
 	char	   *nodeRefPtr;
 
 	unsigned short int siblingsLeft;
-	unsigned short matches;
+
+	unsigned short contextPosition;
+
+	unsigned short contextSize;
+	bool		contextSizeKnown;
+
 	struct XMLScanOneLevelData *up;
 }	XMLScanOneLevelData;
 
@@ -574,7 +581,7 @@ typedef struct XPathFunctionData
 typedef struct XPathFunctionData *XPathFunction;
 
 /* Total number of XPath functions the parser can recognize. */
-#define XPATH_FUNCTIONS			5
+#define XPATH_FUNCTIONS			6
 
 XPathFunctionData xpathFunctions[XPATH_FUNCTIONS];
 
@@ -584,6 +591,7 @@ XPathFunctionData xpathFunctions[XPATH_FUNCTIONS];
 extern void xpathTrue(XMLScan xscan, XPathExprOperandValue result);
 extern void xpathFalse(XMLScan xscan, XPathExprOperandValue result);
 extern void xpathPosition(XMLScan xscan, XPathExprOperandValue result);
+extern void xpathLast(XMLScan xscan, XPathExprOperandValue result);
 
 
 /*

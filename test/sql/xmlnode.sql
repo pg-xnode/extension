@@ -451,6 +451,9 @@ select id, path('count(/state/region)', data)
 from states
 order by id;
 
+select path('/root//a[position()=last()]', '<root><a i="3"/><a i="4"/><b><d/><a i="1"/><a i="2"/><c/><a i="5"/><d/></b><a/></root>');
+select path('/root//a[position()=last() and @i]', '<root><a i="3"/><a i="4"/><b><a i="1"/><a i="2"/><c/><a i="5"/><d/></b><a/></root>');
+
 -- Cleanup
 
 drop table states;

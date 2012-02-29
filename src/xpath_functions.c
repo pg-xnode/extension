@@ -29,6 +29,13 @@ XPathFunctionData xpathFunctions[] = {
 		XPATH_VAL_NUMBER, true
 	},
 	{
+		XPATH_FUNC_LAST,
+		"last", 0,
+		{0, 0, 0, 0},
+		xpathLast,
+		XPATH_VAL_NUMBER, true
+	},
+	{
 		XPATH_FUNC_CONTAINS,
 		"contains", 2,
 		{XPATH_VAL_STRING, XPATH_VAL_STRING, 0, 0},
@@ -64,7 +71,59 @@ xpathPosition(XMLScan xscan, XPathExprOperandValue result)
 	XMLScanOneLevel scanLevel = XMLSCAN_CURRENT_LEVEL(xscan);
 
 	result->type = XPATH_VAL_NUMBER;
-	result->v.num = scanLevel->matches;
+	result->v.num = scanLevel->contextPosition;
+}
+
+void
+xpathLast(XMLScan xscan, XPathExprOperandValue result)
+{
+	XMLScanOneLevel scanLevel = XMLSCAN_CURRENT_LEVEL(xscan);
+
+	if (!scanLevel->contextSizeKnown)
+	{
+		XMLCompNodeHdr parent = scanLevel->parent;
+		char	   *refPtr = scanLevel->nodeRefPtr;
+		unsigned short sblLeft = scanLevel->siblingsLeft;
+		XPathElement xpEl = XPATH_CURRENT_LEVEL(xscan);
+		unsigned short i = 0;
+
+
+		scanLevel->contextSize = scanLevel->contextPosition;
+
+		while (sblLeft > 0)
+		{
+			XMLNodeOffset nodeOff;
+			XMLNodeHdr	node;
+
+			nodeOff = readXMLNodeOffset(&refPtr, XNODE_GET_REF_BWIDTH(parent), true);
+
+			/*
+			 * The first node has to be skipped because its the context node
+			 * for the function.
+			 */
+			if (i > 0)
+			{
+				node = (XMLNodeHdr) ((char *) parent - nodeOff);
+
+				if (node->kind == XMLNODE_ELEMENT)
+				{
+					XMLCompNodeHdr ctxElement = (XMLCompNodeHdr) node;
+
+					if (strcmp(xpEl->name, XNODE_ELEMENT_NAME(ctxElement)) == 0)
+					{
+						scanLevel->contextSize++;
+					}
+				}
+			}
+			sblLeft--;
+			i++;
+		}
+
+
+		scanLevel->contextSizeKnown = true;
+	}
+	result->type = XPATH_VAL_NUMBER;
+	result->v.num = scanLevel->contextSize;
 }
 
 

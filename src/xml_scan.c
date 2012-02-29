@@ -65,7 +65,8 @@ initXMLScan(XMLScan xscan, XMLScan parent, XPath xpath, XPathHeader xpHdr, XMLCo
 		firstLevel->parent = scanRoot;
 		firstLevel->nodeRefPtr = XNODE_FIRST_REF(scanRoot);
 		firstLevel->siblingsLeft = scanRoot->children;
-		firstLevel->matches = 0;
+		firstLevel->contextPosition = 0;
+		firstLevel->contextSizeKnown = false;
 		firstLevel->up = (parent == NULL) ? NULL : XMLSCAN_CURRENT_LEVEL(parent);
 
 		xscan->state = firstLevel;
@@ -152,7 +153,6 @@ getNextXMLNode(XMLScan xscan, bool removed)
 		while (scanLevel->siblingsLeft > 0)
 		{
 			XPathElement xpEl;
-			XPath		xp = xscan->xpath;
 			XMLCompNodeHdr eh = scanLevel->parent;
 			XMLNodeHdr	currentNode = NULL;
 
@@ -180,7 +180,8 @@ getNextXMLNode(XMLScan xscan, bool removed)
 				}
 
 			}
-			xpEl = (XPathElement) ((char *) xp + xp->elements[xscan->xpathRoot + xscan->depth]);
+
+			xpEl = XPATH_CURRENT_LEVEL(xscan);
 
 			if (xscan->subScan != NULL)
 			{
@@ -275,7 +276,7 @@ getNextXMLNode(XMLScan xscan, bool removed)
 				{
 					bool		passed = true;
 
-					scanLevel->matches++;
+					scanLevel->contextPosition++;
 					if (xpEl->hasPredicate)
 					{
 						XPathExprOperandValueData result,
@@ -328,7 +329,8 @@ getNextXMLNode(XMLScan xscan, bool removed)
 							nextLevel->parent = currentElement;
 							nextLevel->nodeRefPtr = childFirst;
 							nextLevel->siblingsLeft = currentElement->children;
-							nextLevel->matches = 0;
+							nextLevel->contextPosition = 0;
+							nextLevel->contextSizeKnown = false;
 							nextLevel->up = scanLevel;
 							break;
 						}
@@ -579,7 +581,7 @@ evaluateXPathExpression(XPathExprState exprState, XPathExpression expr, XMLScanO
 
 			result->type = XPATH_VAL_BOOLEAN;
 			result->isNull = false;
-			result->v.boolean = (intValue == scan->matches);
+			result->v.boolean = (intValue == scan->contextPosition);
 			return;
 		}
 		else
