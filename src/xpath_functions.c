@@ -11,42 +11,42 @@ XPathFunctionData xpathFunctions[] = {
 		XPATH_FUNC_TRUE,
 		"true", 0,
 		{0, 0, 0, 0},
-		xpathTrue,
+		{.noargs = xpathTrue},
 		XPATH_VAL_BOOLEAN, true
 	},
 	{
 		XPATH_FUNC_FALSE,
 		"false", 0,
 		{0, 0, 0, 0},
-		xpathFalse,
+		{.noargs = xpathFalse},
 		XPATH_VAL_BOOLEAN, true
 	},
 	{
 		XPATH_FUNC_POSITION,
 		"position", 0,
 		{0, 0, 0, 0},
-		xpathPosition,
+		{.noargs = xpathPosition},
 		XPATH_VAL_NUMBER, true
 	},
 	{
 		XPATH_FUNC_LAST,
 		"last", 0,
 		{0, 0, 0, 0},
-		xpathLast,
+		{.noargs = xpathLast},
 		XPATH_VAL_NUMBER, true
 	},
 	{
 		XPATH_FUNC_CONTAINS,
 		"contains", 2,
 		{XPATH_VAL_STRING, XPATH_VAL_STRING, 0, 0},
-		xpathContains,
+		{.args = xpathContains},
 		XPATH_VAL_BOOLEAN, false
 	},
 	{
 		XPATH_FUNC_COUNT,
 		"count", 1,
 		{XPATH_VAL_NODESET, 0, 0, 0},
-		xpathCount,
+		{.args = xpathCount},
 		XPATH_VAL_NUMBER, false
 	}
 };

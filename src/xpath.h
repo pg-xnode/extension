@@ -570,8 +570,11 @@ typedef struct XPathFunctionData
 	unsigned short nargs;		/* Number of arguments */
 	XPathValueType argTypes[XPATH_FUNC_MAX_ARGS];
 
-	/* Either *XpathFuncImpl or *XpathFuncImplNoArgs */
-	void	   *impl;
+	union
+	{
+		XpathFuncImpl args;
+		XpathFuncImplNoArgs noargs;
+	}			impl;
 
 	XPathValueType resType;
 	bool		predicateOnly;	/* May the function only appear within a

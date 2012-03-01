@@ -736,7 +736,7 @@ evaluateXPathFunction(XPathExprState exprState, XPathExpression funcExpr, XMLSca
 
 	funcId = funcExpr->funcId;
 	function = &xpathFunctions[funcId];
-	funcImpl = (XpathFuncImpl) function->impl;
+	funcImpl = function->impl.args;
 	funcImpl(exprState, function->nargs, args, result);
 }
 
@@ -1189,7 +1189,7 @@ substituteFunctions(XPathExpression expression, XMLScan xscan)
 			func = &xpathFunctions[funcId];
 			Assert(func->nargs == 0);
 
-			funcImpl = (XpathFuncImplNoArgs) func->impl;
+			funcImpl = func->impl.noargs;
 			funcImpl(xscan, &opnd->value);
 
 			opnd->substituted = true;
