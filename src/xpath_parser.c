@@ -8,7 +8,7 @@
 #include "xmlnode.h"
 #include "xpath.h"
 
-static void insertSubexpression(XPathExprOperand operand, XPathExprOperator * operator,
+static void insertSubexpression(XPathExprOperand operand, XPathExprOperatorIdStore ** opIdPtr,
 		XPathExpression exprTop, unsigned short blockSize, bool varsShiftAll,
 					char *output, unsigned short *outPos);
 static XPathExprOperand readExpressionOperand(XPathExpression exprTop,
@@ -18,7 +18,7 @@ static void nextOperandChar(char *value, XPathParserState state, unsigned short 
 				unsigned short indMax, bool endAllowed);
 static void checkExprOperand(XPathExpression exprTop, XPathExprOperand operand, bool mainExpr);
 static bool canBeNumber(char *str, double *numValue, char **end);
-static XPathExprOperator readExpressionOperator(XPathParserState state, char *output,
+static XPathExprOperatorIdStore *readExpressionOperator(XPathParserState state, char *output,
 					   unsigned short *outPos);
 static void parseFunctionArgList(XPathParserState state, unsigned short nargs, char *output, unsigned short *outPos,
 					 XPath * paths, unsigned short *pathCnt, bool mainExpr);
@@ -40,7 +40,7 @@ static void dumpXPathExprOperator(char **input, StringInfo output, unsigned shor
  * If multiple operators start with the same char/substring, the longer
  * one(s) must precede the shorter one(s).
  */
-static XPathExprOperatorTextData opStrings[XPATH_EXPR_OPERATOR_KINDS] = {
+XPathExprOperatorTextData xpathOperators[XPATH_EXPR_OPERATOR_KINDS] = {
 	{{XPATH_EXPR_OPERATOR_LTE, 0, XPATH_VAL_BOOLEAN}, "<="},
 	{{XPATH_EXPR_OPERATOR_LT, 0, XPATH_VAL_BOOLEAN}, "<"},
 	{{XPATH_EXPR_OPERATOR_GTE, 0, XPATH_VAL_BOOLEAN}, ">="},
@@ -70,10 +70,10 @@ static char nodeTypes[][XPATH_NODE_TYPE_MAX_LEN + 1] = {
  * 'term' - terminating character. ']' for predicate, ')' for
  * (explicit) subexpression, '\0' for main expression.
  *
- * 'firstOperator' - first operator of the subexpression that the function will process.
- * Sometimes we first read the operator and then realize that it belongs to a
- * subexpression (because it has higher precedence). That's why we pass it to
- * the function when calling it for the subexpression.
+ * 'firstOpPtr' - first operator (or rather pointer to its id) of the subexpression
+ * that the function will process. Sometimes we first read the operator and then realize
+ * that it belongs to a subexpression (because it has higher precedence).
+ * That's why we pass it to the function when calling it for the subexpression.
  *
  * 'output' - output byte array for the expression and subexpressions
  * (if xpath is contained as operand, only its id is stored there and the path itself
@@ -107,14 +107,15 @@ static char nodeTypes[][XPATH_NODE_TYPE_MAX_LEN + 1] = {
  * ended.
  */
 
-XPathExprOperator
+XPathExprOperatorIdStore *
 parseXPathExpression(XPathExpression exprCurrent, XPathParserState state, char term,
-	   XPathExprOperator firstOperator, char *output, unsigned short *outPos,
+XPathExprOperatorIdStore * firstOpIdPtr, char *output, unsigned short *outPos,
 					 bool isSubExpr, bool argList, XPath * paths, unsigned short *pathCnt, bool mainExpr)
 {
 
 	XPathExpression exprTop = (XPathExpression) output;
 	XPathExprOperand operand = NULL;
+	XPathExprOperatorIdStore *opIdPtr = NULL;
 	XPathExprOperator operator = NULL;
 	unsigned char precedence = 0;
 	bool		readOperator;
@@ -126,7 +127,8 @@ parseXPathExpression(XPathExpression exprCurrent, XPathParserState state, char t
 	 * If 'firstOperator is not NULL, then '*state->c' points to the 2nd
 	 * operand and not to the 1st one.
 	 */
-	bool		subExprExpl = (*state->c == XNODE_CHAR_LBRKT_RND && firstOperator == NULL);
+	bool		subExprExpl = (*state->c == XNODE_CHAR_LBRKT_RND && firstOpIdPtr == NULL);
+	XPathExprOperator firstOperator = XPATH_EXPR_OPERATOR(firstOpIdPtr);
 
 	checkExpressionBuffer(*outPos);
 
@@ -182,6 +184,7 @@ parseXPathExpression(XPathExpression exprCurrent, XPathParserState state, char t
 	else
 	{
 		operator = firstOperator;
+		opIdPtr = firstOpIdPtr;
 
 		/*
 		 * All operators of the same priority have the same result type.
@@ -215,7 +218,8 @@ parseXPathExpression(XPathExpression exprCurrent, XPathParserState state, char t
 	{
 		if (readOperator)
 		{
-			operator = readExpressionOperator(state, output, outPos);
+			opIdPtr = readExpressionOperator(state, output, outPos);
+			operator = XPATH_EXPR_OPERATOR(opIdPtr);
 			skipWhiteSpace(state, false);
 		}
 		if (firstIter)
@@ -239,36 +243,44 @@ parseXPathExpression(XPathExpression exprCurrent, XPathParserState state, char t
 		if (operator->precedence < precedence)
 		{
 			XPathExpression subExpr = (XPathExpression) operand;
+			XPathExprOperatorIdStore *nextOpIdPtr;
 			XPathExprOperator nextOperator;
 
-			insertSubexpression(operand, &operator, exprTop, output + *outPos - (char *) operand, false,
+			insertSubexpression(operand, &opIdPtr, exprTop, output + *outPos - (char *) operand, false,
 								output, outPos);
 			subExpr->members = 1;
-			nextOperator = parseXPathExpression(subExpr, state, term, operator, output, outPos, true, false, paths,
-												pathCnt, mainExpr);
+			nextOpIdPtr = parseXPathExpression(subExpr, state, term, opIdPtr, output, outPos, true, false, paths,
+											   pathCnt, mainExpr);
+			operator = XPATH_EXPR_OPERATOR(opIdPtr);
+			nextOperator = XPATH_EXPR_OPERATOR(nextOpIdPtr);
 
-			readOperator = (nextOperator == NULL);
+			readOperator = (nextOpIdPtr == NULL);
 
 			if (nextOperator)
 			{
 				operator = nextOperator;
+				opIdPtr = nextOpIdPtr;
 
 				while (*state->c != term && operator->precedence < precedence)
 				{
 					XPathExprOperator nextOperator;
+					XPathExprOperatorIdStore *nextOpIdPtr;
 
 					subExpr = (XPathExpression) operand;
-					insertSubexpression(operand, &operator, exprTop, output + *outPos - (char *) operand,
+					insertSubexpression(operand, &opIdPtr, exprTop, output + *outPos - (char *) operand,
 										false, output, outPos);
 					subExpr->members = 1;
-					nextOperator = parseXPathExpression(subExpr, state, term, operator, output, outPos, true, false,
+					nextOpIdPtr = parseXPathExpression(subExpr, state, term, opIdPtr, output, outPos, true, false,
 												   paths, pathCnt, mainExpr);
+					operator = XPATH_EXPR_OPERATOR(opIdPtr);
+					nextOperator = XPATH_EXPR_OPERATOR(nextOpIdPtr);
 
 					if (nextOperator)
 					{
 						operator = nextOperator;
+						opIdPtr = nextOpIdPtr;
 					}
-					readOperator = (nextOperator == NULL);
+					readOperator = (nextOpIdPtr == NULL);
 				}
 			}
 		}
@@ -282,19 +294,19 @@ parseXPathExpression(XPathExpression exprCurrent, XPathParserState state, char t
 				 * The last operator we've read doesn't belong to the
 				 * (implicit) subexpression
 				 */
-				exprCurrent->size = *outPos - firstMembOff + shift - sizeof(XPathExprOperatorData);
-
-				return operator;
+				exprCurrent->size = *outPos - firstMembOff + shift - sizeof(XPathExprOperatorIdStore);
+				return opIdPtr;
 			}
 			else
 			{
 				char	   *firstMember = (char *) exprTop + firstMembOff;
 				XPathExpression subExpr = (XPathExpression) firstMember;
-				unsigned short subExprSzNew = (char *) operator - (char *) subExpr + shift;
+				unsigned short subExprSzNew = (char *) opIdPtr - (char *) subExpr + shift;
 
 				precedence = operator->precedence;
-				insertSubexpression((XPathExprOperand) subExpr, &operator, exprTop,
+				insertSubexpression((XPathExprOperand) subExpr, &opIdPtr, exprTop,
 							  *outPos - firstMembOff, false, output, outPos);
+				operator = XPATH_EXPR_OPERATOR(opIdPtr);
 				subExpr->members = exprCurrent->members;
 				subExpr->size = subExprSzNew;
 				subExpr->valType = operator->resType;
@@ -818,12 +830,14 @@ parseLocationPath(XPath * paths, bool isSubPath, unsigned short *pathCount, char
 
 /*
  * Make 'operand' the first member of a subexpression.
+ *
  * Operator following this operand is also shifted (this operator's precedence is typically the reason
- * for the new subexpression).
+ * for the new subexpression). Therefore 'opIdPtr' (pointer to the operator's id in the storage) is passed.
+ *
  * It's also necessary to adjust variables already pointing to the operands that we shift.
  */
 static void
-insertSubexpression(XPathExprOperand operand, XPathExprOperator * operator,
+insertSubexpression(XPathExprOperand operand, XPathExprOperatorIdStore ** opIdPtr,
 		XPathExpression exprTop, unsigned short blockSize, bool varsShiftAll,
 					char *output, unsigned short *outPos)
 {
@@ -834,9 +848,9 @@ insertSubexpression(XPathExprOperand operand, XPathExprOperator * operator,
 
 	checkExpressionBuffer(*outPos + subExprSz);
 	memmove((char *) operand + subExprSz, operand, blockSize);
-	if (operator != NULL)
+	if (opIdPtr != NULL)
 	{
-		*operator = (XPathExprOperator) ((char *) *operator + subExprSz);
+		*opIdPtr = (XPathExprOperatorIdStore *) ((char *) *opIdPtr + subExprSz);
 	}
 	if (exprTop != NULL)
 	{
@@ -1195,19 +1209,18 @@ canBeNumber(char *str, double *numValue, char **end)
 	return result;
 }
 
-static XPathExprOperator
-readExpressionOperator(XPathParserState state, char *output,
-					   unsigned short *outPos)
+static XPathExprOperatorIdStore *
+readExpressionOperator(XPathParserState state, char *output, unsigned short *outPos)
 {
 
-	XPathExprOperator op = (XPathExprOperator) ((char *) output + *outPos);
+	XPathExprOperatorIdStore *opIdPtr = (XPathExprOperatorIdStore *) ((char *) output + *outPos);
 	unsigned char i;
 
-	checkExpressionBuffer(*outPos + sizeof(XPathExprOperatorData));
-	*outPos += sizeof(XPathExprOperatorData);
+	checkExpressionBuffer(*outPos + sizeof(XPathExprOperatorIdStore));
+	*outPos += sizeof(XPathExprOperatorIdStore);
 	for (i = 0; i < XPATH_EXPR_OPERATOR_KINDS; i++)
 	{
-		XPathExprOperatorText ot = opStrings + i;
+		XPathExprOperatorText ot = xpathOperators + i;
 		char	   *opText = ot->text;
 
 		if (strncmp(state->c, opText, strlen(opText)) == 0)
@@ -1223,12 +1236,11 @@ readExpressionOperator(XPathParserState state, char *output,
 			{
 				elog(ERROR, "white space expected at position %u", state->pos);
 			}
-			op->id = ot->op.id;
-			op->precedence = ot->op.precedence;
-			op->resType = ot->op.resType;
-			return op;
+			*opIdPtr = ot->op.id;
+			return opIdPtr;
 		}
 	}
+
 	if (*state->c == XNODE_CHAR_RBRKT_RND)
 	{
 		elog(ERROR, "unexpected ')' at position %u of xpath expression",
@@ -1269,21 +1281,23 @@ parseFunctionArgList(XPathParserState state, unsigned short nargs, char *output,
 		skipWhiteSpace(state, false);
 		if (*state->c != sep)
 		{
-			XPathExprOperator operator = readExpressionOperator(state, output, outPos);
+			XPathExprOperatorIdStore *opIdPtr = readExpressionOperator(state, output, outPos);
+			XPathExprOperator operator = XPATH_EXPR_OPERATOR(opIdPtr);
 
 			skipWhiteSpace(state, false);
 			if (operator != NULL)
 			{
 				XPathExpression subExpr = (XPathExpression) opnd;
 
-				insertSubexpression(opnd, &operator, exprTop, output + *outPos - (char *) opnd, false, output, outPos);
-				parseXPathExpression(subExpr, state, sep, operator, output, outPos, true, true, paths,
+				insertSubexpression(opnd, &opIdPtr, exprTop, output + *outPos - (char *) opnd, false, output, outPos);
+				parseXPathExpression(subExpr, state, sep, opIdPtr, output, outPos, true, true, paths,
 									 pathCnt, mainExpr);
+				operator = XPATH_EXPR_OPERATOR(opIdPtr);
 				subExpr->valType = operator->resType;
 			}
 			else
 			{
-				*outPos -= sizeof(XPathExprOperatorData);
+				*outPos -= sizeof(XPathExprOperatorIdStore);
 			}
 
 			if (*state->c != sep)
@@ -1799,7 +1813,7 @@ static void
 dumpXPathExprOperator(char **input, StringInfo output, unsigned short level,
 					  bool debug)
 {
-	XPathExprOperator operator = (XPathExprOperator) * input;;
+	XPathExprOperator operator = XPATH_EXPR_OPERATOR(*input);
 
 	if (debug)
 	{
@@ -1810,10 +1824,10 @@ dumpXPathExprOperator(char **input, StringInfo output, unsigned short level,
 	{
 		appendStringInfoSpaces(output, 1);
 	}
-	appendStringInfoString(output, opStrings[operator->id].text);
+	appendStringInfoString(output, xpathOperators[operator->id].text);
 	if (!debug && (operator->id == XPATH_EXPR_OPERATOR_AND || operator->id == XPATH_EXPR_OPERATOR_OR))
 	{
 		appendStringInfoSpaces(output, 1);
 	}
-	*input += sizeof(XPathExprOperatorData);
+	*input += sizeof(XPathExprOperatorIdStore);
 }

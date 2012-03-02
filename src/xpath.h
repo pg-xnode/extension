@@ -282,7 +282,7 @@ typedef struct XPathExprOperandData *XPathExprOperand;
 #define XPATH_EXPR_OPERATOR_KINDS	8
 
 /*
- * The order must be identical to that in 'opStrings' array, see xpath.c
+ * The order must be identical to that in 'xpathOperators' array, see xpath.c
  */
 typedef enum XPathExprOperatorId
 {
@@ -296,12 +296,14 @@ typedef enum XPathExprOperatorId
 	XPATH_EXPR_OPERATOR_OR
 }	XPathExprOperatorId;
 
+typedef uint8 XPathExprOperatorIdStore;
+
 /*
  * Binary operators
  */
 typedef struct XPathExprOperatorData
 {
-	uint8		id;
+	XPathExprOperatorIdStore id;
 	uint8		precedence;
 	uint8		resType;
 }	XPathExprOperatorData;
@@ -318,6 +320,15 @@ typedef struct XPathExprOperatorTextData
 }	XPathExprOperatorTextData;
 
 typedef struct XPathExprOperatorTextData *XPathExprOperatorText;
+
+XPathExprOperatorTextData xpathOperators[XPATH_EXPR_OPERATOR_KINDS];
+
+/*
+ * Get XPathExprOperator from the storage.
+ * 'idPtr' is pointer to the operator's id in the XPath storage.
+ */
+#define XPATH_EXPR_OPERATOR(idPtr) ((idPtr != NULL) ?\
+	(&((xpathOperators + *((XPathExprOperatorIdStore *) idPtr))->op)) : NULL)
 
 /*
  * If type is XPATH_OPERAND_EXPR_TOP, the header is followed by array of
@@ -413,8 +424,8 @@ typedef enum XPathNodeType
 }	XPathNodeType;
 
 
-extern XPathExprOperator parseXPathExpression(XPathExpression exprCurrent, XPathParserState state,
-					 char term, XPathExprOperator firstOperator, char *output, unsigned short *outPos, bool isSubExpr,
+extern XPathExprOperatorIdStore *parseXPathExpression(XPathExpression exprCurrent, XPathParserState state,
+					 char term, XPathExprOperatorIdStore * firstOpPtr, char *output, unsigned short *outPos, bool isSubExpr,
   bool argList, XPath * subpaths, unsigned short *subpathCnt, bool mainExpr);
 
 extern XPath parseLocationPath(XPath * subpaths, bool isSubPath, unsigned short *subpathCnt, char **xpathPtr,

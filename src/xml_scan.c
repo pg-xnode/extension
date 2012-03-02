@@ -595,8 +595,8 @@ evaluateXPathExpression(XPathExprState exprState, XPathExpression expr, XMLScanO
 					currentVal;
 
 		currentPtr += currentSize;
-		operator = (XPathExprOperator) currentPtr;
-		currentSize = sizeof(XPathExprOperatorData);
+		operator = XPATH_EXPR_OPERATOR(currentPtr);
+		currentSize = sizeof(XPathExprOperatorIdStore);
 		currentPtr += currentSize;
 		if (i == 0)
 		{
