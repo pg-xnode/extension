@@ -11,16 +11,15 @@
 static void insertSubexpression(XPathExprOperand operand, XPathExprOperatorIdStore ** opIdPtr,
 		XPathExpression exprTop, unsigned short blockSize, bool varsShiftAll,
 					char *output, unsigned short *outPos);
-static XPathExprOperand readExpressionOperand(XPathExpression exprTop,
-	 XPathParserState state, char term, char *output, unsigned short *outPos,
-					  XPath * paths, unsigned short *pathCnt, bool mainExpr);
+static XPathExprOperand readExpressionOperand(XPathExpression exprTop, XPathParserState state, unsigned char termFlags,
+					  char *output, unsigned short *outPos, XPath * paths, unsigned short *pathCnt, bool mainExpr);
 static void nextOperandChar(char *value, XPathParserState state, unsigned short *ind,
 				unsigned short indMax, bool endAllowed);
 static void checkExprOperand(XPathExpression exprTop, XPathExprOperand operand, bool mainExpr);
 static bool canBeNumber(char *str, double *numValue, char **end);
 static XPathExprOperatorIdStore *readExpressionOperator(XPathParserState state, char *output,
 					   unsigned short *outPos);
-static void parseFunctionArgList(XPathParserState state, unsigned short nargs, char *output, unsigned short *outPos,
+static int parseFunctionArgList(XPathParserState state, XPathFunction, char *output, unsigned short *outPos,
 					 XPath * paths, unsigned short *pathCnt, bool mainExpr);
 static void checkFunctionArgTypes(XPathExpression argList, XPathFunction function);
 static void nextChar(XPathParserState state, bool endAllowed);
@@ -59,6 +58,37 @@ static char nodeTypes[][XPATH_NODE_TYPE_MAX_LEN + 1] = {
 	"processing-instruction"
 };
 
+bool
+validXPathTermChar(char c, unsigned char flags)
+{
+	unsigned short flag;
+
+	switch (c)
+	{
+		case '\0':
+			flag = XPATH_TERM_NULL;
+			break;
+
+		case XNODE_CHAR_RBRACKET:
+			flag = XPATH_TERM_RBRKT;
+			break;
+
+		case XNODE_CHAR_RBRKT_RND:
+			flag = XPATH_TERM_RBRKT_RND;
+			break;
+
+		case XNODE_CHAR_COMMA:
+			flag = XPATH_TERM_COMMA;
+			break;
+
+		default:
+			flag = 0;
+			break;
+	}
+
+	return ((flag & flags) != 0);
+}
+
 /*
  * Function to parse xpath expression.
  *
@@ -68,7 +98,8 @@ static char nodeTypes[][XPATH_NODE_TYPE_MAX_LEN + 1] = {
  * expression).
  *
  * 'term' - terminating character. ']' for predicate, ')' for
- * (explicit) subexpression, '\0' for main expression.
+ * (explicit) subexpression, '\0' for main expression. The flag is passed in a form
+ * of flag(s), e.g. XPATH_TERM_RBRKT
  *
  * 'firstOpPtr' - first operator (or rather pointer to its id) of the subexpression
  * that the function will process. Sometimes we first read the operator and then realize
@@ -108,7 +139,7 @@ static char nodeTypes[][XPATH_NODE_TYPE_MAX_LEN + 1] = {
  */
 
 XPathExprOperatorIdStore *
-parseXPathExpression(XPathExpression exprCurrent, XPathParserState state, char term,
+parseXPathExpression(XPathExpression exprCurrent, XPathParserState state, unsigned char termFlags,
 XPathExprOperatorIdStore * firstOpIdPtr, char *output, unsigned short *outPos,
 					 bool isSubExpr, bool argList, XPath * paths, unsigned short *pathCnt, bool mainExpr)
 {
@@ -147,7 +178,7 @@ XPathExprOperatorIdStore * firstOpIdPtr, char *output, unsigned short *outPos,
 	{
 		nextChar(state, false);
 		skipWhiteSpace(state, false);
-		operand = readExpressionOperand(exprTop, state, term, output, outPos, paths, pathCnt, mainExpr);
+		operand = readExpressionOperand(exprTop, state, termFlags, output, outPos, paths, pathCnt, mainExpr);
 
 		/*
 		 * In case the expression only has 1 member, its value type will be
@@ -198,7 +229,7 @@ XPathExprOperatorIdStore * firstOpIdPtr, char *output, unsigned short *outPos,
 	}
 	exprCurrent->members = 1;
 
-	if (*state->c == term)
+	if (validXPathTermChar(*state->c, termFlags))
 	{
 		if (readOperator)
 		{
@@ -249,7 +280,7 @@ XPathExprOperatorIdStore * firstOpIdPtr, char *output, unsigned short *outPos,
 			insertSubexpression(operand, &opIdPtr, exprTop, output + *outPos - (char *) operand, false,
 								output, outPos);
 			subExpr->members = 1;
-			nextOpIdPtr = parseXPathExpression(subExpr, state, term, opIdPtr, output, outPos, true, false, paths,
+			nextOpIdPtr = parseXPathExpression(subExpr, state, termFlags, opIdPtr, output, outPos, true, false, paths,
 											   pathCnt, mainExpr);
 			operator = XPATH_EXPR_OPERATOR(opIdPtr);
 			nextOperator = XPATH_EXPR_OPERATOR(nextOpIdPtr);
@@ -261,7 +292,7 @@ XPathExprOperatorIdStore * firstOpIdPtr, char *output, unsigned short *outPos,
 				operator = nextOperator;
 				opIdPtr = nextOpIdPtr;
 
-				while (*state->c != term && operator->precedence < precedence)
+				while (!validXPathTermChar(*state->c, termFlags) && operator->precedence < precedence)
 				{
 					XPathExprOperator nextOperator;
 					XPathExprOperatorIdStore *nextOpIdPtr;
@@ -270,7 +301,7 @@ XPathExprOperatorIdStore * firstOpIdPtr, char *output, unsigned short *outPos,
 					insertSubexpression(operand, &opIdPtr, exprTop, output + *outPos - (char *) operand,
 										false, output, outPos);
 					subExpr->members = 1;
-					nextOpIdPtr = parseXPathExpression(subExpr, state, term, opIdPtr, output, outPos, true, false,
+					nextOpIdPtr = parseXPathExpression(subExpr, state, termFlags, opIdPtr, output, outPos, true, false,
 												   paths, pathCnt, mainExpr);
 					operator = XPATH_EXPR_OPERATOR(opIdPtr);
 					nextOperator = XPATH_EXPR_OPERATOR(nextOpIdPtr);
@@ -310,7 +341,7 @@ XPathExprOperatorIdStore * firstOpIdPtr, char *output, unsigned short *outPos,
 				subExpr->members = exprCurrent->members;
 				subExpr->size = subExprSzNew;
 				subExpr->valType = operator->resType;
-				operand = readExpressionOperand(exprTop, state, term, output, outPos, paths, pathCnt, mainExpr);
+				operand = readExpressionOperand(exprTop, state, termFlags, output, outPos, paths, pathCnt, mainExpr);
 				checkExprOperand(exprTop, operand, mainExpr);
 				skipWhiteSpace(state, false);
 				readOperator = true;
@@ -319,14 +350,14 @@ XPathExprOperatorIdStore * firstOpIdPtr, char *output, unsigned short *outPos,
 		}
 		else
 		{
-			operand = readExpressionOperand(exprTop, state, term, output, outPos, paths, pathCnt, mainExpr);
+			operand = readExpressionOperand(exprTop, state, termFlags, output, outPos, paths, pathCnt, mainExpr);
 			checkExprOperand(exprTop, operand, mainExpr);
 			skipWhiteSpace(state, true);
 			readOperator = true;
 			exprCurrent->members++;
 		}
 
-		if (*state->c == term)
+		if (validXPathTermChar(*state->c, termFlags))
 		{
 			if (readOperator)
 			{
@@ -609,7 +640,7 @@ parseLocationPath(XPath * paths, bool isSubPath, unsigned short *pathCount, char
 								XPATH_EXPR_VAR_MAX * sizeof(XPathOffset);
 
 							checkExpressionBuffer(outPos);
-							parseXPathExpression(expr, &state, XNODE_CHAR_RBRACKET, NULL, exprOutput, &outPos,
+							parseXPathExpression(expr, &state, XPATH_TERM_RBRKT, NULL, exprOutput, &outPos,
 									  false, false, paths, pathCount, false);
 
 							/*
@@ -874,10 +905,20 @@ insertSubexpression(XPathExprOperand operand, XPathExprOperatorIdStore ** opIdPt
 	*outPos += subExprSz;
 }
 
+/*
+ * Read expression operand, starting at 'state->c'.
+ *
+ * 'termFlags' represents set of possible terminating character of the expression.
+ *	The parameter exists just to make error messages more precise.
+ *
+ * 'checkTerm' should be set to 'false' when the caller can't determine a single terminating character.
+ *
+ * If a valid operator is found, reading stops right after the operand. (If that happens to be a white space,
+ * then caller is responsible for skipping it.)
+ */
 static XPathExprOperand
-readExpressionOperand(XPathExpression exprTop,
-	 XPathParserState state, char term, char *output, unsigned short *outPos,
-					  XPath * paths, unsigned short *pathCnt, bool mainExpr)
+readExpressionOperand(XPathExpression exprTop, XPathParserState state, unsigned char termFlags,
+					  char *output, unsigned short *outPos, XPath * paths, unsigned short *pathCnt, bool mainExpr)
 {
 
 	XPathExprOperand op = (XPathExprOperand) ((char *) output + *outPos);
@@ -896,7 +937,12 @@ readExpressionOperand(XPathExpression exprTop,
 	indMax = XPATH_EXPR_BUFFER_SIZE - *outPos - 1;
 
 	op->value.castToNumber = false;
-	if (*state->c == term)
+
+	/*
+	 * If the terminating character is known, check it now. Otherwise we must
+	 * test all operand types and (possibly) fail when no match is found.
+	 */
+	if (validXPathTermChar(*state->c, termFlags))
 	{
 		elog(ERROR, "unexpected end of xpath expression or subexpression at position %u", state->pos);
 	}
@@ -907,7 +953,7 @@ readExpressionOperand(XPathExpression exprTop,
 		insertSubexpression(op, NULL, NULL, output + *outPos - (char *) op, false,
 							output, outPos);
 		checkExpressionBuffer(*outPos);
-		parseXPathExpression(subExpr, state, XNODE_CHAR_RBRKT_RND, NULL, output, outPos, true, false, paths,
+		parseXPathExpression(subExpr, state, XPATH_TERM_RBRKT_RND, NULL, output, outPos, true, false, paths,
 							 pathCnt, mainExpr);
 
 		subExpr->type = XPATH_OPERAND_EXPR_SUB;
@@ -946,7 +992,7 @@ readExpressionOperand(XPathExpression exprTop,
 
 			if (!XNODE_VALID_NAME_START(state->c))
 			{
-				if (*state->c == term)
+				if (validXPathTermChar(*state->c, termFlags))
 				{
 					elog(ERROR, "unexpected end of xpath expression at position %u", state->pos);
 				}
@@ -1024,11 +1070,11 @@ readExpressionOperand(XPathExpression exprTop,
 							}
 							*outPos += diff;
 
-							parseFunctionArgList(state, func->nargs, output, outPos, paths, pathCnt, mainExpr);
+							argList->members = parseFunctionArgList(state, func, output, outPos, paths, pathCnt,
+																	mainExpr);
 							argList->type = XPATH_OPERAND_FUNC;
 							argList->funcId = func->id;
 							argList->valType = func->resType;
-							argList->members = func->nargs;
 
 							checkFunctionArgTypes(argList, func);
 						}
@@ -1126,8 +1172,7 @@ readExpressionOperand(XPathExpression exprTop,
 	}
 	else
 	{
-		elog(ERROR, "(sub)expression or function operand expected at position %u of xpath expression, found '%c' instead",
-			 state->pos, *state->c);
+		elog(ERROR, "expression or function operand expected at position %u of xpath expression.", state->pos);
 	}
 	if (setSize)
 	{
@@ -1255,59 +1300,91 @@ readExpressionOperator(XPathParserState state, char *output, unsigned short *out
 }
 
 /*
- * Parse function argument list where 'nargs' is the expected number of arguments.
+ * Parse function argument list where 'func' contains information about arguments.
  * Any XPath expression operand, including location path or a subexpression can be the argument.
  *
  * Reading stops right after ')'.
+ *
+ * Number of arguments is returned.
+ * This may be higher than the 'nargs' field of XPathFunctionData, as long as 'nargsSoftLimit' is true.
  */
-static void
-parseFunctionArgList(XPathParserState state, unsigned short nargs, char *output, unsigned short *outPos,
+static int
+parseFunctionArgList(XPathParserState state, XPathFunction func, char *output, unsigned short *outPos,
 					 XPath * paths, unsigned short *pathCnt, bool mainExpr)
 {
 
 	XPathExpression exprTop = (XPathExpression) output;
-	unsigned short i;
+	bool		done = false;
+	unsigned short argsMax;
+	unsigned short i = 0;
 
-	Assert(nargs > 0);
+	Assert(func->nargs > 0);
+	argsMax = func->nargs + func->nargsSoftLimit;
 
-	skipWhiteSpace(state, false);
-	for (i = 1; i <= nargs; i++)
+	do
 	{
-		char		sep = (i < nargs) ? XNODE_CHAR_COMMA : XNODE_CHAR_RBRKT_RND;
-		XPathExprOperand opnd = readExpressionOperand(exprTop, state, sep, output, outPos,
-												   paths, pathCnt, mainExpr);
+		XPathExprOperand opnd;
 
+		if (i == XPATH_FUNC_MAX_ARGS)
+		{
+			elog(ERROR, "the maximum number of XPath function arguments is %u", XPATH_FUNC_MAX_ARGS);
+		}
+		skipWhiteSpace(state, false);
+		opnd = readExpressionOperand(exprTop, state, XPATH_TERM_NULL, output, outPos,
+									 paths, pathCnt, mainExpr);
+		i++;
 		checkExprOperand(exprTop, opnd, mainExpr);
 		skipWhiteSpace(state, false);
-		if (*state->c != sep)
+
+		if (*state->c != XNODE_CHAR_RBRKT_RND && *state->c != XNODE_CHAR_COMMA)
 		{
+			/* The current argument looks like a subexpression. */
 			XPathExprOperatorIdStore *opIdPtr = readExpressionOperator(state, output, outPos);
 			XPathExprOperator operator = XPATH_EXPR_OPERATOR(opIdPtr);
 
 			skipWhiteSpace(state, false);
+
 			if (operator != NULL)
 			{
 				XPathExpression subExpr = (XPathExpression) opnd;
+				unsigned char termFlags = XPATH_TERM_COMMA | XPATH_TERM_RBRKT_RND;
 
 				insertSubexpression(opnd, &opIdPtr, exprTop, output + *outPos - (char *) opnd, false, output, outPos);
-				parseXPathExpression(subExpr, state, sep, opIdPtr, output, outPos, true, true, paths,
+				parseXPathExpression(subExpr, state, termFlags, opIdPtr, output, outPos, true, true, paths,
 									 pathCnt, mainExpr);
 				operator = XPATH_EXPR_OPERATOR(opIdPtr);
 				subExpr->valType = operator->resType;
 			}
 			else
 			{
-				*outPos -= sizeof(XPathExprOperatorIdStore);
-			}
-
-			if (*state->c != sep)
-			{
-				elog(ERROR, "'%c' expected at position %u of the xpath expression", sep, state->pos);
+				elog(ERROR, "unrecognized character '%c' found at position %u of the xpath expression",
+					 *state->c, state->pos);
 			}
 		}
-		nextChar(state, true);
-		skipWhiteSpace(state, true);
+
+		if (*state->c == XNODE_CHAR_RBRKT_RND)
+		{
+			done = true;
+		}
+		Assert(*state->c == XNODE_CHAR_RBRKT_RND || *state->c == XNODE_CHAR_COMMA);
+		nextChar(state, done);
+	} while (!done);
+
+	if (!func->nargsSoftLimit)
+	{
+		if (i != func->nargs)
+		{
+			elog(ERROR, "%u argument(s) expected when calling function %s()", func->nargs, func->name);
+		}
 	}
+	else
+	{
+		if (i < func->nargs)
+		{
+			elog(ERROR, "at least %u argument(s) expected when calling function %s()", func->nargs, func->name);
+		}
+	}
+	return i;
 }
 
 /*
@@ -1322,11 +1399,25 @@ checkFunctionArgTypes(XPathExpression argList, XPathFunction function)
 	XPathValueType *typesRequired = function->argTypes;
 
 	c += sizeof(XPathExpressionData);
-	for (i = 0; i < argList->members; i++)
+	for (i = 1; i <= argList->members; i++)
 	{
 		XPathExprOperand opnd = (XPathExprOperand) c;
 		XPathValueType argType;
-		XPathValueType typeRequired = typesRequired[i];
+		XPathValueType typeRequired;
+
+		if (i <= function->nargs)
+		{
+			/* Types of the regular arguments are taken from the definition. */
+			typeRequired = typesRequired[i - 1];
+		}
+		else
+		{
+			/*
+			 * The additional parameters have type of the last regular
+			 * argument.
+			 */
+			typeRequired = typesRequired[function->nargs - 1];
+		}
 
 		if (opnd->type == XPATH_OPERAND_EXPR_TOP || opnd->type == XPATH_OPERAND_EXPR_SUB)
 		{
@@ -1346,7 +1437,7 @@ checkFunctionArgTypes(XPathExpression argList, XPathFunction function)
 			if (!xpathCasts[argType][typeRequired])
 			{
 				elog(ERROR, "%s cannot be cast to %s. check argument %u of %s() function",
-					 xpathValueTypes[argType], xpathValueTypes[typeRequired], i + 1, function->name);
+					 xpathValueTypes[argType], xpathValueTypes[typeRequired], i, function->name);
 			}
 		}
 	}
@@ -1448,7 +1539,6 @@ utilizeSpaceForVars(char *output, unsigned short *outPos)
 	}
 	expr->size -= shift;
 }
-
 
 
 void

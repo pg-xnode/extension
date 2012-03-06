@@ -10,44 +10,51 @@ XPathFunctionData xpathFunctions[] = {
 	{
 		XPATH_FUNC_TRUE,
 		"true", 0,
-		{0, 0, 0, 0},
+		{0, 0, 0, 0}, false,
 		{.noargs = xpathTrue},
 		XPATH_VAL_BOOLEAN, true
 	},
 	{
 		XPATH_FUNC_FALSE,
 		"false", 0,
-		{0, 0, 0, 0},
+		{0, 0, 0, 0}, false,
 		{.noargs = xpathFalse},
 		XPATH_VAL_BOOLEAN, true
 	},
 	{
 		XPATH_FUNC_POSITION,
 		"position", 0,
-		{0, 0, 0, 0},
+		{0, 0, 0, 0}, false,
 		{.noargs = xpathPosition},
 		XPATH_VAL_NUMBER, true
 	},
 	{
 		XPATH_FUNC_LAST,
 		"last", 0,
-		{0, 0, 0, 0},
+		{0, 0, 0, 0}, false,
 		{.noargs = xpathLast},
 		XPATH_VAL_NUMBER, true
 	},
 	{
 		XPATH_FUNC_CONTAINS,
 		"contains", 2,
-		{XPATH_VAL_STRING, XPATH_VAL_STRING, 0, 0},
+		{XPATH_VAL_STRING, XPATH_VAL_STRING, 0, 0}, false,
 		{.args = xpathContains},
 		XPATH_VAL_BOOLEAN, false
 	},
 	{
 		XPATH_FUNC_COUNT,
 		"count", 1,
-		{XPATH_VAL_NODESET, 0, 0, 0},
+		{XPATH_VAL_NODESET, 0, 0, 0}, false,
 		{.args = xpathCount},
 		XPATH_VAL_NUMBER, false
+	},
+	{
+		XPATH_FUNC_CONCAT,
+		"concat", 2,
+		{XPATH_VAL_STRING, XPATH_VAL_STRING, 0, 0}, true,
+		{.args = xpathConcat},
+		XPATH_VAL_STRING, false
 	}
 };
 
@@ -189,4 +196,38 @@ xpathContains(XPathExprState exprState, unsigned short nargs, XPathExprOperandVa
 	{
 		result->v.boolean = (strstr(argLeftStr, argRightStr) != NULL);
 	}
+}
+
+extern void
+xpathConcat(XPathExprState exprState, unsigned short nargs, XPathExprOperandValue args,
+			XPathExprOperandValue result)
+{
+
+	unsigned short i;
+	StringInfoData out;
+	XPathExprOperandValue currentArg = args;
+
+	Assert(nargs > 1);
+
+	out.maxlen = 32;
+	initStringInfo(&out);
+
+	for (i = 0; i < nargs; i++)
+	{
+		char	   *part;
+
+		if (!currentArg->isNull)
+		{
+			XPathExprOperandValueData argStr;
+
+			xpathValCastToStr(exprState, currentArg, &argStr);
+			part = (char *) getXPathOperandValue(exprState, argStr.v.stringId, XPATH_VAR_STRING);
+			appendStringInfoString(&out, part);
+		}
+		currentArg++;
+	}
+
+	result->type = XPATH_VAL_STRING;
+	result->isNull = false;
+	result->v.stringId = getXPathOperandId(exprState, out.data, XPATH_VAR_STRING);
 }

@@ -41,6 +41,16 @@ extern Datum xpath_array(PG_FUNCTION_ARGS);
 #define XPATH_ELEMENT_MAX_LEN				0xFF
 #define XPATH_EXPR_VAR_MAX					16
 
+/*
+ * Flags to represent terminating characters for given context.
+ */
+#define XPATH_TERM_NULL						(1 << 0)
+#define XPATH_TERM_RBRKT					(1 << 1)
+#define XPATH_TERM_RBRKT_RND				(1 << 2)
+#define XPATH_TERM_COMMA					(1 << 3)
+
+extern bool validXPathTermChar(char c, unsigned char flags);
+
 #define XPATH_LAST_LEVEL(xsc) ((xsc->depth + 1) == (xsc->xpath->depth - xsc->xpathRoot))
 #define XPATH_CURRENT_LEVEL(xsc)  ((XPathElement) ((char *) xsc->xpath + xsc->xpath->elements[xsc->xpathRoot + xsc->depth]))
 
@@ -189,8 +199,11 @@ typedef struct XPathNodeSetData
 typedef struct XPathNodeSetData *XPathNodeSet;
 
 
-#define XPATH_FUNC_NAME_MAX_LEN 16
-#define XPATH_FUNC_MAX_ARGS		4
+#define XPATH_FUNC_NAME_MAX_LEN		16
+/* Maximum number of regular arguments */
+#define XPATH_FUNC_MAX_ARGS_REG		4
+/* Total number of function arguments */
+#define XPATH_FUNC_MAX_ARGS			32
 
 typedef enum XPathFunctionId
 {
@@ -199,7 +212,8 @@ typedef enum XPathFunctionId
 	XPATH_FUNC_POSITION,
 	XPATH_FUNC_LAST,
 	XPATH_FUNC_CONTAINS,
-	XPATH_FUNC_COUNT
+	XPATH_FUNC_COUNT,
+	XPATH_FUNC_CONCAT
 }	XPathFunctionId;
 
 
@@ -425,7 +439,7 @@ typedef enum XPathNodeType
 
 
 extern XPathExprOperatorIdStore *parseXPathExpression(XPathExpression exprCurrent, XPathParserState state,
-					 char term, XPathExprOperatorIdStore * firstOpPtr, char *output, unsigned short *outPos, bool isSubExpr,
+					 unsigned char termFlags, XPathExprOperatorIdStore * firstOpPtr, char *output, unsigned short *outPos, bool isSubExpr,
   bool argList, XPath * subpaths, unsigned short *subpathCnt, bool mainExpr);
 
 extern XPath parseLocationPath(XPath * subpaths, bool isSubPath, unsigned short *subpathCnt, char **xpathPtr,
@@ -578,8 +592,16 @@ typedef struct XPathFunctionData
 {
 	XPathFunctionId id;
 	char		name[XPATH_FUNC_NAME_MAX_LEN];
-	unsigned short nargs;		/* Number of arguments */
-	XPathValueType argTypes[XPATH_FUNC_MAX_ARGS];
+
+	/* Regular arguments */
+	unsigned short nargs;
+	XPathValueType argTypes[XPATH_FUNC_MAX_ARGS_REG];
+
+	/*
+	 * Some function may have additional arguments, all having the same type
+	 * as last item of 'argTypes'.
+	 */
+	bool		nargsSoftLimit;
 
 	union
 	{
@@ -595,7 +617,7 @@ typedef struct XPathFunctionData
 typedef struct XPathFunctionData *XPathFunction;
 
 /* Total number of XPath functions the parser can recognize. */
-#define XPATH_FUNCTIONS			6
+#define XPATH_FUNCTIONS			7
 
 XPathFunctionData xpathFunctions[XPATH_FUNCTIONS];
 
@@ -615,5 +637,7 @@ extern void xpathCount(XPathExprState exprState, unsigned short nargs, XPathExpr
 		   XPathExprOperandValue result);
 extern void xpathContains(XPathExprState exprState, unsigned short nargs, XPathExprOperandValue args,
 			  XPathExprOperandValue result);
+extern void xpathConcat(XPathExprState exprState, unsigned short nargs, XPathExprOperandValue args,
+			XPathExprOperandValue result);
 
 #endif   /* XPATH_H_ */

@@ -78,7 +78,7 @@ xpath_in(PG_FUNCTION_ARGS)
 	state.output = state.result = (char *) palloc(XPATH_EXPR_BUFFER_SIZE);
 
 	outPos = sizeof(XPathExpressionData) + XPATH_EXPR_VAR_MAX * sizeof(XPathOffset);
-	parseXPathExpression(expr, &state, '\0', NULL, (char *) expr, &outPos, false, false, paths, &pathCount, true);
+	parseXPathExpression(expr, &state, XPATH_TERM_NULL, NULL, (char *) expr, &outPos, false, false, paths, &pathCount, true);
 
 	/*
 	 * Check if the path may be used as a base path.

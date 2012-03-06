@@ -483,7 +483,19 @@ prepareXPathExpression(XPathExpression exprOrig, XMLCompNodeHdr ctxElem,
 	memcpy(expr, exprOrig, exprOrig->size);
 	state->expr = expr;
 
-	countMax = expr->variables + expr->nlits;
+	/*
+	 * TODO
+	 *
+	 * Reorganize the counters. Currently, a function having arguments is not
+	 * considered variables. Thus 'nfuncs'(number of all functions) has to be
+	 * used here and consequently 'countMax' becomes oversized.
+	 *
+	 * It seems that both function kinds should be treated as variables. If
+	 * that gets implemented, it has to be reflected in dumpXPathExpression's
+	 * verbose mode.
+	 */
+	countMax = expr->variables + expr->nlits + expr->nfuncs;
+
 	state->countMax[XPATH_VAR_STRING] = countMax;
 	if (countMax > 0)
 	{
@@ -534,7 +546,7 @@ prepareXPathExpression(XPathExpression exprOrig, XMLCompNodeHdr ctxElem,
 	if (expr->nfuncs)
 	{
 		/*
-		 * Functions with no arguments can also be replaced by value before
+		 * Functions having no arguments can also be replaced by value before
 		 * evaluation starts.
 		 */
 		substituteFunctions(expr, xscan);
@@ -693,19 +705,26 @@ evaluateXPathOperand(XPathExprState exprState, XPathExprOperand operand, XMLScan
 	return resSize;
 }
 
+
+/*
+ * Evaluate XPath function having non-empty argument list.
+ *
+ * If a function has no arguments, its value only depends on context
+ * and as such has already been evaluated by substituteFunctions().
+ */
 static void
 evaluateXPathFunction(XPathExprState exprState, XPathExpression funcExpr, XMLScanOneLevel scan,
 					  XMLCompNodeHdr element, unsigned short recursionLevel, XPathExprOperandValue result)
 {
-
 	char	   *c = (char *) funcExpr + sizeof(XPathExpressionData);
 	unsigned short i;
-	XPathExprOperandValueData argsData[XPATH_FUNC_MAX_ARGS];
-	XPathExprOperandValue args = argsData;
-	XPathExprOperandValue argsTmp = args;
+	XPathExprOperandValue args,
+				argsTmp;
 	XPathFunctionId funcId;
 	XPathFunction function;
 	XpathFuncImpl funcImpl;
+
+	argsTmp = args = (XPathExprOperandValue) palloc(funcExpr->members * sizeof(XPathExprOperandValueData));
 
 	for (i = 0; i < funcExpr->members; i++)
 	{
@@ -737,7 +756,8 @@ evaluateXPathFunction(XPathExprState exprState, XPathExpression funcExpr, XMLSca
 	funcId = funcExpr->funcId;
 	function = &xpathFunctions[funcId];
 	funcImpl = function->impl.args;
-	funcImpl(exprState, function->nargs, args, result);
+	funcImpl(exprState, funcExpr->members, args, result);
+	pfree(args);
 }
 
 /*
@@ -1063,8 +1083,9 @@ substituteAttributes(XPathExprState exprState, XMLCompNodeHdr element)
  * All sub-paths in 'expression' are replaced with the matching node-sets.
  *
  * expression - XPath expression containing the paths we're evaluating
- * (replacing with node-sets). element - context: XML element that we'll test
- * using 'expression' when the substitution is complete.
+ * (replacing with node-sets).
+ *
+ * element - context node (XML element that we'll test using 'expression' when the substitution is complete)
  */
 static void
 substituteSubpaths(XPathExprState exprState, XPathExpression expression, XMLCompNodeHdr element, xmldoc document,
@@ -1095,7 +1116,9 @@ substituteSubpaths(XPathExprState exprState, XPathExpression expression, XMLComp
 			}
 			else
 			{
-				initXMLScan(&xscanSub, NULL, subPath, xpHdr, element, document, subPath->descendants > 0);
+				XMLCompNodeHdr parent = (subPath->relative) ? element : (XMLCompNodeHdr) XNODE_ROOT(document);
+
+				initXMLScan(&xscanSub, NULL, subPath, xpHdr, parent, document, subPath->descendants > 0);
 				while ((matching = getNextXMLNode(&xscanSub, false)) != NULL)
 				{
 					XMLNodeHdr *array = NULL;

@@ -1587,9 +1587,9 @@ select path('/root[@a or a]', '<root/>');
 (1 row)
 
 select path('/root[/root/a=x]', '<root><a>c</a><x>c</x></root>');
- path 
-------
- 
+             path              
+-------------------------------
+ <root><a>c</a><x>c</x></root>
 (1 row)
 
 select path('/root[/root/a=/x]', '<root><a>c</a><x>c</x></root>');
@@ -1793,6 +1793,18 @@ select path('/root//a[position()=last() and @i]', '<root><a i="3"/><a i="4"/><b>
     path    
 ------------
  <a i="5"/>
+(1 row)
+
+select xml.path('/root[concat("a", /root, "c", /root)="axcx"]', '<root>x</root>');
+      path      
+----------------
+ <root>x</root>
+(1 row)
+
+select xml.path('/root[concat("a", /root, "c")="axcx"]', '<root>x</root>');
+ path 
+------
+ 
 (1 row)
 
 drop table states;
