@@ -127,7 +127,6 @@ typedef enum XPathValueType
 }	XPathValueType;
 
 extern char *xpathValueTypes[];
-extern bool xpathCasts[4][4];
 
 typedef struct XPathValueData
 {
@@ -156,6 +155,10 @@ typedef xpathvaltype *xpathval;
 
 extern Datum xpathval_in(PG_FUNCTION_ARGS);
 extern Datum xpathval_out(PG_FUNCTION_ARGS);
+extern Datum xpathval_to_bool(PG_FUNCTION_ARGS);
+extern Datum xpathval_to_float8(PG_FUNCTION_ARGS);
+extern Datum xpathval_to_numeric(PG_FUNCTION_ARGS);
+extern Datum xpathval_to_int4(PG_FUNCTION_ARGS);
 extern Datum xpathval_to_xmlnode(PG_FUNCTION_ARGS);
 
 
@@ -569,17 +572,22 @@ typedef struct XPathExprStateData *XPathExprState;
 
 extern XPathExprState prepareXPathExpression(XPathExpression exprOrig, XMLCompNodeHdr ctxElem,
 					   xmldoc document, XPathHeader xpHdr, XMLScan xscan);
+extern void allocXPathExpressionVarCache(XPathExprState state, XPathExprVar varKind, bool init);
 extern void evaluateXPathExpression(XPathExprState exprState, XPathExpression expr, XMLScanOneLevel scan,
 						XMLCompNodeHdr element, unsigned short recursionLevel, XPathExprOperandValue result);
 
 extern void freeExpressionState(XPathExprState state);
 
-extern void xpathValCastToBool(XPathExprState exprState, XPathExprOperandValue valueSrc,
-				   XPathExprOperandValue valueDst);
-extern void xpathValCastToNum(XPathExprState exprState, XPathExprOperandValue valueSrc,
-				  XPathExprOperandValue valueDst);
-extern void xpathValCastToStr(XPathExprState exprState, XPathExprOperandValue valueSrc,
-				  XPathExprOperandValue valueDst);
+extern void castXPathExprOperandToBool(XPathExprState exprState, XPathExprOperandValue valueSrc,
+						   XPathExprOperandValue valueDst);
+extern void castXPathExprOperandToNum(XPathExprState exprState, XPathExprOperandValue valueSrc,
+						  XPathExprOperandValue valueDst);
+extern void castXPathExprOperandToStr(XPathExprState exprState, XPathExprOperandValue valueSrc,
+						  XPathExprOperandValue valueDst);
+
+extern bool castXPathValToBool(XPathValue src);
+extern float8 castXPathValToNum(XPathValue src);
+extern char *castXPathValToStr(XPathValue src);
 
 extern unsigned short getXPathOperandId(XPathExprState exprState, void *value, XPathExprVar varKind);
 extern void *getXPathOperandValue(XPathExprState exprState, unsigned short id, XPathExprVar varKind);

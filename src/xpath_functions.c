@@ -134,6 +134,12 @@ xpathLast(XMLScan xscan, XPathExprOperandValue result)
 }
 
 
+/*
+ * Even though types are checked at XPath parse time, each argument needs to be cast to the target type.
+ * The parser excludes casts that never work (specifically: non-node to nodeset), but it doesn't know
+ * if for example location path will produce string or number.
+ */
+
 void
 xpathCount(XPathExprState exprState, unsigned short nargs, XPathExprOperandValue args, XPathExprOperandValue result)
 {
@@ -163,14 +169,14 @@ xpathContains(XPathExprState exprState, unsigned short nargs, XPathExprOperandVa
 	char	   *argLeftStr = NULL,
 			   *argRightStr = NULL;
 
-	xpathValCastToStr(exprState, args, &argLeft);
+	castXPathExprOperandToStr(exprState, args, &argLeft);
 	if (!argLeft.isNull)
 	{
 		argLeftStr = (char *) getXPathOperandValue(exprState, argLeft.v.stringId, XPATH_VAR_STRING);
 	}
 	leftEmpty = (argLeft.isNull || strlen(argLeftStr) == 0);
 
-	xpathValCastToStr(exprState, args + 1, &argRight);
+	castXPathExprOperandToStr(exprState, args + 1, &argRight);
 	if (!argRight.isNull)
 	{
 		argRightStr = (char *) getXPathOperandValue(exprState, argRight.v.stringId, XPATH_VAR_STRING);
@@ -220,7 +226,7 @@ xpathConcat(XPathExprState exprState, unsigned short nargs, XPathExprOperandValu
 		{
 			XPathExprOperandValueData argStr;
 
-			xpathValCastToStr(exprState, currentArg, &argStr);
+			castXPathExprOperandToStr(exprState, currentArg, &argStr);
 			part = (char *) getXPathOperandValue(exprState, argStr.v.stringId, XPATH_VAR_STRING);
 			appendStringInfoString(&out, part);
 		}

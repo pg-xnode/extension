@@ -1,3 +1,7 @@
+/*
+ * Copyright (C) 2012, Antonin Houska
+ */
+
 #include "postgres.h"
 #include "fmgr.h"
 #include "funcapi.h"
@@ -15,29 +19,12 @@ static void retrieveColumnPaths(XMLScanContext xScanCtx, ArrayType *pathsColArr,
 static ArrayType *getResultArray(XMLScanContext ctx, XMLNodeOffset baseNodeOff);
 static xpathval getXPathExprValue(XPathExprState exprState, xmldoc document, bool *notNull,
 				  XPathExprOperandValue res);
+static char *getBoolValueString(bool value);
 
 
 /* The order must follow XPathValueType */
-char	   *xpathValueTypes[] = {"bool", "number", "string", "nodeset"};
+char	   *xpathValueTypes[] = {"boolean", "number", "string", "nodeset"};
 
-/*
- * Check here quickly which cast is (not) allowed instead of calling the
- * appropriate castTo... function. This matrix is useful when no particular
- * value needs to be cast.
- *
- * Row represents source type, column the target type. The order always
- * follows XPathValueType.
- */
-bool		xpathCasts[4][4] = {
-	{true, false, false, false},
-	{true, true, false, false},
-	{true, true, true, false},
-	{true, false, true, true}
-};
-
-/*
- * Copyright (C) 2012, Antonin Houska
- */
 
 PG_FUNCTION_INFO_V1(xpath_in);
 
@@ -436,10 +423,24 @@ xpath_array(PG_FUNCTION_ARGS)
 	SRF_RETURN_DONE(fctx);
 }
 
+/*
+ * Functions to cast operand value.
+ * A separate instance is used for the target value in order to preserve the original value.
+ * (As long as union is used, the cast would invalidate the source value if done in-place.)
+ */
+
 void
-xpathValCastToBool(XPathExprState exprState, XPathExprOperandValue valueSrc, XPathExprOperandValue valueDst)
+castXPathExprOperandToBool(XPathExprState exprState, XPathExprOperandValue valueSrc, XPathExprOperandValue valueDst)
 {
+
 	valueDst->type = XPATH_VAL_BOOLEAN;
+	valueDst->isNull = valueSrc->isNull;
+	if (valueSrc->isNull)
+	{
+		valueDst->v.boolean = false;
+		return;
+	}
+
 	switch (valueSrc->type)
 	{
 		case XPATH_VAL_BOOLEAN:
@@ -473,21 +474,79 @@ xpathValCastToBool(XPathExprState exprState, XPathExprOperandValue valueSrc, XPa
 	}
 }
 
+/*
+* Neither null value nor NaN strings expected.
+*/
 void
-xpathValCastToStr(XPathExprState exprState, XPathExprOperandValue valueSrc, XPathExprOperandValue valueDst)
+castXPathExprOperandToNum(XPathExprState exprState, XPathExprOperandValue valueSrc, XPathExprOperandValue valueDst)
 {
-	valueDst->type = XPATH_VAL_STRING;
+
+	valueDst->type = XPATH_VAL_NUMBER;
 	valueDst->isNull = valueSrc->isNull;
+	if (valueSrc->isNull)
+	{
+		return;
+	}
 
 	switch (valueSrc->type)
 	{
-		case XPATH_VAL_STRING:
+		case XPATH_VAL_BOOLEAN:
+			valueDst->v.num = valueSrc->v.boolean ? 1.0 : 0.0;
+			break;
 
-			if (!valueSrc->isNull)
+		case XPATH_VAL_NUMBER:
+			valueDst->v.num = valueSrc->v.num;
+			break;
+
+		case XPATH_VAL_STRING:
+			valueDst->v.num = xnodeGetNumValue((char *) getXPathOperandValue(exprState, valueSrc->v.stringId,
+														  XPATH_VAR_STRING));
+			break;
+
+		case XPATH_VAL_NODESET:
 			{
-				valueDst->v.stringId = valueSrc->v.stringId;
-				return;
+				XPathExprOperandValueData valueTmp;
+
+				castXPathExprOperandToStr(exprState, valueSrc, &valueTmp);
+				valueDst->v.num = xnodeGetNumValue((char *) getXPathOperandValue(exprState, valueTmp.v.stringId,
+														  XPATH_VAR_STRING));
+				break;
 			}
+
+		default:
+			elog(ERROR, "unable to cast type %u to number", valueSrc->type);
+			break;
+	}
+}
+
+void
+castXPathExprOperandToStr(XPathExprState exprState, XPathExprOperandValue valueSrc, XPathExprOperandValue valueDst)
+{
+	valueDst->type = XPATH_VAL_STRING;
+	valueDst->isNull = valueSrc->isNull;
+	if (valueSrc->isNull)
+	{
+		return;
+	}
+
+	switch (valueSrc->type)
+	{
+
+		case XPATH_VAL_BOOLEAN:
+			valueDst->v.stringId = getXPathOperandId(exprState, getBoolValueString(valueSrc->v.boolean),
+													 XPATH_VAR_STRING);
+			break;
+
+		case XPATH_VAL_NUMBER:
+			{
+				Datum		strDatum = DirectFunctionCall1Coll(float8out, InvalidOid, Float8GetDatum(valueSrc->v.num));
+
+				valueDst->v.stringId = getXPathOperandId(exprState, DatumGetCString(strDatum), XPATH_VAR_STRING);
+			}
+			break;
+
+		case XPATH_VAL_STRING:
+			valueDst->v.stringId = valueSrc->v.stringId;
 			break;
 
 		case XPATH_VAL_NODESET:
@@ -495,7 +554,7 @@ xpathValCastToStr(XPathExprState exprState, XPathExprOperandValue valueSrc, XPat
 			{
 				elog(ERROR, "document can't be cast to string");
 			}
-			if (!valueSrc->isNull)
+
 			{
 				XPathNodeSet ns = &valueSrc->v.nodeSet;
 				char	   *nodeStr;
@@ -531,34 +590,115 @@ xpathValCastToStr(XPathExprState exprState, XPathExprOperandValue valueSrc, XPat
 			}
 			break;
 
-
 		default:
 			elog(ERROR, "unable to cast type %u to string", valueSrc->type);
 			break;
 	}
 }
 
-/*
- * Neither null value nor NaN strings expected.
- */
-void
-xpathValCastToNum(XPathExprState exprState, XPathExprOperandValue valueSrc, XPathExprOperandValue valueDst)
+bool
+castXPathValToBool(XPathValue src)
 {
-	valueDst->type = XPATH_VAL_NUMBER;
-	switch (valueSrc->type)
+	switch (src->type)
 	{
+		case XPATH_VAL_BOOLEAN:
+			return src->v.booVal;
+
 		case XPATH_VAL_NUMBER:
-			valueDst->v.num = valueSrc->v.num;
-			break;
+			return !isnan(src->v.numVal) && src->v.numVal != 0.0;
 
 		case XPATH_VAL_STRING:
-			valueDst->v.num = xnodeGetNumValue((char *) getXPathOperandValue(exprState, valueSrc->v.stringId,
-														  XPATH_VAR_STRING));
-			break;
+			return strlen(src->v.strVal) > 0;
+
+		case XPATH_VAL_NODESET:
+			/* Empty XPathValue is never created. */
+			return true;
 
 		default:
-			elog(ERROR, "unable to cast type %u to number", valueSrc->type);
+			elog(ERROR, "unable to cast path value of type %u to boolean", src->type);
+			return false;
+	}
+}
+
+float8
+castXPathValToNum(XPathValue src)
+{
+
+	switch (src->type)
+	{
+		case XPATH_VAL_BOOLEAN:
+			return src->v.booVal ? 1.0 : 0.0;
+
+		case XPATH_VAL_NUMBER:
+			return src->v.numVal;
+
+		case XPATH_VAL_STRING:
+			return xnodeGetNumValue(src->v.strVal);
+
+		case XPATH_VAL_NODESET:
+			{
+				XMLNodeHdr	node = (XMLNodeHdr) ((char *) src + src->v.nodeSetRoot);
+				char	   *nodeStr;
+
+				if (node->kind == XMLNODE_DOC)
+				{
+					elog(ERROR, "document can't be cast to number");
+				}
+
+				if (node->kind == XMLNODE_ELEMENT)
+				{
+					nodeStr = getElementNodeStr((XMLCompNodeHdr) node);
+				}
+				else
+				{
+					nodeStr = getNonElementNodeStr(node);
+				}
+				return xnodeGetNumValue(nodeStr);
+			}
+
+		default:
+			elog(ERROR, "unable to cast path value of type %u to number", src->type);
+			return 0.0;
+	}
+}
+
+char *
+castXPathValToStr(XPathValue src)
+{
+	Datum		strDatum;
+
+	switch (src->type)
+	{
+		case XPATH_VAL_BOOLEAN:
+			return getBoolValueString(src->v.booVal);
+
+		case XPATH_VAL_NUMBER:
+			strDatum = DirectFunctionCall1Coll(float8out, InvalidOid, Float8GetDatum(src->v.numVal));
+			return DatumGetCString(strDatum);
+
+		case XPATH_VAL_STRING:
+			{
+				char	   *str = NULL;
+				unsigned int len = strlen(src->v.strVal);
+
+				str = (char *) palloc(len + 1);
+				memcpy(str, src->v.strVal, len);
+
+				str[len] = '\0';
+				return str;
+			}
+
+		case XPATH_VAL_NODESET:
+			{
+				char	   *data = (char *) src;
+				XMLNodeOffset rootNdOff = src->v.nodeSetRoot;
+
+				return dumpXMLNode(data, rootNdOff);
+			}
 			break;
+		default:
+			elog(ERROR, "unrecognized type of xpath value: %u", src->type);
+			return NULL;
 	}
 }
 
@@ -567,7 +707,8 @@ getXPathOperandId(XPathExprState exprState, void *value, XPathExprVar varKind)
 {
 	if (exprState->count[varKind] == exprState->countMax[varKind])
 	{
-		elog(ERROR, "getXPathOperandId() called too many times for variable kind %u", varKind);
+		elog(DEBUG1, "reallocating cache for variable kind %u", varKind);
+		allocXPathExpressionVarCache(exprState, varKind, false);
 	}
 
 	switch (varKind)
@@ -685,6 +826,7 @@ getResultArray(XMLScanContext ctx, XMLNodeOffset baseNodeOff)
 	{
 		ctx->colResNulls = (bool *) palloc(ctx->columns * sizeof(bool));
 	}
+
 	for (i = 0; i < ctx->columns; i++)
 	{
 		xpathval	colValue = NULL;
@@ -752,6 +894,7 @@ getXPathExprValue(XPathExprState exprState, xmldoc document, bool *notNull, XPat
 	{
 		return retValue;
 	}
+
 	if (res->type == XPATH_VAL_NODESET)
 	{
 		if (res->v.nodeSet.isDocument)
@@ -897,6 +1040,7 @@ getXPathExprValue(XPathExprState exprState, xmldoc document, bool *notNull, XPat
 			output = (char *) palloc(resSize);
 			xpval = (XPathValue) VARDATA(output);
 			xpval->type = res->type;
+
 			if (res->type == XPATH_VAL_NUMBER)
 			{
 				xpval->v.numVal = res->v.num;
@@ -930,6 +1074,26 @@ getXPathExprValue(XPathExprState exprState, xmldoc document, bool *notNull, XPat
 	return retValue;
 }
 
+static char *
+getBoolValueString(bool value)
+{
+	StringInfoData out;
+
+	out.maxlen = 6;				/* 'false' + '\0' */
+	out.data = (char *) palloc(out.maxlen);
+	initStringInfo(&out);
+	if (value)
+	{
+		appendStringInfo(&out, "%s", "true");
+	}
+	else
+	{
+		appendStringInfo(&out, "%s", "false");
+	}
+	return out.data;
+}
+
+
 PG_FUNCTION_INFO_V1(xpathval_in);
 
 Datum
@@ -944,58 +1108,66 @@ Datum
 xpathval_out(PG_FUNCTION_ARGS)
 {
 	xpathval	xpval = PG_GETARG_VARLENA_P(0);
-	XPathValue	xp = (XPathValue) VARDATA(xpval);
-	StringInfoData out;
+	XPathValue	xpv = (XPathValue) VARDATA(xpval);
+	char	   *result = castXPathValToStr(xpv);
 
-	switch (xp->type)
-	{
-		case XPATH_VAL_BOOLEAN:
-			out.maxlen = 6;		/* 'false' + '\0' */
-			out.data = (char *) palloc(out.maxlen);
-			resetStringInfo(&out);
-			if (xp->v.booVal)
-			{
-				appendStringInfo(&out, "%s", "true");
-			}
-			else
-			{
-				appendStringInfo(&out, "%s", "false");
-			}
-			PG_RETURN_CSTRING(out.data);
-			break;
-
-		case XPATH_VAL_NUMBER:
-			out.maxlen = 8;
-			out.data = (char *) palloc(out.maxlen);
-			resetStringInfo(&out);
-			appendStringInfo(&out, "%f", xp->v.numVal);
-			PG_RETURN_CSTRING(out.data);
-			break;
-
-		case XPATH_VAL_STRING:
-			{
-				unsigned int len = strlen(xp->v.strVal);
-
-				out.data = (char *) palloc(len + 1);
-				memcpy(out.data, xp->v.strVal, len);
-				out.data[len] = '\0';
-				PG_RETURN_CSTRING(out.data);
-			}
-			break;
-		case XPATH_VAL_NODESET:
-			{
-				char	   *data = (char *) VARDATA(xpval);
-				XMLNodeOffset rootNdOff = xp->v.nodeSetRoot;
-
-				PG_RETURN_CSTRING(dumpXMLNode(data, rootNdOff));
-			}
-			break;
-		default:
-			elog(ERROR, "unrecognized type of xpath value: %u", xp->type);
-			break;
-	}
-	PG_RETURN_NULL();
+	PG_RETURN_CSTRING(result);
 }
+
+
+PG_FUNCTION_INFO_V1(xpathval_to_bool);
+
+Datum
+xpathval_to_bool(PG_FUNCTION_ARGS)
+{
+	xpathval	xpval = PG_GETARG_VARLENA_P(0);
+	XPathValue	xpv = (XPathValue) VARDATA(xpval);
+	bool		result = castXPathValToBool(xpv);
+
+	PG_RETURN_BOOL(result);
+}
+
+
+PG_FUNCTION_INFO_V1(xpathval_to_float8);
+
+Datum
+xpathval_to_float8(PG_FUNCTION_ARGS)
+{
+	xpathval	xpval = PG_GETARG_VARLENA_P(0);
+	XPathValue	xpv = (XPathValue) VARDATA(xpval);
+	float8		result = castXPathValToNum(xpv);
+
+	PG_RETURN_FLOAT8(result);
+}
+
+
+PG_FUNCTION_INFO_V1(xpathval_to_numeric);
+
+Datum
+xpathval_to_numeric(PG_FUNCTION_ARGS)
+{
+	xpathval	xpval = PG_GETARG_VARLENA_P(0);
+	XPathValue	xpv = (XPathValue) VARDATA(xpval);
+	float8		resFloat = castXPathValToNum(xpv);
+	Datum		resDatum = DirectFunctionCall1Coll(float8_numeric, InvalidOid, Float8GetDatum(resFloat));
+
+	PG_RETURN_DATUM(resDatum);
+}
+
+
+PG_FUNCTION_INFO_V1(xpathval_to_int4);
+
+Datum
+xpathval_to_int4(PG_FUNCTION_ARGS)
+{
+	xpathval	xpval = PG_GETARG_VARLENA_P(0);
+	XPathValue	xpv = (XPathValue) VARDATA(xpval);
+	float8		resFloat = castXPathValToNum(xpv);
+	Datum		resDatum = DirectFunctionCall1Coll(dtoi4, InvalidOid, Float8GetDatum(resFloat));
+
+	PG_RETURN_DATUM(resDatum);
+}
+
 
 PG_FUNCTION_INFO_V1(xpathval_to_xmlnode);
 
@@ -1022,6 +1194,7 @@ xpathval_to_xmlnode(PG_FUNCTION_ARGS)
 	}
 	else
 	{
+		elog(ERROR, "%s can't be cast to node", xpathValueTypes[xp->type]);
 		PG_RETURN_NULL();
 	}
 }

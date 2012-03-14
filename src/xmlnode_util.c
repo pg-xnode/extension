@@ -476,9 +476,13 @@ xnodeGetNumValue(char *str)
 
 	errno = 0;
 	result = strtod(str, &c);
-	if (errno != 0)
+	while (*c != '\0')
 	{
-		elog(ERROR, "unable to cast %s to number", str);
+		if (!XNODE_WHITESPACE(c))
+		{
+			elog(ERROR, "%s can't be cast to number", str);
+		}
+		c++;
 	}
 	return result;
 }

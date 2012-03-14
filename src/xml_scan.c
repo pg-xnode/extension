@@ -287,7 +287,7 @@ getNextXMLNode(XMLScan xscan, bool removed)
 								 xscan->document, xscan->xpathHeader, xscan);
 
 						evaluateXPathExpression(exprState, exprState->expr, scanLevel, currentElement, 0, &result);
-						xpathValCastToBool(exprState, &result, &resultBool);
+						castXPathExprOperandToBool(exprState, &result, &resultBool);
 						passed = resultBool.v.boolean;
 						freeExpressionState(exprState);
 					}
@@ -477,72 +477,24 @@ prepareXPathExpression(XPathExpression exprOrig, XMLCompNodeHdr ctxElem,
 {
 	XPathExpression expr = (XPathExpression) palloc(exprOrig->size);
 	XPathExprState state = (XPathExprState) palloc(sizeof(XPathExprStateData));
-	unsigned int size;
-	unsigned short countMax;
 
 	memcpy(expr, exprOrig, exprOrig->size);
 	state->expr = expr;
 
-	/*
-	 * TODO
-	 *
-	 * Reorganize the counters. Currently, a function having arguments is not
-	 * considered variables. Thus 'nfuncs'(number of all functions) has to be
-	 * used here and consequently 'countMax' becomes oversized.
-	 *
-	 * It seems that both function kinds should be treated as variables. If
-	 * that gets implemented, it has to be reflected in dumpXPathExpression's
-	 * verbose mode.
-	 */
-	countMax = expr->variables + expr->nlits + expr->nfuncs;
-
-	state->countMax[XPATH_VAR_STRING] = countMax;
-	if (countMax > 0)
-	{
-		size = countMax * sizeof(char *);
-		state->strings = (char **) palloc(size);
-		memset(state->strings, 0, size);
-	}
-	else
-	{
-		state->strings = NULL;
-	}
-	state->count[XPATH_VAR_STRING] = 0;
+	allocXPathExpressionVarCache(state, XPATH_VAR_STRING, true);
 
 	/* Replace attribute names with the values found in the current node.  */
 	substituteAttributes(state, ctxElem);
 
-	/*
-	 * At the moment we don't know whether all paths will become node sets,
-	 * single nodes or combination of both. Thus both arrays must be sized to
-	 * the number of paths.
-	 */
-	countMax = expr->npaths;
-	state->countMax[XPATH_VAR_NODE_SINGLE] = countMax;
-	state->countMax[XPATH_VAR_NODE_ARRAY] = countMax;
-	if (countMax > 0)
-	{
-		size = countMax * sizeof(XMLNodeHdr);
-		state->nodes = (XMLNodeHdr *) palloc(size);
-		memset(state->nodes, 0, size);
-
-		size = countMax * sizeof(XMLNodeHdr *);
-		state->nodeSets = (XMLNodeHdr **) palloc(size);
-		memset(state->nodeSets, 0, size);
-	}
-	else
-	{
-		state->nodes = NULL;
-		state->nodeSets = NULL;
-	}
-	state->count[XPATH_VAR_NODE_SINGLE] = 0;
-	state->count[XPATH_VAR_NODE_ARRAY] = 0;
+	allocXPathExpressionVarCache(state, XPATH_VAR_NODE_SINGLE, true);
+	allocXPathExpressionVarCache(state, XPATH_VAR_NODE_ARRAY, true);
 
 	if (expr->npaths > 0)
 	{
 		/* Replace paths with matching node-sets. */
 		substituteSubpaths(state, expr, ctxElem, document, xpHdr);
 	}
+
 	if (expr->nfuncs)
 	{
 		/*
@@ -554,6 +506,130 @@ prepareXPathExpression(XPathExpression exprOrig, XMLCompNodeHdr ctxElem,
 	return state;
 }
 
+
+/*
+ * Size is estimated for the initial allocation so that reallocation may not be needed.
+ */
+void
+allocXPathExpressionVarCache(XPathExprState state, XPathExprVar varKind, bool init)
+{
+	unsigned short increment = 0;
+	unsigned short unitSize;
+	unsigned int maxOrig;
+	void	   *chunkOrig = NULL;
+	XPathExpression expr = state->expr;
+
+	if (init)
+	{
+		state->count[varKind] = 0;
+		state->countMax[varKind] = 0;
+	}
+
+	switch (varKind)
+	{
+		case XPATH_VAR_STRING:
+			if (init)
+			{
+				state->strings = NULL;
+			}
+			chunkOrig = state->strings;
+			unitSize = sizeof(char *);
+
+			/*
+			 * TODO Reorganize the counters. Currently, a function having
+			 * arguments is not considered a variable. Thus 'nfuncs'(number of
+			 * all functions) has to be used here and consequently 'countMax'
+			 * becomes oversized.
+			 *
+			 * It seems that both function kinds should be treated as
+			 * variables. If that gets implemented, it has to be reflected in
+			 * dumpXPathExpression's verbose mode.
+			 */
+			increment = expr->variables + expr->nlits + expr->nfuncs;
+			break;
+
+		case XPATH_VAR_NODE_SINGLE:
+			if (init)
+			{
+				state->nodes = NULL;
+			}
+			chunkOrig = state->nodes;
+			unitSize = sizeof(XMLNodeHdr);
+
+			/*
+			 * At the moment we don't know whether all paths will become node
+			 * sets, single nodes or combination of both. Therefore 'npaths'
+			 * is used for both XPATH_VAR_NODE_SINGLE and
+			 * XPATH_VAR_NODE_ARRAY.
+			 */
+			increment = expr->npaths;
+			break;
+
+		case XPATH_VAR_NODE_ARRAY:
+			if (init)
+			{
+				state->nodeSets = NULL;
+			}
+			chunkOrig = state->nodeSets;
+			unitSize = sizeof(XMLNodeHdr *);
+
+			increment = expr->npaths;
+			break;
+
+		default:
+			elog(ERROR, "unrecognized variable type %u", varKind);
+			break;
+	}
+
+	/*
+	 * Sometimes the estimate may be 0 but storage for is yet needed. For
+	 * example, the expression only contains a location path, but the result
+	 * is cast to string at some point.
+	 *
+	 * Non-zero increment must be enforced in such a case.
+	 */
+	increment = (increment == 0 && !init) ? 4 : increment;
+
+	maxOrig = state->countMax[varKind];
+	state->countMax[varKind] += increment;
+
+	if (increment > 0)
+	{
+		unsigned int size = state->countMax[varKind] * unitSize;
+		unsigned int sizeOrig = maxOrig * unitSize;
+		void	   *chunkNew;
+
+		if (chunkOrig == NULL)
+		{
+			chunkNew = palloc(size);
+			memset(chunkNew, 0, size);
+		}
+		else
+		{
+			chunkNew = repalloc(chunkOrig, size);
+			memset((char *) chunkNew + sizeOrig, 0, size - sizeOrig);
+		}
+
+		switch (varKind)
+		{
+			case XPATH_VAR_STRING:
+				state->strings = (char **) chunkNew;
+				break;
+
+			case XPATH_VAR_NODE_SINGLE:
+				state->nodes = (XMLNodeHdr *) chunkNew;
+				break;
+
+			case XPATH_VAR_NODE_ARRAY:
+				state->nodeSets = (XMLNodeHdr **) chunkNew;
+				break;
+
+			default:
+				elog(ERROR, "unrecognized variable type %u", varKind);
+				break;
+		}
+	}
+}
 
 /*
  * 'element' is the 'owning element' of the predicate that we're just
@@ -731,11 +807,20 @@ evaluateXPathFunction(XPathExprState exprState, XPathExpression funcExpr, XMLSca
 		XPathExprOperand opnd = (XPathExprOperand) c;
 		unsigned int opndSize;
 
-		if (opnd->type == XPATH_OPERAND_EXPR_TOP || opnd->type == XPATH_OPERAND_EXPR_SUB)
+		if (opnd->type == XPATH_OPERAND_EXPR_TOP || opnd->type == XPATH_OPERAND_EXPR_SUB ||
+			opnd->type == XPATH_OPERAND_FUNC)
 		{
 			XPathExpression subExpr = (XPathExpression) opnd;
 
-			evaluateXPathExpression(exprState, subExpr, scan, element, recursionLevel, argsTmp);
+			if (opnd->type == XPATH_OPERAND_FUNC)
+			{
+				/* In this case, 'subExpr' means 'argument list'. */
+				evaluateXPathFunction(exprState, subExpr, scan, element, recursionLevel, argsTmp);
+			}
+			else
+			{
+				evaluateXPathExpression(exprState, subExpr, scan, element, recursionLevel, argsTmp);
+			}
 			opndSize = subExpr->size;
 		}
 		else
@@ -785,8 +870,9 @@ evaluateBinaryOperator(XPathExprState exprState, XPathExprOperandValue valueLeft
 					right;
 		XPathExprOperandValueData valueTmp;
 
-		if (valueLeft->type == XPATH_VAL_NODESET && valueRight->type == XPATH_VAL_NODESET && valueLeft->v.nodeSet.isDocument &&
-			valueRight->v.nodeSet.isDocument)
+		result->isNull = false;
+		if (valueLeft->type == XPATH_VAL_NODESET && valueRight->type == XPATH_VAL_NODESET &&
+		 valueLeft->v.nodeSet.isDocument && valueRight->v.nodeSet.isDocument)
 		{
 			elog(ERROR, "invalid xpath expression");
 		}
@@ -794,9 +880,9 @@ evaluateBinaryOperator(XPathExprState exprState, XPathExprOperandValue valueLeft
 		/*
 		 * Subexpression is currently the only type of operand of boolean type
 		 */
-		xpathValCastToBool(exprState, valueLeft, &valueTmp);
+		castXPathExprOperandToBool(exprState, valueLeft, &valueTmp);
 		left = valueTmp.v.boolean;
-		xpathValCastToBool(exprState, valueRight, &valueTmp);
+		castXPathExprOperandToBool(exprState, valueRight, &valueTmp);
 		right = valueTmp.v.boolean;
 
 		result->type = XPATH_VAL_BOOLEAN;
@@ -810,6 +896,7 @@ evaluateBinaryOperator(XPathExprState exprState, XPathExprOperandValue valueLeft
 		XPathValueType typeRight = valueRight->type;
 		XPathExprOperandValueData valueTmp;
 
+		result->isNull = false;
 		result->type = XPATH_VAL_BOOLEAN;
 		if (typeLeft == XPATH_VAL_BOOLEAN || typeRight == XPATH_VAL_BOOLEAN)
 		{
@@ -820,9 +907,9 @@ evaluateBinaryOperator(XPathExprState exprState, XPathExprOperandValue valueLeft
 			 * As we don't know which one is boolean and which one is
 			 * something else, cast both values to boolean
 			 */
-			xpathValCastToBool(exprState, valueLeft, &valueTmp);
+			castXPathExprOperandToBool(exprState, valueLeft, &valueTmp);
 			boolLeft = valueTmp.v.boolean;
-			xpathValCastToBool(exprState, valueRight, &valueTmp);
+			castXPathExprOperandToBool(exprState, valueRight, &valueTmp);
 			boolRight = valueTmp.v.boolean;
 			;
 			equal = boolLeft == boolRight;
@@ -940,6 +1027,7 @@ evaluateBinaryOperator(XPathExprState exprState, XPathExprOperandValue valueLeft
 			 operator->id == XPATH_EXPR_OPERATOR_LTE || operator->id == XPATH_EXPR_OPERATOR_GTE)
 	{
 		compareNumValues(exprState, valueLeft, valueRight, operator, result);
+		result->isNull = false;
 		result->type = XPATH_VAL_BOOLEAN;
 		return;
 	}
@@ -1032,6 +1120,7 @@ substituteAttributes(XPathExprState exprState, XMLCompNodeHdr element)
 		{
 			char	   *attrName = XNODE_CONTENT(child);
 			unsigned short i;
+			unsigned short matches = 0;
 			XPathOffset *varOffPtr = (XPathOffset *) ((char *) exprState->expr +
 												sizeof(XPathExpressionData));
 
@@ -1051,7 +1140,9 @@ substituteAttributes(XPathExprState exprState, XMLCompNodeHdr element)
 				{
 					char	   *attrValue = attrName + strlen(attrName) + 1;
 
-					if (exprState->strings[exprState->count[XPATH_VAR_STRING] + attrNr] == NULL)
+					matches++;
+					Assert(attrNr < exprState->countMax[XPATH_VAR_STRING]);
+					if (matches == 1)
 					{
 						exprState->strings[exprState->count[XPATH_VAR_STRING] + attrNr] = attrValue;
 					}
@@ -1069,7 +1160,7 @@ substituteAttributes(XPathExprState exprState, XMLCompNodeHdr element)
 			 * If at least one variable references the current attribute, the
 			 * potential next attribute needs a new unique number.
 			 */
-			if (exprState->strings[exprState->count[XPATH_VAR_STRING] + attrNr] != NULL)
+			if (matches > 0)
 			{
 				attrNr++;
 			}
@@ -1280,7 +1371,7 @@ compareNumValues(XPathExprState exprState, XPathExprOperandValue valueLeft, XPat
 			{
 				XPathExprOperandValueData valueTmp;
 
-				xpathValCastToNum(exprState, valueNonNum, &valueTmp);
+				castXPathExprOperandToNum(exprState, valueNonNum, &valueTmp);
 				num2 = valueTmp.v.num;
 				if (reverse)
 				{

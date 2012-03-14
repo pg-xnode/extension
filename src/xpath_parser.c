@@ -1419,7 +1419,8 @@ checkFunctionArgTypes(XPathExpression argList, XPathFunction function)
 			typeRequired = typesRequired[function->nargs - 1];
 		}
 
-		if (opnd->type == XPATH_OPERAND_EXPR_TOP || opnd->type == XPATH_OPERAND_EXPR_SUB)
+		if (opnd->type == XPATH_OPERAND_EXPR_TOP || opnd->type == XPATH_OPERAND_EXPR_SUB ||
+			opnd->type == XPATH_OPERAND_FUNC)
 		{
 			XPathExpression subExpr = (XPathExpression) opnd;
 
@@ -1434,10 +1435,10 @@ checkFunctionArgTypes(XPathExpression argList, XPathFunction function)
 
 		if (argType != typeRequired)
 		{
-			if (!xpathCasts[argType][typeRequired])
+			if (typeRequired == XPATH_VAL_NODESET && argType != XPATH_VAL_NODESET)
 			{
-				elog(ERROR, "%s cannot be cast to %s. check argument %u of %s() function",
-					 xpathValueTypes[argType], xpathValueTypes[typeRequired], i, function->name);
+				elog(ERROR, "%s type cannot be cast to nodeset. check argument %u of %s() function",
+					 xpathValueTypes[argType], i, function->name);
 			}
 		}
 	}

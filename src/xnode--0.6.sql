@@ -101,34 +101,80 @@ CREATE TYPE pathval (
 );
 
 
-CREATE FUNCTION doc(node) RETURNS doc
+CREATE FUNCTION node_to_doc(node) RETURNS doc
 	as 'MODULE_PATHNAME', 'xmlnode_to_xmldoc'
 	LANGUAGE C
 	IMMUTABLE
 	STRICT;
 
 CREATE CAST (node as doc)
-	WITH FUNCTION doc(node)
+	WITH FUNCTION node_to_doc(node)
 	AS IMPLICIT;
 
-CREATE FUNCTION node(doc) RETURNS node 
+
+CREATE FUNCTION doc_to_node(doc) RETURNS node 
 	as 'MODULE_PATHNAME', 'xmldoc_to_xmlnode'
 	LANGUAGE C
 	IMMUTABLE
 	STRICT;
 
 CREATE CAST (doc as node)
-	WITH FUNCTION node(doc)
+	WITH FUNCTION doc_to_node(doc)
 	AS IMPLICIT;
 
-CREATE FUNCTION node(pathval) RETURNS node 
+
+CREATE FUNCTION pathval_to_bool(pathval) RETURNS bool 
+	as 'MODULE_PATHNAME', 'xpathval_to_bool'
+	LANGUAGE C
+	IMMUTABLE
+	STRICT;
+
+CREATE CAST (pathval as bool)
+	WITH FUNCTION pathval_to_bool(pathval)
+	AS IMPLICIT;
+
+
+CREATE FUNCTION pathval_to_float8(pathval) RETURNS float8 
+	as 'MODULE_PATHNAME', 'xpathval_to_float8'
+	LANGUAGE C
+	IMMUTABLE
+	STRICT;
+
+CREATE CAST (pathval as float8)
+	WITH FUNCTION pathval_to_float8(pathval)
+	AS IMPLICIT;
+
+
+CREATE FUNCTION pathval_to_numeric(pathval) RETURNS numeric 
+	as 'MODULE_PATHNAME', 'xpathval_to_numeric'
+	LANGUAGE C
+	IMMUTABLE
+	STRICT;
+
+CREATE CAST (pathval as numeric)
+	WITH FUNCTION pathval_to_numeric(pathval)
+	AS IMPLICIT;
+
+
+CREATE FUNCTION pathval_to_int4(pathval) RETURNS int4 
+	as 'MODULE_PATHNAME', 'xpathval_to_int4'
+	LANGUAGE C
+	IMMUTABLE
+	STRICT;
+
+CREATE CAST (pathval as int4)
+	WITH FUNCTION pathval_to_int4(pathval)
+	AS IMPLICIT;
+
+
+CREATE FUNCTION pathval_to_node(pathval) RETURNS node 
 	as 'MODULE_PATHNAME', 'xpathval_to_xmlnode'
 	LANGUAGE C
 	IMMUTABLE
 	STRICT;
 
 CREATE CAST (pathval as node)
-	WITH FUNCTION node(pathval)
+	WITH FUNCTION pathval_to_node(pathval)
 	AS IMPLICIT;
 
 

@@ -457,6 +457,10 @@ select path('/root//a[position()=last() and @i]', '<root><a i="3"/><a i="4"/><b>
 select xml.path('/root[concat("a", /root, "c", /root)="axcx"]', '<root>x</root>');
 select xml.path('/root[concat("a", /root, "c")="axcx"]', '<root>x</root>');
 
+-- Nested functions. In addition, result has to be implicitly cast.
+select xml.path('concat(count(/root/a), /root)', '<root><b>50</b></root>');
+select xml.path('concat(count(/root), /root)', '<root><b>50</b></root>');
+
 -- Cleanup
 
 drop table states;
