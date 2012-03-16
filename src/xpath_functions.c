@@ -12,14 +12,14 @@ XPathFunctionData xpathFunctions[] = {
 		"true", 0,
 		{0, 0, 0, 0}, false,
 		{.noargs = xpathTrue},
-		XPATH_VAL_BOOLEAN, true
+		XPATH_VAL_BOOLEAN, false
 	},
 	{
 		XPATH_FUNC_FALSE,
 		"false", 0,
 		{0, 0, 0, 0}, false,
 		{.noargs = xpathFalse},
-		XPATH_VAL_BOOLEAN, true
+		XPATH_VAL_BOOLEAN, false
 	},
 	{
 		XPATH_FUNC_POSITION,
@@ -83,6 +83,7 @@ void
 xpathTrue(XMLScan xscan, XPathExprOperandValue result)
 {
 	result->type = XPATH_VAL_BOOLEAN;
+	result->isNull = false;
 	result->v.boolean = true;
 }
 
@@ -90,6 +91,7 @@ void
 xpathFalse(XMLScan xscan, XPathExprOperandValue result)
 {
 	result->type = XPATH_VAL_BOOLEAN;
+	result->isNull = false;
 	result->v.boolean = false;
 }
 
@@ -99,6 +101,7 @@ xpathPosition(XMLScan xscan, XPathExprOperandValue result)
 	XMLScanOneLevel scanLevel = XMLSCAN_CURRENT_LEVEL(xscan);
 
 	result->type = XPATH_VAL_NUMBER;
+	result->isNull = false;
 	result->v.num = scanLevel->contextPosition;
 }
 
@@ -151,6 +154,7 @@ xpathLast(XMLScan xscan, XPathExprOperandValue result)
 		scanLevel->contextSizeKnown = true;
 	}
 	result->type = XPATH_VAL_NUMBER;
+	result->isNull = false;
 	result->v.num = scanLevel->contextSize;
 }
 
