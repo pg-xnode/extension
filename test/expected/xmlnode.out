@@ -1031,6 +1031,18 @@ order by id asc;
     | 
 (17 rows)
 
+select xml.path('/root/@b', '<root><b>3</b></root>');
+ path 
+------
+ 
+(1 row)
+
+select xml.path('/root/@b', '<root b="1"><b>3</b></root>');
+ path 
+------
+ 1
+(1 row)
+
 select path('/state[@tld="at" or @area="78866"]/@name', data) from states;
       path       
 -----------------

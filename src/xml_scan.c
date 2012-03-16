@@ -258,7 +258,8 @@ getNextXMLNode(XMLScan xscan, bool removed)
 			/*
 			 * Evaluate the node according to its type
 			 */
-			if (currentNode->kind == XMLNODE_ELEMENT)
+			if (currentNode->kind == XMLNODE_ELEMENT &&
+				!(XPATH_LAST_LEVEL(xscan) && xscan->xpath->targNdKind != XMLNODE_ELEMENT))
 			{
 				XMLCompNodeHdr currentElement = (XMLCompNodeHdr) currentNode;
 				char	   *childFirst = XNODE_FIRST_REF(currentElement);
@@ -357,7 +358,13 @@ getNextXMLNode(XMLScan xscan, bool removed)
 			}
 			else if (XPATH_LAST_LEVEL(xscan) && !isOnIgnoreList(currentNode, xscan))
 			{
-				if (currentNode->kind == xscan->xpath->targNdKind)
+				/*
+				 * If the 'targNdKind' is XMLNODE_ELEMENT, it means that the
+				 * kind did match with path step above, but the node name did
+				 * not. In such a case we're not interested in the current
+				 * node anymore.
+				 */
+				if (currentNode->kind == xscan->xpath->targNdKind && xscan->xpath->targNdKind != XMLNODE_ELEMENT)
 				{
 					if (currentNode->kind == XMLNODE_TEXT || currentNode->kind == XMLNODE_COMMENT)
 					{

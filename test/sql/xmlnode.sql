@@ -195,6 +195,10 @@ select id, path_debug_print(path)
 from paths
 order by id asc;
 
+-- accidental match of attribute name and element name (bug found during development)
+select xml.path('/root/@b', '<root><b>3</b></root>');
+select xml.path('/root/@b', '<root b="1"><b>3</b></root>');
+
 -- some non-trivial XPath predicates
 select path('/state[@tld="at" or @area="78866"]/@name', data) from states;
 select path('/state[@tld="de" or @area="78866" and @population="0"]/@tld', data) from states;
