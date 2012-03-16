@@ -1172,6 +1172,14 @@ substituteAttributes(XPathExprState exprState, XMLCompNodeHdr element)
 				attrNr++;
 			}
 		}
+		else
+		{
+			/*
+			 * Attributes are first of the children. Thus if the current node
+			 * is not an attribute, we're done.
+			 */
+			break;
+		}
 		childrenLeft--;
 	}
 	exprState->count[XPATH_VAR_STRING] += attrNr;
