@@ -480,7 +480,7 @@ xnodeGetNumValue(char *str)
 	{
 		if (!XNODE_WHITESPACE(c))
 		{
-			elog(ERROR, "%s can't be cast to number", str);
+			elog(ERROR, "'%s' can't be cast to number", str);
 		}
 		c++;
 	}

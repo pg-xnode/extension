@@ -438,6 +438,7 @@ castXPathExprOperandToBool(XPathExprState exprState, XPathExprOperandValue value
 	if (valueSrc->isNull)
 	{
 		valueDst->v.boolean = false;
+		valueDst->isNull = false;
 		return;
 	}
 
@@ -483,9 +484,10 @@ castXPathExprOperandToNum(XPathExprState exprState, XPathExprOperandValue valueS
 
 	valueDst->type = XPATH_VAL_NUMBER;
 	valueDst->isNull = valueSrc->isNull;
+
 	if (valueSrc->isNull)
 	{
-		return;
+		elog(ERROR, "null value can't be cast to a number");
 	}
 
 	switch (valueSrc->type)

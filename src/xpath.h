@@ -123,7 +123,13 @@ typedef enum XPathValueType
 	XPATH_VAL_BOOLEAN = 0,
 	XPATH_VAL_NUMBER,
 	XPATH_VAL_STRING,
-	XPATH_VAL_NODESET
+	XPATH_VAL_NODESET,
+
+	/*
+	 * XPathValue type is never set to this this. The only purpose is to
+	 * declare that function argument can be of any type.
+	 */
+	XPATH_VAL_OBJECT
 }	XPathValueType;
 
 extern char *xpathValueTypes[];
@@ -215,6 +221,11 @@ typedef enum XPathFunctionId
 	XPATH_FUNC_POSITION,
 	XPATH_FUNC_LAST,
 	XPATH_FUNC_CONTAINS,
+
+	XPATH_FUNC_BOOLEAN,
+	XPATH_FUNC_NUMBER,
+	XPATH_FUNC_STRING,
+
 	XPATH_FUNC_COUNT,
 	XPATH_FUNC_CONCAT
 }	XPathFunctionId;
@@ -625,7 +636,7 @@ typedef struct XPathFunctionData
 typedef struct XPathFunctionData *XPathFunction;
 
 /* Total number of XPath functions the parser can recognize. */
-#define XPATH_FUNCTIONS			7
+#define XPATH_FUNCTIONS			10
 
 XPathFunctionData xpathFunctions[XPATH_FUNCTIONS];
 
@@ -641,6 +652,13 @@ extern void xpathLast(XMLScan xscan, XPathExprOperandValue result);
 /*
  * And then those with non-empty argument list.
  */
+extern void xpathBoolean(XPathExprState exprState, unsigned short nargs, XPathExprOperandValue args,
+			 XPathExprOperandValue result);
+extern void xpathNumber(XPathExprState exprState, unsigned short nargs, XPathExprOperandValue args,
+			XPathExprOperandValue result);
+extern void xpathString(XPathExprState exprState, unsigned short nargs, XPathExprOperandValue args,
+			XPathExprOperandValue result);
+
 extern void xpathCount(XPathExprState exprState, unsigned short nargs, XPathExprOperandValue args,
 		   XPathExprOperandValue result);
 extern void xpathContains(XPathExprState exprState, unsigned short nargs, XPathExprOperandValue args,

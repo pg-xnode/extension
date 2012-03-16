@@ -43,6 +43,27 @@ XPathFunctionData xpathFunctions[] = {
 		XPATH_VAL_BOOLEAN, false
 	},
 	{
+		XPATH_FUNC_BOOLEAN,
+		"boolean", 1,
+		{XPATH_VAL_OBJECT, 0, 0, 0}, false,
+		{.args = xpathBoolean},
+		XPATH_VAL_BOOLEAN, false
+	},
+	{
+		XPATH_FUNC_NUMBER,
+		"number", 1,
+		{XPATH_VAL_OBJECT, 0, 0, 0}, false,
+		{.args = xpathNumber},
+		XPATH_VAL_NUMBER, false
+	},
+	{
+		XPATH_FUNC_STRING,
+		"string", 1,
+		{XPATH_VAL_OBJECT, 0, 0, 0}, false,
+		{.args = xpathString},
+		XPATH_VAL_STRING, false
+	},
+	{
 		XPATH_FUNC_COUNT,
 		"count", 1,
 		{XPATH_VAL_NODESET, 0, 0, 0}, false,
@@ -141,6 +162,41 @@ xpathLast(XMLScan xscan, XPathExprOperandValue result)
  */
 
 void
+xpathBoolean(XPathExprState exprState, unsigned short nargs, XPathExprOperandValue args, XPathExprOperandValue result)
+{
+	XPathExprOperandValue src = args;
+
+	castXPathExprOperandToBool(exprState, src, result);
+}
+
+void
+xpathNumber(XPathExprState exprState, unsigned short nargs, XPathExprOperandValue args, XPathExprOperandValue result)
+{
+	XPathExprOperandValue src = args;
+
+	castXPathExprOperandToNum(exprState, src, result);
+}
+
+void
+xpathString(XPathExprState exprState, unsigned short nargs, XPathExprOperandValue args, XPathExprOperandValue result)
+{
+	XPathExprOperandValue src = args;
+
+	if (src->isNull)
+	{
+		char	   *emptyStr = (char *) palloc(sizeof(char));
+
+		emptyStr[0] = '\0';
+		result->v.stringId = getXPathOperandId(exprState, emptyStr, XPATH_VAR_STRING);
+		result->type = XPATH_VAL_STRING;
+		result->isNull = false;
+		return;
+	}
+
+	castXPathExprOperandToStr(exprState, src, result);
+}
+
+void
 xpathCount(XPathExprState exprState, unsigned short nargs, XPathExprOperandValue args, XPathExprOperandValue result)
 {
 	XPathNodeSet nodeSet = &args->v.nodeSet;
@@ -158,7 +214,7 @@ xpathCount(XPathExprState exprState, unsigned short nargs, XPathExprOperandValue
 	}
 }
 
-extern void
+void
 xpathContains(XPathExprState exprState, unsigned short nargs, XPathExprOperandValue args,
 			  XPathExprOperandValue result)
 {
@@ -204,7 +260,7 @@ xpathContains(XPathExprState exprState, unsigned short nargs, XPathExprOperandVa
 	}
 }
 
-extern void
+void
 xpathConcat(XPathExprState exprState, unsigned short nargs, XPathExprOperandValue args,
 			XPathExprOperandValue result)
 {
