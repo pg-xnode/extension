@@ -3,10 +3,12 @@ pg_xnode
 
 pg_xnode is an extension, allowing users of PostgreSQL database server to store XML documents and their parts in binary form. Such binary data can be queried and/or modified with no need to pass them to any external application or library (whether in binary or textual form).
 
+Document Object Model (DOM) concept is used to access parts of XML documents and to modify them.
+
 
 User information:
 
-http://cloud.github.com/downloads/ahouska/pg_xnode/pg_xnode_0.6.pdf
+http://cloud.github.com/downloads/ahouska/pg_xnode/pg_xnode_0.6.1.pdf
 
 
 Development information:

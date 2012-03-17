@@ -4,7 +4,7 @@ OBJS = xmlnode.o xpath.o xpath_parser.o xml_parser.o xmlnode_util.o xpath_functi
 xml_scan.o xml_update.o
 
 EXTENSION = xnode
-DATA = xnode--0.6.sql
+DATA = xnode--0.6.1.sql
 
 #REGRESS = xnode
 

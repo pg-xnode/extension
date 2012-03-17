@@ -397,4 +397,41 @@ xml.path_debug_print(xml.path xpath) returns text
    </para>
   </sect2>
  </sect1>
+ <appendix id="release">
+ <title>Release Notes</title>
+  <sect1>
+   <title>Release 0.6.0</title>
+   <para>
+    The first release to be published on www.pgxn.org
+   </para>
+  </sect1>
+
+  <sect1>
+   <title>Release 0.6.1</title>
+   <itemizedlist>
+    <listitem>
+     <para>
+      Added XPath core library functions <literal>true()</literal>, <literal>false()</literal>,
+      <literal>last()</literal>, <literal>concat()</literal>, <literal>boolean()</literal>,
+      <literal>number()</literal> and <literal>string()</literal>
+     </para>
+    </listitem>
+    <listitem>
+     <para>
+      Added DOM function <literal>xml.children()</literal>.
+     </para>
+    </listitem>
+    <listitem>
+     <para>
+      Added casts from <literal>xml.pathval</literal> to Postgres types.
+     </para>
+    </listitem>
+    <listitem>
+     <para>
+      Fixed several bugs and eliminated some inefficiencies
+     </para>
+    </listitem>
+   </itemizedlist>
+  </sect1>
+</appendix>
 </article>
