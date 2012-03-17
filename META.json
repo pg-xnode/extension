@@ -1,7 +1,7 @@
 {
    "name": "pg_xnode",
    "abstract": "Extension to support binary XML",
-   "description": "This extension contains set of data types to store XML document and its parts (nodes). It also implements XML parser and XPath processor.",
+   "description": "This extension contains set of data types to store XML document and its parts (nodes). Document Object Model (DOM) concepts are used to access and modify the XML documents.",
    "version": "0.6.0",
    "maintainer": [
       "Antonin Houska <antonin.houska@gmail.com>"
@@ -29,6 +29,6 @@
       "version": "1.0.0",
       "url": "http://pgxn.org/meta/spec.txt"
    },
-   "tags": ["XML", "XPath"],
+   "tags": ["XML", "XPath", "DOM"],
    "release_status": "unstable"
 }
