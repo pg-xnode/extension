@@ -465,6 +465,9 @@ select xml.path('/root[concat("a", /root, "c")="axcx"]', '<root>x</root>');
 select xml.path('concat(count(/root/a), /root)', '<root><b>50</b></root>');
 select xml.path('concat(count(/root), /root)', '<root><b>50</b></root>');
 
+-- DOM
+select xml.children('<root><a><!--cmnt--></a><b><?abc def?></b><c/></root>');
+
 -- Cleanup
 
 drop table states;

@@ -297,4 +297,9 @@ typedef enum XMLNodeAction
 	XMLNODE_ACTION_REMOVE
 }	XMLNodeAction;
 
+/*
+ * DOM functions
+ */
+extern Datum xmlnode_children(PG_FUNCTION_ARGS);
+
 #endif   /* XMLNODE_H */

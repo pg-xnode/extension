@@ -217,6 +217,32 @@ FROM nodes;
    </para>
   </sect2>
   <sect2>
+   <title><literal>xml.children()</literal></title>
+<synopsis>
+xml.children(xml.node node) returns xml.node[]
+</synopsis>
+   <para>
+    Returns array of <literal>node</literal>&apos;s child nodes or empty array if <literal>node</literal>
+    is a leaf node.
+   </para>
+   <para>
+    Only node at the immediate lower level of the tree is considered a child.
+    Recursive calls of the function on results has to be used to get nested nodes from the deeper levels
+    (i.e. <firstterm>descendants</firstterm>). 
+   </para>
+   <para>
+    Example:
+    <programlisting>
+SELECT xml.children(&apos;&lt;house&gt;&lt;cellar&gt;&lt;wine/&gt;&lt;/cellar&gt;&lt;floor/&gt;&lt;garret/&gt;&lt;/house&gt;&apos;);
+                   children                    
+-----------------------------------------------
+ {&lt;cellar&gt;&lt;wine/&gt;&lt;/cellar&gt;,&lt;floor/&gt;,&lt;garret/&gt;}
+(1 row)
+
+    </programlisting>
+   </para>
+  </sect2>
+  <sect2>
    <title><literal>xml.path()</literal> - scalar</title>
 <synopsis>
 xml.path(xml.path xpath, xml.doc document) returns xml.pathval

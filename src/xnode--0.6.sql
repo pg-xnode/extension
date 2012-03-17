@@ -192,12 +192,19 @@ CREATE FUNCTION @extschema@.path(@extschema@.path, @extschema@.path[], doc)
 	VOLATILE
 	STRICT;
 
+CREATE FUNCTION children(node)
+	RETURNS node[] 
+	as 'MODULE_PATHNAME', 'xmlnode_children'
+	LANGUAGE C
+	VOLATILE
+	STRICT;
 
-CREATE DOMAIN @extschema@.add_mode AS CHAR(1)
+
+CREATE DOMAIN add_mode AS CHAR(1)
 	NOT NULL
 	CHECK (VALUE ~ 'A|B|I|R|a|b|i|r');
 
-CREATE FUNCTION add(doc, @extschema@.path, node, @extschema@.add_mode)
+CREATE FUNCTION add(doc, @extschema@.path, node, add_mode)
 	RETURNS doc
 	as 'MODULE_PATHNAME', 'xmlnode_add'
 	LANGUAGE C

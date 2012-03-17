@@ -4,9 +4,12 @@
 
 #include "postgres.h"
 #include "funcapi.h"
+#include "catalog/pg_type.h"
 #include "mb/pg_wchar.h"
+#include "utils/array.h"
 #include "utils/builtins.h"
 #include "utils/palloc.h"
+#include "utils/syscache.h"
 
 #include "xmlnode.h"
 #include "xmlnode_util.h"
@@ -50,6 +53,47 @@ UTF8Interval nameCharIntervals[XNODE_NAME_CHAR_INTERVALS] =
 	{{0xcc, 0x80, 0x00, 0x00}, {0xcd, 0xaf, 0x00, 0x00}},
 	{{0xe2, 0x80, 0xbf, 0x00}, {0xe2, 0x81, 0x80, 0x00}},
 };
+
+/*
+ * Workaround for missing catalog entry (and constant Oid).
+ *
+ * The type name and namespace name constants must match those in xnode--<version>.sql
+ */
+
+#define XNODE_NAMESPACE_NAME	"xml"
+#define XNODE_TYPE_NAME			"node"
+
+typedef struct TypeInfo
+{
+	Oid			oid;
+	int			elmlen;
+	bool		elmbyval;
+	char		elmalign;
+} TypeInfo;
+
+static void
+initXNodeTypeInfo(TypeInfo *ti)
+{
+	HeapTuple	tup;
+	Oid			nameSpOid;
+	Form_pg_type typeStruct;
+
+	tup = SearchSysCache1(NAMESPACENAME, CStringGetDatum(XNODE_NAMESPACE_NAME));
+	Assert(HeapTupleIsValid(tup));
+	nameSpOid = HeapTupleGetOid(tup);
+	ReleaseSysCache(tup);
+
+	tup = SearchSysCache2(TYPENAMENSP, CStringGetDatum(XNODE_TYPE_NAME), ObjectIdGetDatum(nameSpOid));
+	Assert(HeapTupleIsValid(tup));
+	typeStruct = (Form_pg_type) GETSTRUCT(tup);
+
+	ti->oid = HeapTupleGetOid(tup);
+	ti->elmlen = typeStruct->typlen;
+	ti->elmbyval = typeStruct->typbyval;
+	ti->elmalign = typeStruct->typalign;
+	ReleaseSysCache(tup);
+}
+
 
 PG_MODULE_MAGIC;
 
@@ -335,6 +379,56 @@ getXMLNodeOffsetByteWidth(XMLNodeOffset o)
 /*
  * TODO xmlnode_send(), xmlnode_receive() functions.
  */
-/*
- * TODO Operators
- */
+
+
+
+PG_FUNCTION_INFO_V1(xmlnode_children);
+
+Datum
+xmlnode_children(PG_FUNCTION_ARGS)
+{
+	xmlnode		nodeRaw = (xmlnode) PG_GETARG_VARLENA_P(0);
+	char	   *data = (char *) VARDATA(nodeRaw);
+	XMLNodeOffset rootNdOff = XNODE_ROOT_OFFSET(nodeRaw);
+	XMLNodeHdr	node = (XMLNodeHdr) (data + rootNdOff);
+	TypeInfo	nodeType;
+	ArrayType  *result;
+
+	initXNodeTypeInfo(&nodeType);
+
+	if (node->kind == XMLNODE_DOC || node->kind == XMLNODE_ELEMENT || node->kind == XMLNODE_DOC_FRAGMENT)
+	{
+		XMLCompNodeHdr root = (XMLCompNodeHdr) node;
+		unsigned short children = root->children;
+		Datum	   *elems;
+		char	   *childOffPtr;
+		unsigned short i;
+
+		if (children == 0)
+		{
+			result = construct_empty_array(nodeType.oid);
+			PG_RETURN_POINTER(result);
+		}
+
+		elems = (Datum *) palloc(children * sizeof(Datum));
+
+		childOffPtr = XNODE_FIRST_REF(root);
+		for (i = 0; i < children; i++)
+		{
+			XMLNodeOffset childOff = readXMLNodeOffset(&childOffPtr, XNODE_GET_REF_BWIDTH(root), true);
+			XMLNodeHdr	childNode = (XMLNodeHdr) (data + rootNdOff - childOff);
+			char	   *childNodeCopy = copyXMLNode(childNode, NULL, true, NULL);
+
+			elems[i] = PointerGetDatum(childNodeCopy);
+		}
+
+		result = construct_array(elems, children, nodeType.oid, nodeType.elmlen, nodeType.elmbyval,
+								 nodeType.elmalign);
+		PG_RETURN_POINTER(result);
+	}
+	else
+	{
+		result = construct_empty_array(nodeType.oid);
+		PG_RETURN_POINTER(result);
+	}
+}

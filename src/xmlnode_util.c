@@ -205,12 +205,15 @@ getXMLNodeKindStr(XMLNodeKind k)
  * Returns a copy of a node and it's children if there are any.
  *
  * 'node' - the node to copy
+ *
  * 'target' - if not NULL, it's assumed that sufficient space is available and the copy is written there.
  * If NULL, the appropriate chunk of memory is palloc'd by the function.
- * 'xmlnode' - if 'true', valid value of 'xmlnode' (varlena) type is returned. Otherwise we return 'raw
- * data'.
+ *
+ * 'xmlnode' - if 'true', valid value of 'xmlnode' (varlena) type is returned. Otherwise we return
+ * block of memory containing XMLNodeHdrData structure as well as all (at lower positions located) descendants.
+ *
  * 'root' - at which position of the returned subtree its root element
- * is located. If 'xmlnode' is true, VARHDRSZ is not included in this offset.
+ * is located. If 'xmlnode' is true, VARHDRSZ is *not* included in this offset.
  */
 char *
 copyXMLNode(XMLNodeHdr node, char *target, bool xmlnode, XMLNodeOffset * root)

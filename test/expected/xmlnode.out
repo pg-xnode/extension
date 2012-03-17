@@ -1831,6 +1831,12 @@ select xml.path('concat(count(/root), /root)', '<root><b>50</b></root>');
  150
 (1 row)
 
+select xml.children('<root><a><!--cmnt--></a><b><?abc def?></b><c/></root>');
+                    children                    
+------------------------------------------------
+ {<a><!--cmnt--></a>,"<b><?abc def?></b>",<c/>}
+(1 row)
+
 drop table states;
 DROP TABLE
 drop table paths;
