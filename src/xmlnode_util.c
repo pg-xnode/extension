@@ -97,6 +97,10 @@ getXMLNodeSize(XMLNodeHdr node, bool subtree)
 			childOffPtr = XNODE_FIRST_REF((XMLCompNodeHdr) node);
 			lastChildOffPtr = XNODE_LAST_REF((XMLCompNodeHdr) node);
 			references = 0;
+
+			/*
+			 * TODO The whole loop should be avoided if 'subtree' is 'false'.
+			 */
 			while (childOffPtr <= lastChildOffPtr)
 			{
 				XMLNodeOffset childOff = readXMLNodeOffset(&childOffPtr,
@@ -326,6 +330,60 @@ copyXMLNode(XMLNodeHdr node, char *target, bool xmlnode, XMLNodeOffset * root)
 	}
 }
 
+/*
+ * Copy document fragment (i.e. children of 'fragNode', but not 'fragNode' itself)
+ * to a memory starting at '*resCursorPtr'.
+ * When done, '*resCursorPtr' points right after the copied fragment.
+ *
+ * Returns array where each element represents offset of particular new (just inserted) node
+ * from the beginning of the output memory chunk.
+ */
+char	  **
+copyXMLDocFragment(XMLCompNodeHdr fragNode, char **resCursorPtr)
+{
+	char	   *refs = XNODE_FIRST_REF(fragNode);
+	char		bwidth = XNODE_GET_REF_BWIDTH(fragNode);
+	unsigned short int i;
+	char	  **newNdRoots;
+	char	   *resCursor = *resCursorPtr;
+
+	if (fragNode->common.kind != XMLNODE_DOC_FRAGMENT)
+	{
+		elog(ERROR, "incorrect node kind %s where document fragment expected",
+			 getXMLNodeKindStr(fragNode->common.kind));
+	}
+	newNdRoots = (char **) palloc(fragNode->children * sizeof(char *));
+	for (i = 0; i < fragNode->children; i++)
+	{
+		XMLNodeHdr	newNdPart = (XMLNodeHdr) ((char *) fragNode - readXMLNodeOffset(&refs, bwidth, true));
+		XMLNodeOffset newNdPartOff;
+
+		copyXMLNode(newNdPart, resCursor, false, &newNdPartOff);
+		newNdRoots[i] = resCursor + newNdPartOff;
+		resCursor += getXMLNodeSize(newNdPart, true);
+	}
+	*resCursorPtr = resCursor;
+	return newNdRoots;
+}
+
+void
+copyXMLNodeOrDocFragment(XMLNodeHdr newNode, unsigned int newNdSize, char **resCursor,
+						 char **newNdRoot, char ***newNdRoots)
+{
+
+	XMLNodeOffset newNdOff;
+
+	if (newNode->kind == XMLNODE_DOC_FRAGMENT)
+	{
+		*newNdRoots = copyXMLDocFragment((XMLCompNodeHdr) newNode, resCursor);
+	}
+	else
+	{
+		copyXMLNode(newNode, *resCursor, false, &newNdOff);
+		*newNdRoot = *resCursor + newNdOff;
+		*resCursor += newNdSize;
+	}
+}
 
 /*
  * Returns first leaf node of a subtree that starts with 'elh'. This is tight

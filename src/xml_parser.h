@@ -85,6 +85,15 @@ typedef enum XNodeXDeclAttNames
 
 typedef struct XMLParserStateData
 {
+	/*
+	 * Besides document parsing, the code is sometimes used to check attribute
+	 * value in a different context (e.g. when 'element constructor receives
+	 * the attributes in array)
+	 *
+	 * 'attrValue' must be set to 'true' in such special cases.
+	 */
+	bool		attrValue;
+
 	char	   *inputText;
 	unsigned int sizeIn;
 	unsigned int srcPos,
@@ -116,11 +125,12 @@ typedef struct XMLParserStateData *XMLParserState;
 #define UNEXPECTED_CHARACTER elog(ERROR, "Unexpected character at row %u, column %u.",\
 	state->srcRow, state->srcCol)
 
+extern void initXMLParserState(XMLParserState state, char *inputText, bool attrValue);
+extern void finalizeXMLParserState(XMLParserState state);
 
-extern void initXMLParser(XMLParserState state, char *inputText);
-extern void finalizeXMLParser(XMLParserState state);
 extern void xmlnodeParseDoc(XMLParserState state);
 extern void xmlnodeParseNode(XMLParserState state);
+extern char *readXMLAttValue(XMLParserState state, bool output, bool *refs);
 
 extern void xmlnodeDumpNode(char *input, XMLNodeOffset nodeOff,
 				char **output, unsigned int *pos);

@@ -199,6 +199,12 @@ CREATE FUNCTION children(node)
 	VOLATILE
 	STRICT;
 
+CREATE FUNCTION element(text, text[][2], node)
+	RETURNS node 
+	as 'MODULE_PATHNAME', 'xmlelement'
+	LANGUAGE C
+	VOLATILE;
+
 
 CREATE DOMAIN add_mode AS CHAR(1)
 	NOT NULL

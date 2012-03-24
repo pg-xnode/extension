@@ -216,6 +216,45 @@ FROM nodes;
     </screen>
    </para>
   </sect2>
+  
+  <sect2>
+   <title><literal>xml.element()</literal></title>
+<synopsis>
+xml.element(text name, text[][2] attributes, xml.node nested) returns xml.node
+</synopsis>
+   <para>
+    Returns XML element having name equal to <literal>name</literal> and attributes listed in
+    <literal>attributes</literal> array: one row per attribute where the first column is attribute
+    name and the second column is the attribute value. <literal>nested</literal> parameter may contain
+    other node(s) to be nested in the new XML element.
+   </para>
+   <para>
+    Example:
+    <programlisting>
+SELECT xml.element('city', '{{"name", "Tokyo"}, {"population", 13185502}}', NULL);
+	</programlisting>
+	<screen>
+                  element                   
+--------------------------------------------
+ &lt;city name="Tokyo" population="13185502"/&gt;
+ (1 row)
+ 	</screen>
+   </para>
+   
+   <para>
+    Example:
+    <programlisting>
+SELECT xml.element('book', NULL, xml.element('chapter', '{{"id", 1}}', 'some text'));
+	</programlisting>
+	<screen> 
+                      element                      
+--------------------------------------------------
+ &lt;book&gt;&lt;chapter id="1"&gt;some text&lt;/chapter&gt;&lt;/book&gt;
+(1 row)
+ 	</screen>
+   </para>
+  </sect2>
+   
   <sect2>
    <title><literal>xml.children()</literal></title>
 <synopsis>

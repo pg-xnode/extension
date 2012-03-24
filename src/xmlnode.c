@@ -8,6 +8,7 @@
 #include "mb/pg_wchar.h"
 #include "utils/array.h"
 #include "utils/builtins.h"
+#include "utils/lsyscache.h"
 #include "utils/palloc.h"
 #include "utils/syscache.h"
 
@@ -111,9 +112,9 @@ xmlnode_in(PG_FUNCTION_ARGS)
 		elog(ERROR, "zero length input string");
 	}
 	dbEnc = GetDatabaseEncoding();
-	initXMLParser(&parserState, input);
+	initXMLParserState(&parserState, input, false);
 	xmlnodeParseNode(&parserState);
-	finalizeXMLParser(&parserState);
+	finalizeXMLParserState(&parserState);
 	PG_RETURN_POINTER(parserState.result);
 }
 
@@ -175,9 +176,9 @@ xmldoc_in(PG_FUNCTION_ARGS)
 	{
 		elog(ERROR, "The current version of xmlnode requires both database encoding to be UTF-8.");
 	}
-	initXMLParser(&parserState, input);
+	initXMLParserState(&parserState, input, false);
 	xmlnodeParseDoc(&parserState);
-	finalizeXMLParser(&parserState);
+	finalizeXMLParserState(&parserState);
 	PG_RETURN_POINTER(parserState.result);
 }
 
@@ -431,4 +432,371 @@ xmlnode_children(PG_FUNCTION_ARGS)
 		result = construct_empty_array(nodeType.oid);
 		PG_RETURN_POINTER(result);
 	}
+}
+
+
+PG_FUNCTION_INFO_V1(xmlelement);
+
+Datum
+xmlelement(PG_FUNCTION_ARGS)
+{
+	Datum		nameText;
+	ArrayType  *attrs = NULL;
+	char	   *elName;
+	unsigned int nameLen,
+				resSizeMax;
+	unsigned int childSize = 0;
+	char	   *c,
+			   *result,
+			   *resData,
+			   *resCursor,
+			   *nameDst;
+	XMLCompNodeHdr element;
+	XMLNodeOffset *rootOffPtr;
+	bool		nameFirstChar = true;
+	char	  **attrNames = NULL;
+	char	  **attrValues = NULL;
+	bool	   *attrValRefs = NULL;
+	XMLNodeHdr *attrNodes = NULL;
+	XMLNodeHdr	child = NULL;
+	char	  **newNds = NULL;
+	char	   *newNd = NULL;
+	unsigned int attrCount = 0;
+	unsigned int attrsSizeTotal = 0;
+	unsigned short childCount = 0;
+
+	if (PG_ARGISNULL(0))
+	{
+		elog(ERROR, "invalid element name");
+	}
+	nameText = PG_GETARG_DATUM(0);
+	elName = TextDatumGetCString(nameText);
+
+	nameLen = strlen(elName);
+	if (nameLen == 0)
+	{
+		elog(ERROR, "invalid element name");
+	}
+
+	if (!PG_ARGISNULL(1))
+	{
+		int		   *dims;
+		Oid			elType,
+					arrType;
+		int16		arrLen,
+					elLen;
+		bool		elByVal,
+					elIsNull;
+		char		elAlign;
+		unsigned int i;
+
+		attrs = PG_GETARG_ARRAYTYPE_P(1);
+		if (ARR_NDIM(attrs) != 2)
+		{
+			elog(ERROR, "attributes must be passed in 2 dimensional array");
+		}
+		dims = ARR_DIMS(attrs);
+		if (dims[1] != 2)
+		{
+			elog(ERROR, "the second dimension of attribute array must be 2");
+		}
+
+		attrCount = dims[0];
+		Assert(attrCount > 0);
+
+		elType = attrs->elemtype;
+		arrType = get_array_type(elType);
+		arrLen = get_typlen(arrType);
+		Assert(arrType != InvalidOid);
+		get_typlenbyvalalign(elType, &elLen, &elByVal, &elAlign);
+		attrNames = (char **) palloc(attrCount * sizeof(char *));
+		attrValues = (char **) palloc(attrCount * sizeof(char *));
+		attrValRefs = (bool *) palloc(attrCount * sizeof(bool));
+
+		for (i = 1; i <= attrCount; i++)
+		{
+			int			subscrName[] = {i, 1};
+			int			subscrValue[] = {i, 2};
+			Datum		elDatum;
+			char	   *nameStr,
+					   *valueStr;
+			bool		valueHasRefs = false;
+
+			elDatum = array_ref(attrs, 2, subscrName, arrLen, elLen, elByVal, elAlign, &elIsNull);
+			if (elIsNull)
+			{
+				elog(ERROR, "attribute name must not be null");
+			}
+			nameStr = text_to_cstring(DatumGetTextP(elDatum));
+			if (strlen(nameStr) == 0)
+			{
+				elog(ERROR, "attribute name must be a string of non-zero length");
+			}
+			else
+			{					/* Check validity of characters. */
+				char	   *c = nameStr;
+				int			cWidth = pg_utf_mblen((unsigned char *) c);
+
+				if (!XNODE_VALID_NAME_START(c))
+				{
+					elog(ERROR, "attribute name starts with invalid character");
+				}
+				do
+				{
+					c += cWidth;
+					cWidth = pg_utf_mblen((unsigned char *) c);
+				} while (XNODE_VALID_NAME_CHAR(c));
+				if (*c != '\0')
+				{
+					elog(ERROR, "invalid character in attribute name");
+				}
+			}
+
+			/* Check uniqueness of the attribute name. */
+			if (i > 1)
+			{
+				unsigned short j;
+
+				for (j = 0; j < (i - 1); j++)
+				{
+					if (strcmp(nameStr, attrNames[j]) == 0)
+					{
+						elog(ERROR, "attribute name '%s' is not unique", nameStr);
+					}
+				}
+			}
+
+			elDatum = array_ref(attrs, 2, subscrValue, arrLen, elLen, elByVal, elAlign, &elIsNull);
+			if (elIsNull)
+			{
+				elog(ERROR, "attribute value must not be null");
+			}
+			valueStr = text_to_cstring(DatumGetTextP(elDatum));
+
+			if (strlen(valueStr) > 0)
+			{
+				XMLNodeParserStateData state;
+				char	   *valueStrOrig = valueStr;
+
+				/* Parse the value and check validity. */
+				initXMLParserState(&state, valueStr, true);
+				readXMLAttValue(&state, true, &valueHasRefs);
+				valueStr = state.result;
+				finalizeXMLParserState(&state);
+				pfree(valueStrOrig);
+			}
+
+			attrNames[i - 1] = nameStr;
+			attrValues[i - 1] = valueStr;
+			attrValRefs[i - 1] = valueHasRefs;
+			attrsSizeTotal += sizeof(XMLNodeHdrData) + strlen(nameStr) + strlen(valueStr) + 2;
+		}
+	}
+
+	if (!PG_ARGISNULL(2))
+	{
+		Datum		childNodeDatum = PG_GETARG_DATUM(2);
+		xmlnode		childRaw = (xmlnode) PG_DETOAST_DATUM(childNodeDatum);
+
+		child = XNODE_ROOT(childRaw);
+		if (child->kind == XMLNODE_DOC_FRAGMENT)
+		{
+			childSize = getXMLNodeSize(child, true) - getXMLNodeSize(child, false);
+		}
+		else
+		{
+			childSize = getXMLNodeSize(child, true);
+		}
+	}
+
+	/* Make sure the element name is valid. */
+	c = elName;
+	while (*c != '\0')
+	{
+		if ((nameFirstChar && !XNODE_VALID_NAME_START(c)) || (!nameFirstChar && !XNODE_VALID_NAME_CHAR(c)))
+		{
+			elog(ERROR, "unrecognized character '%c' in element name", *c);
+		}
+		if (nameFirstChar)
+		{
+			nameFirstChar = false;
+		}
+		c += pg_utf_mblen((unsigned char *) c);
+	};
+
+	if (child != NULL)
+	{
+		if (child->kind == XMLNODE_DOC_FRAGMENT)
+		{
+			childCount = ((XMLCompNodeHdr) child)->children;
+		}
+		else
+		{
+			childCount = 1;
+		}
+	}
+
+	/*
+	 * It's hard to determine the byte width of references until the copying
+	 * has finished. Therefore we assume the worst case: 4 bytes per
+	 * reference.
+	 */
+	resSizeMax = VARHDRSZ + attrsSizeTotal + childSize + (attrCount + childCount) * 4 +
+		sizeof(XMLCompNodeHdrData) + nameLen + 1 + sizeof(XMLNodeOffset);
+	result = (char *) palloc(resSizeMax);
+	resCursor = resData = VARDATA(result);
+
+	if (attrCount > 0)
+	{							/* Copy attributes. */
+		unsigned short i;
+
+		Assert(attrNames != NULL && attrValues != NULL && attrValRefs != NULL);
+
+		attrNodes = (XMLNodeHdr *) palloc(attrCount * sizeof(XMLNodeHdr));
+		for (i = 0; i < attrCount; i++)
+		{
+			XMLNodeHdr	attrNode = (XMLNodeHdr) resCursor;
+			char	   *name = attrNames[i];
+			unsigned int nameLen = strlen(name);
+			char	   *value = attrValues[i];
+			unsigned int valueLen = strlen(value);
+			char	   *end;
+
+			attrNodes[i] = attrNode;
+			attrNode->kind = XMLNODE_ATTRIBUTE;
+			attrNode->flags = 0;
+			if (attrValRefs[i])
+			{
+				attrNode->flags |= XNODE_ATTR_CONTAINS_REF;
+			}
+
+			strtod(value, &end);
+			if (end == (value + valueLen))
+			{
+				attrNode->flags |= XNODE_ATTR_NUMBER;
+			}
+
+			resCursor = XNODE_CONTENT(attrNode);
+			memcpy(resCursor, name, nameLen);
+			resCursor += nameLen;
+			*(resCursor++) = '\0';
+			pfree(name);
+
+			memcpy(resCursor, value, valueLen);
+			resCursor += valueLen;
+			*(resCursor++) = '\0';
+			pfree(value);
+		}
+		pfree(attrNames);
+		pfree(attrValues);
+		pfree(attrValRefs);
+	}
+
+	if (child != NULL)
+	{
+		XMLNodeKind k = child->kind;
+
+		/*
+		 * Check if the node to be inserted is of a valid kind. If the node is
+		 * document fragment, its assumed that invalid node kinds are never
+		 * added. Otherwise we'd have to check the node fragment (recursively)
+		 * not only here.
+		 */
+		if (k != XMLNODE_DOC_FRAGMENT)
+		{
+			if (k == XMLNODE_DOC || k == XMLNODE_DTD || k == XMLNODE_ATTRIBUTE)
+			{
+				elog(ERROR, "the nested node must not be %s", getXMLNodeKindStr(k));
+			}
+		}
+		copyXMLNodeOrDocFragment(child, childSize, &resCursor, &newNd, &newNds);
+	}
+
+	element = (XMLCompNodeHdr) resCursor;
+	element->common.kind = XMLNODE_ELEMENT;
+	element->common.flags = (child == NULL) ? XNODE_EMPTY : 0;
+	element->children = attrCount + childCount;
+
+	if (childCount > 0 || attrCount > 0)
+	{
+		XMLNodeOffset childOff,
+					childOffMax;
+		char		bwidth;
+		char	   *refPtr;
+
+		/* Save relative offset(s) of the child node(s). */
+
+		if (attrCount > 0)
+		{
+			childOffMax = (char *) element - resData;
+		}
+		else if (childCount > 0)
+		{
+			if (child->kind == XMLNODE_DOC_FRAGMENT)
+			{
+				Assert(newNds != NULL);
+				childOffMax = (char *) element - newNds[0];
+			}
+			else
+			{
+				childOffMax = (char *) element - newNd;
+			}
+		}
+		else
+		{
+			childOffMax = 0;
+		}
+		bwidth = getXMLNodeOffsetByteWidth(childOffMax);
+		XNODE_SET_REF_BWIDTH(element, bwidth);
+
+		refPtr = XNODE_FIRST_REF(element);
+
+		if (attrCount > 0)
+		{
+			unsigned short i;
+
+			/* The attribute references first... */
+			for (i = 0; i < attrCount; i++)
+			{
+				XMLNodeHdr	node = attrNodes[i];
+
+				childOff = (char *) element - (char *) node;
+				writeXMLNodeOffset(childOff, &refPtr, bwidth, true);
+			}
+			pfree(attrNodes);
+		}
+
+
+		if (childCount > 0)
+		{
+			/* ...followed by those of the other children. */
+			if (child->kind == XMLNODE_DOC_FRAGMENT)
+			{
+				unsigned short i;
+
+				for (i = 0; i < childCount; i++)
+				{
+					childOff = (char *) element - newNds[i];
+					writeXMLNodeOffset(childOff, &refPtr, bwidth, true);
+				}
+				pfree(newNds);
+			}
+			else
+			{
+				childOff = (char *) element - newNd;
+				writeXMLNodeOffset(childOff, &refPtr, bwidth, true);
+			}
+		}
+	}
+
+	/* And finally set the element name. */
+	nameDst = XNODE_ELEMENT_NAME(element);
+	memcpy(nameDst, elName, nameLen);
+	nameDst[nameLen] = '\0';
+	resCursor = nameDst + strlen(elName) + 1;
+
+	SET_VARSIZE(result, (char *) resCursor - result + sizeof(XMLNodeOffset));
+	rootOffPtr = XNODE_ROOT_OFFSET_PTR(result);
+	*rootOffPtr = (char *) element - resData;
+	PG_RETURN_POINTER(result);
 }

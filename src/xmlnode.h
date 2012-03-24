@@ -301,5 +301,6 @@ typedef enum XMLNodeAction
  * DOM functions
  */
 extern Datum xmlnode_children(PG_FUNCTION_ARGS);
+extern Datum xmlelement(PG_FUNCTION_ARGS);
 
 #endif   /* XMLNODE_H */

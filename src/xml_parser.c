@@ -122,7 +122,6 @@ static void readDTD_CP(XMLParserState state);
 static void readDTD_ChoiceOrSeq(XMLParserState state, bool started);
 static void readDTDExternalID(XMLParserState state);
 static void readDTDEntityValue(XMLParserState state);
-static char *readAttValue(XMLParserState state, bool output, bool *refs);
 static bool readReference(XMLParserState state, pg_wchar *value);
 static bool isPredefinedEntity(char *refStart, char *value);
 static void readDTD(XMLParserState state);
@@ -402,9 +401,11 @@ xmlnodeParseNode(XMLParserState state)
 }
 
 void
-initXMLParser(XMLParserState state, char *inputText)
+initXMLParserState(XMLParserState state, char *inputText, bool attrValue)
 {
+	unsigned int hdrSize = attrValue ? 0 : VARHDRSZ;
 
+	state->attrValue = attrValue;
 	state->srcPos = 0;
 	state->srcRow = 1;
 	state->srcCol = 1;
@@ -427,26 +428,171 @@ initXMLParser(XMLParserState state, char *inputText)
 	state->nestLevel = 0;
 	state->saveHeader = true;
 
-	state->sizeOut = state->sizeIn + (state->sizeIn >> XNODE_OUT_OVERHEAD_BITS);
-	state->sizeOut = (state->sizeOut > XNODE_PARSER_OUTPUT_MIN) ? state->sizeOut
-		: XNODE_PARSER_OUTPUT_MIN;
-	elog(DEBUG1, "source xml size: %u, binary xml size (initial estimate): %u", state->sizeIn,
-		 state->sizeOut);
-	state->result = (char *) palloc(state->sizeOut + VARHDRSZ);
-	state->tree = state->result + VARHDRSZ;
-	xmlnodeContainerInit(&state->stack);
+	if (state->attrValue)
+	{
+		state->sizeOut = 32;
+	}
+	else
+	{
+		state->sizeOut = state->sizeIn + (state->sizeIn >> XNODE_OUT_OVERHEAD_BITS);
+		state->sizeOut = (state->sizeOut > XNODE_PARSER_OUTPUT_MIN) ? state->sizeOut
+			: XNODE_PARSER_OUTPUT_MIN;
+		elog(DEBUG1, "source xml size: %u, binary xml size (initial estimate): %u", state->sizeIn,
+			 state->sizeOut);
+	}
+	state->result = (char *) palloc(state->sizeOut + hdrSize);
+	state->tree = state->result + hdrSize;
+
+	if (!state->attrValue)
+	{
+		xmlnodeContainerInit(&state->stack);
+	}
 	state->decl = NULL;
 }
 
 void
-finalizeXMLParser(XMLParserState state)
+finalizeXMLParserState(XMLParserState state)
 {
-	xmlnodeContainerFree(&state->stack);
+	if (!state->attrValue)
+	{
+		xmlnodeContainerFree(&state->stack);
+	}
 	if (state->decl != NULL)
 	{
 		pfree(state->decl);
 		state->decl = NULL;
 	}
+}
+
+/*
+ * http://www.w3.org/TR/2008/REC-xml-20081126/#NT-AttValue
+ *
+ * 'output'  - whether the attribute should be written to output or not.
+ *	Sometimes we just need to check the value.
+ *
+ *	'refs' - gets set to true if the attribute contains at least one reference.
+ *
+ * returns attribute value (NULL-terminated)
+ */
+char *
+readXMLAttValue(XMLParserState state, bool output, bool *refs)
+{
+	char		term;
+	char	   *value = state->attrValue ? NULL : state->tree + state->dstPos;
+
+	*refs = false;
+
+	if (!state->attrValue)
+	{
+		if (*state->c != XNODE_CHAR_APOSTR && *state->c != XNODE_CHAR_QUOTMARK)
+		{
+			elog(ERROR, "quotation mark or apostrophe expected at row %u, column %u.",
+				 state->srcRow, state->srcCol);
+		}
+		term = *state->c;
+		nextChar(state, false);
+	}
+	else
+	{
+		term = '\0';
+	}
+
+	while (*state->c != term)
+	{
+		if (!XNODE_VALID_CHAR(state->c))
+		{
+			if (state->attrValue)
+			{
+				elog(ERROR, "invalid XML character in attribute value");
+			}
+			else
+			{
+				elog(ERROR, "invalid XML character at row %u, column %u",
+					 state->srcRow, state->srcCol);
+			}
+		}
+
+		if (*state->c == XNODE_CHAR_LARROW)
+		{
+			if (state->attrValue)
+			{
+				elog(ERROR, "invalid XML character in attribute value");
+			}
+			else
+			{
+				UNEXPECTED_CHARACTER;
+			}
+		}
+		else if (*state->c == XNODE_CHAR_AMPERSAND)
+		{
+			pg_wchar	value;
+			char	   *refStart = state->c;
+
+			*refs = true;
+			if (readReference(state, &value))
+			{
+				char		utf8char[5];
+
+				memset(utf8char, 0, 5);
+				unicode_to_utf8(value, (unsigned char *) utf8char);
+				if (!XNODE_VALID_CHAR(utf8char))
+				{
+					if (state->attrValue)
+					{
+						elog(ERROR, "invalid XML character reference in attribute value");
+					}
+					else
+					{
+						elog(ERROR, "invalid XML character reference at row %u, column %u", state->srcRow,
+							 state->srcCol);
+					}
+				}
+				if (output)
+				{
+					unsigned int len = strlen(utf8char);
+
+					ensureSpace(len, state);
+					memcpy(state->tree + state->dstPos, utf8char, len);
+					state->dstPos += len;
+				}
+			}
+			else
+			{
+				char		predefValue;
+
+				if (!isPredefinedEntity(refStart + 1, &predefValue))
+				{
+					elog(ERROR, "this parser only supports character and predefined references");
+				}
+				if (output)
+				{
+					ensureSpace(1, state);
+					*(state->tree + state->dstPos) = predefValue;
+					state->dstPos++;
+				}
+			}
+		}
+		else
+		{
+			/* 'Ordinary' character, just write it (if the caller wants it). */
+			if (output)
+			{
+				ensureSpace(state->cWidth, state);
+				memcpy(state->tree + state->dstPos, state->c, state->cWidth);
+				state->dstPos += state->cWidth;
+			}
+		}
+
+		nextChar(state, state->attrValue);
+	}
+
+	if (output)
+	{
+		ensureSpace(1, state);
+		*(state->tree + state->dstPos) = '\0';
+		state->dstPos++;
+	}
+	return value;
 }
 
 /*
@@ -943,25 +1089,28 @@ processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowe
 }
 
 /*
- * http://www.w3.org/TR/2008/REC-xml-20081126/#NT-Name 'whitespace' indicates
- * whether a whitespace is expected right after the name.
+ * http://www.w3.org/TR/2008/REC-xml-20081126/#NT-Name
+ *
+ * 'whitespace' indicates whether a whitespace is expected right after the name.
  */
 static void
 readName(XMLParserState state, bool whitespace)
 {
 	if (!XNODE_VALID_NAME_START(state->c))
 	{
-		UNEXPECTED_CHARACTER;
+		elog(ERROR, "name can't start with '%c'", *state->c);
 	}
+
 	do
 	{
 		nextChar(state, false);
 	} while (XNODE_VALID_NAME_CHAR(state->c));
+
 	if (whitespace)
 	{
 		if (!XNODE_WHITESPACE(state->c))
 		{
-			elog(ERROR, "Whitespace expected at row %u, column %u.", state->srcRow, state->srcCol);
+			elog(ERROR, "whitespace expected at row %u, column %u.", state->srcRow, state->srcCol);
 		}
 		else
 		{
@@ -1180,7 +1329,7 @@ processTag(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowed,
 				}
 
 				quotMark = *state->c;
-				attrValue = readAttValue(state, true, &refsInValue);
+				attrValue = readXMLAttValue(state, true, &refsInValue);
 				if (refsInValue)
 				{
 					attrNode->flags |= XNODE_ATTR_CONTAINS_REF;
@@ -1192,9 +1341,8 @@ processTag(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowed,
 				if (strlen(attrValue) > 0)
 				{
 					char	   *end;
-					double		numValue;
 
-					numValue = strtod(attrValue, &end);
+					strtod(attrValue, &end);
 					if (end == (attrValue + strlen(attrValue)))
 					{
 						attrNode->flags |= XNODE_ATTR_NUMBER;
@@ -1594,96 +1742,10 @@ readDTDEntityValue(XMLParserState state)
 }
 
 /*
- * http://www.w3.org/TR/2008/REC-xml-20081126/#NT-AttValue
- *
- * returns atribute value (NULL-terminated)
- */
-static char *
-readAttValue(XMLParserState state, bool output, bool *refs)
-{
-	char		qMark;
-	char	   *value = state->tree + state->dstPos;
-
-	*refs = false;
-	if (*state->c != XNODE_CHAR_APOSTR && *state->c != XNODE_CHAR_QUOTMARK)
-	{
-		elog(ERROR, "Quotation mark or apostrophe expected at row %u, column %u.",
-			 state->srcRow, state->srcCol);
-	}
-	qMark = *state->c;
-	do
-	{
-		nextChar(state, false);
-		if (!XNODE_VALID_CHAR(state->c))
-		{
-			elog(ERROR, "Invalid XML character at row %u, column %u",
-				 state->srcRow, state->srcCol);
-		}
-		if (*state->c == XNODE_CHAR_LBRACKET)
-		{
-			UNEXPECTED_CHARACTER;
-		}
-		else if (*state->c == XNODE_CHAR_AMPERSAND)
-		{
-			pg_wchar	value;
-			char	   *refStart = state->c;
-			unsigned int row = state->srcRow;
-			unsigned int col = state->srcCol;
-
-			*refs = true;
-			if (readReference(state, &value))
-			{
-				char		utf8char[5];
-
-				memset(utf8char, 0, 5);
-				unicode_to_utf8(value, (unsigned char *) utf8char);
-				if (!XNODE_VALID_CHAR(utf8char))
-				{
-					elog(ERROR, "Invalid XML character reference at row %u, column %u", row, col);
-				}
-				if (output)
-				{
-					unsigned int len = strlen(utf8char);
-
-					ensureSpace(len, state);
-					memcpy(state->tree + state->dstPos, utf8char, len);
-					state->dstPos += len;
-				}
-			}
-			else
-			{
-				char		predefValue;
-
-				if (!isPredefinedEntity(refStart + 1, &predefValue))
-				{
-					elog(ERROR, "this parser version only supports character and predefined references");
-				}
-				if (output)
-				{
-					ensureSpace(1, state);
-					*(state->tree + state->dstPos) = predefValue;
-					state->dstPos++;
-				}
-			}
-		}
-		else if (output && *state->c != qMark)
-		{
-			ensureSpace(state->cWidth, state);
-			memcpy(state->tree + state->dstPos, state->c, state->cWidth);
-			state->dstPos += state->cWidth;
-		}
-	} while (*state->c != qMark);
-	if (output)
-	{
-		ensureSpace(1, state);
-		*(state->tree + state->dstPos) = '\0';
-		state->dstPos++;
-	}
-	return value;
-}
-
-/*
  * http://www.w3.org/TR/2008/REC-xml-20081126/#NT-Reference
+ *
+ * Reads (entity or character) reference.
+ * At return time 'state' points to terminating semicolon.
  */
 static bool
 readReference(XMLParserState state, pg_wchar *value)
@@ -1716,8 +1778,15 @@ readReference(XMLParserState state, pg_wchar *value)
 		}
 		if (digits == 0)
 		{
-			elog(ERROR, "decimal or hexadecimal value expected at row %u, column %u.",
-				 state->srcRow, state->srcCol);
+			if (state->attrValue)
+			{
+				elog(ERROR, "decimal or hexadecimal value expected in reference");
+			}
+			else
+			{
+				elog(ERROR, "decimal or hexadecimal value expected at row %u, column %u.",
+					 state->srcRow, state->srcCol);
+			}
 		}
 		if (hex)
 		{
@@ -1735,10 +1804,18 @@ readReference(XMLParserState state, pg_wchar *value)
 		 */
 		readName(state, false);
 	}
+
 	if (*state->c != XNODE_CHAR_SEMICOLON)
 	{
-		elog(ERROR, "'%c' expected at row %u, column %u.", XNODE_CHAR_SEMICOLON,
-			 state->srcRow, state->srcCol);
+		if (state->attrValue)
+		{
+			elog(ERROR, "'%c' expected in reference", XNODE_CHAR_SEMICOLON);
+		}
+		else
+		{
+			elog(ERROR, "'%c' expected at row %u, column %u.", XNODE_CHAR_SEMICOLON,
+				 state->srcRow, state->srcCol);
+		}
 	}
 	return charRef;
 }
@@ -2050,7 +2127,7 @@ processDTDNode(XMLParserState state)
 						{
 							readWhitespace(state, false);
 						}
-						readAttValue(state, false, &refs);
+						readXMLAttValue(state, false, &refs);
 						nextChar(state, false);
 					}
 				}
@@ -2326,15 +2403,25 @@ ensureSpace(unsigned int size, XMLParserState state)
 
 	while (state->dstPos + size > state->sizeOut)
 	{
-		state->sizeOut += state->sizeOut >> XNODE_OUT_OVERHEAD_BITS;
+		if (!state->attrValue)
+		{
+			state->sizeOut += state->sizeOut >> XNODE_OUT_OVERHEAD_BITS;
+		}
+		else
+		{
+			state->sizeOut += 16;
+		}
 		chunks++;
 	}
+
 	if (chunks > 0)
 	{
+		unsigned int hdrSize = state->attrValue ? 0 : VARHDRSZ;
+
 		state->result = (char *) repalloc(state->result, state->sizeOut
-										  + VARHDRSZ);
-		state->tree = state->result + VARHDRSZ;
-		elog(DEBUG1, "Output array expanded from %u to %u bytes.", orig, state->sizeOut);
+										  + hdrSize);
+		state->tree = state->result + hdrSize;
+		elog(DEBUG1, "output array expanded from %u to %u bytes.", orig, state->sizeOut);
 	}
 }
 

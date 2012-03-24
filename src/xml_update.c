@@ -10,9 +10,6 @@
 static void adjustIgnoreList(XMLScan scan, XMLNodeOffset minimum, int shift);
 static void propagateChange(XMLScanOneLevel levelScan, int *shift, int *hdrSizeIncr, char *tree, char *resData,
 			 char **srcCursor, char **resCursor, XMLNodeOffset * newRootOff);
-static void copyXMLNodeOrDocFragment(XMLNodeHdr newNode, unsigned int newNdSize, char **resCursor,
-						 char **newNdRoot, char ***newNdRoots);
-static char **copyXMLDocFragment(XMLCompNodeHdr fragNode, char **resCursorPtr);
 static void copyXMLDecl(XMLCompNodeHdr doc, char **resCursor);
 static void copySiblings(XMLCompNodeHdr parent, char **srcCursor, char **resCursor);
 
@@ -1290,61 +1287,6 @@ propagateChange(XMLScanOneLevel levelScan, int *shift, int *hdrSizeIncr,
 		 */
 		levelScan->parent = parentTarg;
 	}
-}
-
-static void
-copyXMLNodeOrDocFragment(XMLNodeHdr newNode, unsigned int newNdSize, char **resCursor,
-						 char **newNdRoot, char ***newNdRoots)
-{
-
-	XMLNodeOffset newNdOff;
-
-	if (newNode->kind == XMLNODE_DOC_FRAGMENT)
-	{
-		*newNdRoots = copyXMLDocFragment((XMLCompNodeHdr) newNode, resCursor);
-	}
-	else
-	{
-		copyXMLNode(newNode, *resCursor, false, &newNdOff);
-		*newNdRoot = *resCursor + newNdOff;
-		*resCursor += newNdSize;
-	}
-}
-
-/*
- * Copy document fragment (i.e. children of 'fragNode', but not 'fragNode' itself)
- * to a memory starting at '*resCursorPtr'.
- * When done, '*resCursorPtr' points right after the copied fragment.
- *
- * Returns array where each element represents offset of particular new (just inserted) node
- * from the beginning of the output memory chunk.
- */
-static char **
-copyXMLDocFragment(XMLCompNodeHdr fragNode, char **resCursorPtr)
-{
-	char	   *refs = XNODE_FIRST_REF(fragNode);
-	char		bwidth = XNODE_GET_REF_BWIDTH(fragNode);
-	unsigned short int i;
-	char	  **newNdRoots;
-	char	   *resCursor = *resCursorPtr;
-
-	if (fragNode->common.kind != XMLNODE_DOC_FRAGMENT)
-	{
-		elog(ERROR, "incorrect node kind %s where document fragment expected",
-			 getXMLNodeKindStr(fragNode->common.kind));
-	}
-	newNdRoots = (char **) palloc(fragNode->children * sizeof(char *));
-	for (i = 0; i < fragNode->children; i++)
-	{
-		XMLNodeHdr	newNdPart = (XMLNodeHdr) ((char *) fragNode - readXMLNodeOffset(&refs, bwidth, true));
-		XMLNodeOffset newNdPartOff;
-
-		copyXMLNode(newNdPart, resCursor, false, &newNdPartOff);
-		newNdRoots[i] = resCursor + newNdPartOff;
-		resCursor += getXMLNodeSize(newNdPart, true);
-	}
-	*resCursorPtr = resCursor;
-	return newNdRoots;
 }
 
 static void

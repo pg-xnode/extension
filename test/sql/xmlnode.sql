@@ -468,6 +468,11 @@ select xml.path('concat(count(/root), /root)', '<root><b>50</b></root>');
 -- DOM
 select xml.children('<root><a><!--cmnt--></a><b><?abc def?></b><c/></root>');
 
+select xml.element('root', '{{"i", "x"}, {"j", 1}, {"k", ""}}', '<x/><y/>');
+select xml.element('root', '{{"i", "x"}, {"j", 1}}', '<x k="u"><y l="v"/></x>');
+select xml.element('root', NULL, '<x k="u"><y l="v"/></x>');
+select xml.element('root', '{{"i", "x"}, {"j", 1}}', NULL);
+
 -- Cleanup
 
 drop table states;
