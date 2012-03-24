@@ -80,12 +80,8 @@ xmlnodePop(XMLNodeContainer cont)
 unsigned int
 getXMLNodeSize(XMLNodeHdr node, bool subtree)
 {
-	XMLNodeHdr	childNode;
 	unsigned int result = 0;
-	char	   *childOffPtr,
-			   *lastChildOffPtr;
 	char	   *content;
-	unsigned int references;
 	unsigned int attNameLen;
 
 	switch (node->kind)
@@ -93,41 +89,39 @@ getXMLNodeSize(XMLNodeHdr node, bool subtree)
 		case XMLNODE_DOC:
 		case XMLNODE_ELEMENT:
 		case XMLNODE_DOC_FRAGMENT:
-			result = sizeof(XMLCompNodeHdrData);
-			childOffPtr = XNODE_FIRST_REF((XMLCompNodeHdr) node);
-			lastChildOffPtr = XNODE_LAST_REF((XMLCompNodeHdr) node);
-			references = 0;
-
-			/*
-			 * TODO The whole loop should be avoided if 'subtree' is 'false'.
-			 */
-			while (childOffPtr <= lastChildOffPtr)
 			{
-				XMLNodeOffset childOff = readXMLNodeOffset(&childOffPtr,
-						  XNODE_GET_REF_BWIDTH((XMLCompNodeHdr) node), true);
+				char	   *childOffPtr = XNODE_FIRST_REF((XMLCompNodeHdr) node);
+				unsigned int children = ((XMLCompNodeHdr) node)->children;
+				char		bwidth = XNODE_GET_REF_BWIDTH((XMLCompNodeHdr) node);
+				unsigned int i;
 
-				childNode = (XMLNodeHdr) ((char *) node - childOff);
+				result = sizeof(XMLCompNodeHdrData);
 				if (subtree)
 				{
-					result += getXMLNodeSize(childNode, true);
-				}
-				references++;
-			}
-			result += references * XNODE_GET_REF_BWIDTH((XMLCompNodeHdr) node);
-			if (node->kind == XMLNODE_ELEMENT)
-			{
-				content = XNODE_ELEMENT_NAME((XMLCompNodeHdr) node);
-				result += strlen(content) + 1;
-			}
-			else if (node->kind == XMLNODE_DOC)
-			{
-				if (node->flags & XNODE_DOC_XMLDECL)
-				{
-					result += sizeof(XMLDeclData);
-				}
-			}
-			return result;
+					for (i = 0; i < children; i++)
+					{
+						XMLNodeOffset childOff = readXMLNodeOffset(&childOffPtr, bwidth, true);
+						XMLNodeHdr	childNode = (XMLNodeHdr) ((char *) node - childOff);
 
+						result += getXMLNodeSize(childNode, true);
+					}
+				}
+				result += children * bwidth;
+
+				if (node->kind == XMLNODE_ELEMENT)
+				{
+					content = XNODE_ELEMENT_NAME((XMLCompNodeHdr) node);
+					result += strlen(content) + 1;
+				}
+				else if (node->kind == XMLNODE_DOC)
+				{
+					if (node->flags & XNODE_DOC_XMLDECL)
+					{
+						result += sizeof(XMLDeclData);
+					}
+				}
+				return result;
+			}
 		case XMLNODE_DTD:
 		case XMLNODE_COMMENT:
 		case XMLNODE_CDATA:
