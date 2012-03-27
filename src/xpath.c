@@ -8,7 +8,7 @@
 #include "catalog/pg_type.h"
 #include "utils/array.h"
 #include "utils/builtins.h"
-#include "utils/syscache.h"
+#include "utils/lsyscache.h"
 
 #include "xmlnode.h"
 #include "xpath.h"
@@ -309,7 +309,7 @@ xpath_array(PG_FUNCTION_ARGS)
 		XPathExpression exprBase = (XPathExpression) VARDATA(xpathBasePtr);
 		XPathHeader xpHdrBase = (XPathHeader) ((char *) exprBase + exprBase->size);
 
-		ArrayType  *pathsColArr = (ArrayType *) PG_GETARG_POINTER(1);
+		ArrayType  *pathsColArr = PG_GETARG_ARRAYTYPE_P(1);
 		xmldoc		doc = (xmldoc) PG_GETARG_VARLENA_P(2);
 		XMLCompNodeHdr docRoot = (XMLCompNodeHdr) XNODE_ROOT(doc);
 		MemoryContext oldcontext;
@@ -768,31 +768,19 @@ retrieveColumnPaths(XMLScanContext xScanCtx, ArrayType *pathsColArr, int columns
 {
 	int			colIndex;
 	Oid			arrTypeOid;
-	Form_pg_type typeStruct;
 	int2		elTypLen,
 				arrTypLen;
 	bool		elByVal;
 	char		elTypAlign;
 	bool		isNull;
 	Oid			elTypOid = ARR_ELEMTYPE(pathsColArr);
-	HeapTuple	typeTup = SearchSysCache1(TYPEOID, ObjectIdGetDatum(elTypOid));
 
 	/*
 	 * Retrieve parameters for 'array_ref()'
 	 */
-	Assert(HeapTupleIsValid(typeTup));
-	typeStruct = (Form_pg_type) GETSTRUCT(typeTup);
-	elTypLen = typeStruct->typlen;
-	elByVal = typeStruct->typbyval;
-	elTypAlign = typeStruct->typalign;
-	arrTypeOid = typeStruct->typarray;
-	ReleaseSysCache(typeTup);
-
-	typeTup = SearchSysCache1(TYPEOID, ObjectIdGetDatum(arrTypeOid));
-	Assert(HeapTupleIsValid(typeTup));
-	typeStruct = (Form_pg_type) GETSTRUCT(typeTup);
-	arrTypLen = typeStruct->typlen;
-	ReleaseSysCache(typeTup);
+	get_typlenbyvalalign(elTypOid, &elTypLen, &elByVal, &elTypAlign);
+	arrTypeOid = get_array_type(elTypOid);
+	arrTypLen = get_typlen(arrTypeOid);
 
 	for (colIndex = 1; colIndex <= columns; colIndex++)
 	{
@@ -858,21 +846,9 @@ getResultArray(XMLScanContext ctx, XMLNodeOffset baseNodeOff)
 
 		if (ctx->outElmType == InvalidOid)
 		{
-			Form_pg_type typeStruct;
-			HeapTuple	typeTup = SearchSysCache1(TYPEOID, ObjectIdGetDatum(ctx->outArrayType));
-
-			Assert(HeapTupleIsValid(typeTup));
-			typeStruct = (Form_pg_type) GETSTRUCT(typeTup);
-			ctx->outElmType = typeStruct->typelem;
-			ReleaseSysCache(typeTup);
-
-			typeTup = SearchSysCache1(TYPEOID, ObjectIdGetDatum(ctx->outElmType));
-			Assert(HeapTupleIsValid(typeTup));
-			typeStruct = (Form_pg_type) GETSTRUCT(typeTup);
-			ctx->outElmLen = typeStruct->typlen;
-			ctx->outElmByVal = typeStruct->typbyval;
-			ctx->outElmalign = typeStruct->typalign;
-			ReleaseSysCache(typeTup);
+			ctx->outElmType = get_element_type(ctx->outArrayType);
+			Assert(ctx->outElmType != InvalidOid);
+			get_typlenbyvalalign(ctx->outElmType, &ctx->outElmLen, &ctx->outElmByVal, &ctx->outElmalign);
 		}
 		dims[0] = ctx->columns;
 		lbs[0] = 1;

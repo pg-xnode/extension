@@ -549,7 +549,7 @@ typedef struct XMLScanContextData
 	bool	   *colResNulls;
 	Oid			outArrayType,
 				outElmType;
-	int			outElmLen;
+	int16		outElmLen;
 	bool		outElmByVal;
 	char		outElmalign;
 }	XMLScanContextData;

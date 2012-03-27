@@ -67,7 +67,7 @@ UTF8Interval nameCharIntervals[XNODE_NAME_CHAR_INTERVALS] =
 typedef struct TypeInfo
 {
 	Oid			oid;
-	int			elmlen;
+	int16		elmlen;
 	bool		elmbyval;
 	char		elmalign;
 } TypeInfo;
@@ -89,9 +89,7 @@ initXNodeTypeInfo(TypeInfo *ti)
 	typeStruct = (Form_pg_type) GETSTRUCT(tup);
 
 	ti->oid = HeapTupleGetOid(tup);
-	ti->elmlen = typeStruct->typlen;
-	ti->elmbyval = typeStruct->typbyval;
-	ti->elmalign = typeStruct->typalign;
+	get_typlenbyvalalign(ti->oid, &ti->elmlen, &ti->elmbyval, &ti->elmalign);
 	ReleaseSysCache(tup);
 }
 
