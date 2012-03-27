@@ -456,7 +456,7 @@ xmlelement(PG_FUNCTION_ARGS)
 	bool		nameFirstChar = true;
 	char	  **attrNames = NULL;
 	char	  **attrValues = NULL;
-	bool	   *attrValRefs = NULL;
+	char	   *attrValFlags = NULL;
 	XMLNodeHdr *attrNodes = NULL;
 	XMLNodeHdr	child = NULL;
 	char	  **newNds = NULL;
@@ -511,7 +511,7 @@ xmlelement(PG_FUNCTION_ARGS)
 		get_typlenbyvalalign(elType, &elLen, &elByVal, &elAlign);
 		attrNames = (char **) palloc(attrCount * sizeof(char *));
 		attrValues = (char **) palloc(attrCount * sizeof(char *));
-		attrValRefs = (bool *) palloc(attrCount * sizeof(bool));
+		attrValFlags = (bool *) palloc(attrCount * sizeof(char));
 
 		for (i = 1; i <= attrCount; i++)
 		{
@@ -573,6 +573,8 @@ xmlelement(PG_FUNCTION_ARGS)
 			}
 			valueStr = text_to_cstring(DatumGetTextP(elDatum));
 
+			attrValFlags[i - 1] = 0;
+
 			if (strlen(valueStr) > 0)
 			{
 				XMLNodeParserStateData state;
@@ -580,15 +582,26 @@ xmlelement(PG_FUNCTION_ARGS)
 
 				/* Parse the value and check validity. */
 				initXMLParserState(&state, valueStr, true);
-				readXMLAttValue(&state, true, &valueHasRefs);
-				valueStr = state.result;
+				valueStr = readXMLAttValue(&state, true, &valueHasRefs);
+
+				/*
+				 * If the value contains quotation mark, then apostrophe is
+				 * the delimiter.
+				 */
+				if (strchr(valueStr, XNODE_CHAR_QUOTMARK) != NULL)
+				{
+					attrValFlags[i - 1] |= XNODE_ATTR_APOSTROPHE;
+				}
 				finalizeXMLParserState(&state);
 				pfree(valueStrOrig);
 			}
 
 			attrNames[i - 1] = nameStr;
 			attrValues[i - 1] = valueStr;
-			attrValRefs[i - 1] = valueHasRefs;
+			if (valueHasRefs)
+			{
+				attrValFlags[i - 1] |= XNODE_ATTR_CONTAINS_REF;
+			}
 			attrsSizeTotal += sizeof(XMLNodeHdrData) + strlen(nameStr) + strlen(valueStr) + 2;
 		}
 	}
@@ -650,7 +663,7 @@ xmlelement(PG_FUNCTION_ARGS)
 	{							/* Copy attributes. */
 		unsigned short i;
 
-		Assert(attrNames != NULL && attrValues != NULL && attrValRefs != NULL);
+		Assert(attrNames != NULL && attrValues != NULL && attrValFlags != NULL);
 
 		attrNodes = (XMLNodeHdr *) palloc(attrCount * sizeof(XMLNodeHdr));
 		for (i = 0; i < attrCount; i++)
@@ -660,18 +673,12 @@ xmlelement(PG_FUNCTION_ARGS)
 			unsigned int nameLen = strlen(name);
 			char	   *value = attrValues[i];
 			unsigned int valueLen = strlen(value);
-			char	   *end;
 
 			attrNodes[i] = attrNode;
 			attrNode->kind = XMLNODE_ATTRIBUTE;
-			attrNode->flags = 0;
-			if (attrValRefs[i])
-			{
-				attrNode->flags |= XNODE_ATTR_CONTAINS_REF;
-			}
+			attrNode->flags = attrValFlags[i];
 
-			strtod(value, &end);
-			if (end == (value + valueLen))
+			if (xmlAttrValueIsNumber(value))
 			{
 				attrNode->flags |= XNODE_ATTR_NUMBER;
 			}
@@ -689,7 +696,7 @@ xmlelement(PG_FUNCTION_ARGS)
 		}
 		pfree(attrNames);
 		pfree(attrValues);
-		pfree(attrValRefs);
+		pfree(attrValFlags);
 	}
 
 	if (child != NULL)

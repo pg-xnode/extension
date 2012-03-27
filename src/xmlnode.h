@@ -255,6 +255,7 @@ extern bool isXMLCharInInterval(char *c, UTF8Interval * intervals, unsigned shor
 #define XNODE_DOC_XMLDECL				(1 << 3)
 
 #define XNODE_ATTR_APOSTROPHE			(1 << 0)
+/* Set if apostrophe is used as value delimiter. */
 #define XNODE_ATTR_CONTAINS_REF			(1 << 1)
 /*
  * This flag is set when value is stored as a text, but in fact represents a

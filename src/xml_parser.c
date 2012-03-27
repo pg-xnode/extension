@@ -478,7 +478,8 @@ char *
 readXMLAttValue(XMLParserState state, bool output, bool *refs)
 {
 	char		term;
-	char	   *value = state->attrValue ? NULL : state->tree + state->dstPos;
+	char		delimFirst = '\0';
+	unsigned int pos = state->dstPos;
 
 	*refs = false;
 
@@ -574,6 +575,23 @@ readXMLAttValue(XMLParserState state, bool output, bool *refs)
 		}
 		else
 		{
+			/*
+			 * If attribute value is passed in an array, then the array
+			 * literal delimiter is not considered the value delimiter. We
+			 * need to decide whether the value is delimited by quotation mark
+			 * or by apostrophe.
+			 */
+			if (state->attrValue && (*state->c == XNODE_CHAR_APOSTR || *state->c == XNODE_CHAR_QUOTMARK))
+			{
+				if (delimFirst == '\0')
+				{
+					delimFirst = *state->c;
+				}
+				else if (delimFirst != *state->c)
+				{
+					elog(ERROR, "attribute value may contain either quotation marks or apostrophes but not both");
+				}
+			}
 			/* 'Ordinary' character, just write it (if the caller wants it). */
 			if (output)
 			{
@@ -592,7 +610,20 @@ readXMLAttValue(XMLParserState state, bool output, bool *refs)
 		*(state->tree + state->dstPos) = '\0';
 		state->dstPos++;
 	}
-	return value;
+	return state->attrValue ? state->result : state->tree + pos;
+}
+
+bool
+xmlAttrValueIsNumber(char *value)
+{
+	char	   *end;
+
+	strtod(value, &end);
+	while (XNODE_WHITESPACE(end) && *end != '\0')
+	{
+		end++;
+	}
+	return (*end == '\0');
 }
 
 /*
@@ -1338,15 +1369,9 @@ processTag(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowed,
 				{
 					attrNode->flags |= XNODE_ATTR_APOSTROPHE;
 				}
-				if (strlen(attrValue) > 0)
+				if (strlen(attrValue) > 0 && xmlAttrValueIsNumber(attrValue))
 				{
-					char	   *end;
-
-					strtod(attrValue, &end);
-					if (end == (attrValue + strlen(attrValue)))
-					{
-						attrNode->flags |= XNODE_ATTR_NUMBER;
-					}
+					attrNode->flags |= XNODE_ATTR_NUMBER;
 				}
 				attributes++;
 				nextChar(state, false);

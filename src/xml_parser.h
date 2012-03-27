@@ -131,6 +131,7 @@ extern void finalizeXMLParserState(XMLParserState state);
 extern void xmlnodeParseDoc(XMLParserState state);
 extern void xmlnodeParseNode(XMLParserState state);
 extern char *readXMLAttValue(XMLParserState state, bool output, bool *refs);
+extern bool xmlAttrValueIsNumber(char *value);
 
 extern void xmlnodeDumpNode(char *input, XMLNodeOffset nodeOff,
 				char **output, unsigned int *pos);
