@@ -19,8 +19,8 @@ static bool considerSubScan(XPathElement xpEl, XMLNodeHdr node, XMLScan xscan, b
 static void addNodeToIgnoreList(XMLNodeHdr node, XMLScan scan);
 
 static void substituteAttributes(XPathExprState exprState, XMLCompNodeHdr element);
-static void substituteSubpaths(XPathExprState exprState, XPathExpression expression, XMLCompNodeHdr element,
-				   xmldoc document, XPathHeader xpHdr);
+static void substitutePaths(XPathExprState exprState, XPathExpression expression, XMLCompNodeHdr element,
+				xmldoc document, XPathHeader xpHdr);
 static void substituteFunctions(XPathExpression expression, XMLScan xscan);
 
 static void compareNumValues(XPathExprState exprState, XPathExprOperandValue valueLeft,
@@ -499,7 +499,7 @@ prepareXPathExpression(XPathExpression exprOrig, XMLCompNodeHdr ctxElem,
 	if (expr->npaths > 0)
 	{
 		/* Replace paths with matching node-sets. */
-		substituteSubpaths(state, expr, ctxElem, document, xpHdr);
+		substitutePaths(state, expr, ctxElem, document, xpHdr);
 	}
 
 	if (expr->nfuncs)
@@ -1194,8 +1194,8 @@ substituteAttributes(XPathExprState exprState, XMLCompNodeHdr element)
  * element - context node (XML element that we'll test using 'expression' when the substitution is complete)
  */
 static void
-substituteSubpaths(XPathExprState exprState, XPathExpression expression, XMLCompNodeHdr element, xmldoc document,
-				   XPathHeader xpHdr)
+substitutePaths(XPathExprState exprState, XPathExpression expression, XMLCompNodeHdr element, xmldoc document,
+				XPathHeader xpHdr)
 {
 	unsigned short i,
 				processed;
