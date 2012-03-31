@@ -225,6 +225,7 @@ typedef enum XPathFunctionId
 	XPATH_FUNC_BOOLEAN,
 	XPATH_FUNC_NUMBER,
 	XPATH_FUNC_STRING,
+	XPATH_FUNC_STARTS_WITH,
 
 	XPATH_FUNC_COUNT,
 	XPATH_FUNC_CONCAT
@@ -636,7 +637,7 @@ typedef struct XPathFunctionData
 typedef struct XPathFunctionData *XPathFunction;
 
 /* Total number of XPath functions the parser can recognize. */
-#define XPATH_FUNCTIONS			10
+#define XPATH_FUNCTIONS			11
 
 XPathFunctionData xpathFunctions[XPATH_FUNCTIONS];
 
@@ -658,6 +659,8 @@ extern void xpathNumber(XPathExprState exprState, unsigned short nargs, XPathExp
 			XPathExprOperandValue result);
 extern void xpathString(XPathExprState exprState, unsigned short nargs, XPathExprOperandValue args,
 			XPathExprOperandValue result);
+extern void xpathStartsWith(XPathExprState exprState, unsigned short nargs, XPathExprOperandValue args,
+				XPathExprOperandValue result);
 
 extern void xpathCount(XPathExprState exprState, unsigned short nargs, XPathExprOperandValue args,
 		   XPathExprOperandValue result);

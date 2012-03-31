@@ -64,6 +64,13 @@ XPathFunctionData xpathFunctions[] = {
 		XPATH_VAL_STRING, false
 	},
 	{
+		XPATH_FUNC_STARTS_WITH,
+		"starts-with", 2,
+		{XPATH_VAL_STRING, XPATH_VAL_STRING, 0, 0}, false,
+		{.args = xpathStartsWith},
+		XPATH_VAL_BOOLEAN, false
+	},
+	{
 		XPATH_FUNC_COUNT,
 		"count", 1,
 		{XPATH_VAL_NODESET, 0, 0, 0}, false,
@@ -198,6 +205,26 @@ xpathString(XPathExprState exprState, unsigned short nargs, XPathExprOperandValu
 	}
 
 	castXPathExprOperandToStr(exprState, src, result);
+}
+
+void
+xpathStartsWith(XPathExprState exprState, unsigned short nargs, XPathExprOperandValue args,
+				XPathExprOperandValue result)
+{
+
+	XPathExprOperandValueData containing;
+	XPathExprOperandValueData start;
+	char	   *containingStr,
+			   *startStr;
+
+	castXPathExprOperandToStr(exprState, args++, &containing);
+	containingStr = getXPathOperandValue(exprState, containing.v.stringId, XPATH_VAR_STRING);
+	castXPathExprOperandToStr(exprState, args, &start);
+	startStr = getXPathOperandValue(exprState, start.v.stringId, XPATH_VAR_STRING);
+
+	result->v.boolean = (strstr(containingStr, startStr) == containingStr);
+	result->type = XPATH_VAL_BOOLEAN;
+	result->isNull = false;
 }
 
 void
