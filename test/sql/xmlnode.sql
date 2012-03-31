@@ -424,7 +424,7 @@ order by id;
 select path('/a/node()', '<a i="1" j="2"><b/><c/><d i="1"/><e j="2"/><!--no comment--></a>');
 
 -- all attributes but no other nodes
-select path('/a/@*', '<a i="1" j="2" k="3"><b/><c/><d i="4"/><e j="5"/></a>');
+select path('/a/@*', '<a i="1"><b/><c/><d i="4"/><e j="5"/></a>');
 
 -- descendants
 select path('/a//b', '<a><b/><x><b i="3"/><a><b i="2"/></a></x></a>');

@@ -1692,10 +1692,10 @@ select path('/a/node()', '<a i="1" j="2"><b/><c/><d i="1"/><e j="2"/><!--no comm
  <b/><c/><d i="1"/><e j="2"/><!--no comment-->
 (1 row)
 
-select path('/a/@*', '<a i="1" j="2" k="3"><b/><c/><d i="4"/><e j="5"/></a>');
+select path('/a/@*', '<a i="1"><b/><c/><d i="4"/><e j="5"/></a>');
  path 
 ------
- 123
+ 1
 (1 row)
 
 select path('/a//b', '<a><b/><x><b i="3"/><a><b i="2"/></a></x></a>');
