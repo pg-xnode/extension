@@ -426,6 +426,18 @@ select path('/a/node()', '<a i="1" j="2"><b/><c/><d i="1"/><e j="2"/><!--no comm
 -- all attributes but no other nodes
 select path('/a/@*', '<a i="1"><b/><c/><d i="4"/><e j="5"/></a>');
 
+-- Some more exercises for '@*'
+select xml.path('/root[count(@*)]', '<root/>');
+select xml.path('/root[count(@*)]', '<root k="2"/>');
+select xml.path('/root[@*=@*]', '<root k="2" j="3"/>');
+select xml.path('/root[@*!=@*]', '<root k="2" j="3"/>');
+select xml.path('/root[@*=@*]', '<root k="2"/>');
+select xml.path('/root[@*!=@*]', '<root k="2"/>');
+select xml.path('/root[@*=@*]', '<root/>');
+select xml.path('/root[@*!=@*]', '<root/>');
+-- Related case: if the attribute operand is wrapped in (sub)expression, that expression's value type must be node set
+select xml.path_debug_print('count((@*))');
+
 -- descendants
 select path('/a//b', '<a><b/><x><b i="3"/><a><b i="2"/></a></x></a>');
 select path('//x/b', '<root><x><b><test1/><x><b><test2/></b></x></b><a><b><test3/></b><d/></a></x></root>');

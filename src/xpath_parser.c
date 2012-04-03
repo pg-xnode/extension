@@ -672,9 +672,16 @@ parseLocationPath(XPath * paths, bool isSubPath, unsigned short *pathCount, char
 					{
 						if (*state.c == XNODE_CHAR_ASTERISK)
 						{
-							xpath->allAttributes = true;
-							nextChar(&state, true);
-							break;
+							if (state.elementPos == 1)
+							{
+								xpath->allAttributes = true;
+								nextChar(&state, true);
+								break;
+							}
+							else
+							{
+								elog(ERROR, "'*' not expected at position %u of xpath expression", state.pos);
+							}
 						}
 						if (nameLen == 0)
 						{
@@ -920,7 +927,6 @@ static XPathExprOperand
 readExpressionOperand(XPathExpression exprTop, XPathParserState state, unsigned char termFlags,
 					  char *output, unsigned short *outPos, XPath * paths, unsigned short *pathCnt, bool mainExpr)
 {
-
 	XPathExprOperand op = (XPathExprOperand) ((char *) output + *outPos);
 	unsigned short ind = 0;
 	unsigned short indMax;
@@ -971,10 +977,15 @@ readExpressionOperand(XPathExpression exprTop, XPathParserState state, unsigned 
 	{
 		XPathFunction func = NULL;
 
+		/*
+		 * One of the following is expected: attribute (including '@*'), path
+		 * (either absolute or relative) or function.
+		 */
 		if (exprTop->variables == XPATH_EXPR_VAR_MAX)
 		{
 			elog(ERROR, "xpath expression contains too many variables");
 		}
+
 		if (*state->c == XNODE_CHAR_AT)
 		{
 			op->type = XPATH_OPERAND_ATTRIBUTE;
@@ -983,14 +994,18 @@ readExpressionOperand(XPathExpression exprTop, XPathParserState state, unsigned 
 			 * Set the type even if 'substituteAttributes()' function does it
 			 * too. If there's no appropriate attribute in the current
 			 * element, then no substitution takes place.
-			 * 'evaluateBinaryOperator()' could recognize 'isNull' attribute
-			 * of the operand, but its logic to evaluate operand types and
-			 * choose the correct casts is already complex enough.
+			 *
+			 * In such a case 'evaluateBinaryOperator()' could recognize
+			 * 'isNull' attribute of the operand and consequently ignore the
+			 * value type, but the logic to evaluate operand types and choose
+			 * the correct casts is already complex enough.
 			 */
-			op->value.type = XPATH_VAL_STRING;
+			op->value.type = XPATH_VAL_NODESET;
+			op->value.v.nodeSet.count = 0;
+			op->value.v.nodeSet.isDocument = false;
 			nextChar(state, false);
 
-			if (!XNODE_VALID_NAME_START(state->c))
+			if (!(XNODE_VALID_NAME_START(state->c) || *state->c == XNODE_CHAR_ASTERISK))
 			{
 				if (validXPathTermChar(*state->c, termFlags))
 				{
@@ -1100,6 +1115,7 @@ readExpressionOperand(XPathExpression exprTop, XPathParserState state, unsigned 
 			op->value.isNull = true;
 			op->substituted = false;
 		}
+
 		if (op->type == XPATH_OPERAND_ATTRIBUTE || op->type == XPATH_OPERAND_FUNC_NOARG ||
 			op->type == XPATH_OPERAND_PATH)
 		{
@@ -1113,11 +1129,12 @@ readExpressionOperand(XPathExpression exprTop, XPathParserState state, unsigned 
 		{
 			/* Finish reading of the attribute name. */
 			char	   *valueStorage = output + *outPos;
+			bool		oneCharOnly = (*state->c == XNODE_CHAR_ASTERISK);
 
 			do
 			{
 				nextOperandChar(valueStorage, state, &ind, indMax, true);
-			} while (XNODE_VALID_NAME_CHAR(state->c));
+			} while (XNODE_VALID_NAME_CHAR(state->c) && !oneCharOnly);
 			valueStorage[ind] = '\0';
 			*outPos += ind + 1;
 		}

@@ -629,7 +629,7 @@ order by id asc;
     |     or                                   +
     |     subexpr. explicit: (val. type: 0)    +
     |       subexpr. implicit: (val. type: 0)  +
-    |         subexpr. explicit: (val. type: 2)+
+    |         subexpr. explicit: (val. type: 3)+
     |           @e                             +
     |         !=                               +
     |         "a"                              +
@@ -1696,6 +1696,66 @@ select path('/a/@*', '<a i="1"><b/><c/><d i="4"/><e j="5"/></a>');
  path 
 ------
  1
+(1 row)
+
+select xml.path('/root[count(@*)]', '<root/>');
+ path 
+------
+ 
+(1 row)
+
+select xml.path('/root[count(@*)]', '<root k="2"/>');
+     path      
+---------------
+ <root k="2"/>
+(1 row)
+
+select xml.path('/root[@*=@*]', '<root k="2" j="3"/>');
+        path         
+---------------------
+ <root k="2" j="3"/>
+(1 row)
+
+select xml.path('/root[@*!=@*]', '<root k="2" j="3"/>');
+        path         
+---------------------
+ <root k="2" j="3"/>
+(1 row)
+
+select xml.path('/root[@*=@*]', '<root k="2"/>');
+     path      
+---------------
+ <root k="2"/>
+(1 row)
+
+select xml.path('/root[@*!=@*]', '<root k="2"/>');
+ path 
+------
+ 
+(1 row)
+
+select xml.path('/root[@*=@*]', '<root/>');
+ path 
+------
+ 
+(1 row)
+
+select xml.path('/root[@*!=@*]', '<root/>');
+ path 
+------
+ 
+(1 row)
+
+select xml.path_debug_print('count((@*))');
+            path_debug_print             
+-----------------------------------------
+ main expr.: (paths / funcs: 0 / 1)     +
+     count(                             +
+       subexpr. explicit: (val. type: 3)+
+         @*                             +
+     )                                  +
+   variables:                           +
+     attribute: *
 (1 row)
 
 select path('/a//b', '<a><b/><x><b i="3"/><a><b i="2"/></a></x></a>');

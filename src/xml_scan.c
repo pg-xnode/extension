@@ -489,12 +489,11 @@ prepareXPathExpression(XPathExpression exprOrig, XMLCompNodeHdr ctxElem,
 	state->expr = expr;
 
 	allocXPathExpressionVarCache(state, XPATH_VAR_STRING, true);
+	allocXPathExpressionVarCache(state, XPATH_VAR_NODE_SINGLE, true);
+	allocXPathExpressionVarCache(state, XPATH_VAR_NODE_ARRAY, true);
 
 	/* Replace attribute names with the values found in the current node.  */
 	substituteAttributes(state, ctxElem);
-
-	allocXPathExpressionVarCache(state, XPATH_VAR_NODE_SINGLE, true);
-	allocXPathExpressionVarCache(state, XPATH_VAR_NODE_ARRAY, true);
 
 	if (expr->npaths > 0)
 	{
@@ -548,9 +547,13 @@ allocXPathExpressionVarCache(XPathExprState state, XPathExprVar varKind, bool in
 			 * all functions) has to be used here and consequently 'countMax'
 			 * becomes oversized.
 			 *
+			 *
 			 * It seems that both function kinds should be treated as
 			 * variables. If that gets implemented, it has to be reflected in
 			 * dumpXPathExpression's verbose mode.
+			 *
+			 * Also attributes are no longer treated as strings: node makes
+			 * more sense.
 			 */
 			increment = expr->variables + expr->nlits + expr->nfuncs;
 			break;
@@ -565,11 +568,17 @@ allocXPathExpressionVarCache(XPathExprState state, XPathExprVar varKind, bool in
 
 			/*
 			 * At the moment we don't know whether all paths will become node
-			 * sets, single nodes or combination of both. Therefore 'npaths'
-			 * is used for both XPATH_VAR_NODE_SINGLE and
-			 * XPATH_VAR_NODE_ARRAY.
+			 * sets, single nodes or combination of both. Therefore 'npaths +
+			 * nattrs' should used for both XPATH_VAR_NODE_SINGLE and
+			 * XPATH_VAR_NODE_ARRAY. However there's no 'nattrs' counter, so
+			 * we use 'variables' in both cases.
 			 */
-			increment = expr->npaths;
+
+			/*
+			 * TODO This is also subject to the reorganization of the
+			 * counters.
+			 */
+			increment = expr->variables;
 			break;
 
 		case XPATH_VAR_NODE_ARRAY:
@@ -580,7 +589,7 @@ allocXPathExpressionVarCache(XPathExprState state, XPathExprVar varKind, bool in
 			chunkOrig = state->nodeSets;
 			unitSize = sizeof(XMLNodeHdr *);
 
-			increment = expr->npaths;
+			increment = expr->variables;
 			break;
 
 		default:
@@ -946,6 +955,7 @@ evaluateBinaryOperator(XPathExprState exprState, XPathExprOperandValue valueLeft
 					result->v.boolean = operator->id == XPATH_EXPR_OPERATOR_EQ;
 					return;
 				}
+
 				if (nsLeft->count == 0 || nsRight->count == 0)
 				{
 					result->v.boolean = false;
@@ -1115,13 +1125,18 @@ substituteAttributes(XPathExprState exprState, XMLCompNodeHdr element)
 {
 	unsigned short childrenLeft = element->children;
 	char	   *childFirst = XNODE_FIRST_REF(element);
+	char		bwidth = XNODE_GET_REF_BWIDTH(element);
 	char	   *chldOffPtr = childFirst;
 	unsigned short attrNr = 0;
+	unsigned short attrCount = 0;
+	XMLNodeHdr *attributes = NULL;
+	unsigned int attrId = 0;
+	unsigned int attrsArrayId = 0;
 
 	while (childrenLeft > 0)
 	{
 		XMLNodeHdr	child = (XMLNodeHdr) ((char *) element -
-		readXMLNodeOffset(&chldOffPtr, XNODE_GET_REF_BWIDTH(element), true));
+							   readXMLNodeOffset(&chldOffPtr, bwidth, true));
 
 		if (child->kind == XMLNODE_ATTRIBUTE)
 		{
@@ -1131,6 +1146,10 @@ substituteAttributes(XPathExprState exprState, XMLCompNodeHdr element)
 			XPathOffset *varOffPtr = (XPathOffset *) ((char *) exprState->expr +
 												sizeof(XPathExpressionData));
 
+			/*
+			 * Check all variables and find those referencing 'child'
+			 * attribute.
+			 */
 			for (i = 0; i < exprState->expr->variables; i++)
 			{
 				XPathExprOperand opnd = (XPathExprOperand) ((char *) exprState->expr +
@@ -1142,23 +1161,104 @@ substituteAttributes(XPathExprState exprState, XMLCompNodeHdr element)
 					continue;
 				}
 
-				if (opnd->type == XPATH_OPERAND_ATTRIBUTE &&
-					strcmp(attrName, XPATH_STRING_LITERAL(&opnd->value)) == 0)
+				if (opnd->type == XPATH_OPERAND_ATTRIBUTE)
 				{
-					char	   *attrValue = attrName + strlen(attrName) + 1;
+					XPathNodeSet nodeSet = &opnd->value.v.nodeSet;
+					unsigned int nodeNr = exprState->count[XPATH_VAR_NODE_SINGLE] + attrNr;
+					char	   *opndValue = XPATH_STRING_LITERAL(&opnd->value);
 
-					matches++;
-					Assert(attrNr < exprState->countMax[XPATH_VAR_STRING]);
-					if (matches == 1)
+					if (*opndValue == XNODE_CHAR_ASTERISK)
 					{
-						exprState->strings[exprState->count[XPATH_VAR_STRING] + attrNr] = attrValue;
-					}
+						if (attributes == NULL)
+						{
+							char	   *attrOffPtr = childFirst;
+							unsigned short j;
+							unsigned int size = element->children * sizeof(XMLNodeHdr);
 
-					opnd->value.v.stringId = attrNr;
-					opnd->substituted = true;
-					opnd->value.isNull = false;
-					opnd->value.type = XPATH_VAL_STRING;
-					opnd->value.castToNumber = XNODE_ATTR_IS_NUMBER(child);
+							attributes = (XMLNodeHdr *) palloc(size);
+							MemSet(attributes, 0, size);
+							for (j = 0; j < element->children; j++)
+							{
+								XMLNodeHdr	attrNode = (XMLNodeHdr) ((char *) element -
+								readXMLNodeOffset(&attrOffPtr, bwidth, true));
+
+								if (attrNode->kind != XMLNODE_ATTRIBUTE)
+								{
+									break;
+								}
+								attributes[j] = attrNode;
+								attrCount++;
+							}
+							Assert(j > 0);
+
+							if (attrCount == 1)
+							{
+								attrId = getXPathOperandId(exprState, attributes[0], XPATH_VAR_NODE_SINGLE);
+
+								/*
+								 * In this case only the single attribute has
+								 * been added to the cache, so the
+								 * 'attributes' array is no longer needed.
+								 */
+								pfree(attributes);
+							}
+							else
+							{
+								attrsArrayId = getXPathOperandId(exprState, attributes, XPATH_VAR_NODE_ARRAY);
+							}
+						}
+						if (attrCount == 1)
+						{
+							nodeSet->nodes.nodeId = attrId;
+						}
+						else
+						{
+							nodeSet->nodes.arrayId = attrsArrayId;
+						}
+						nodeSet->count = attrCount;
+						nodeSet->isDocument = false;
+						opnd->value.isNull = false;
+						opnd->substituted = true;
+						opnd->value.type = XPATH_VAL_NODESET;
+					}
+					else if (strcmp(attrName, opndValue) == 0)
+					{
+						/*
+						 * Save node pointer into the variable cache and
+						 * assign its id to the operand.
+						 *
+						 * getXPathOperandId() can't be used here because any
+						 * attribute may be substituted for multiple
+						 * variables. It wouldn't bee too efficient to assign
+						 * a separate id (and storage) to such attribute
+						 * multiple times (i.e. once for each variable that
+						 * references it).
+						 */
+						matches++;
+						Assert(nodeNr <= exprState->countMax[XPATH_VAR_NODE_SINGLE]);
+						if (nodeNr == exprState->countMax[XPATH_VAR_NODE_SINGLE])
+						{
+							allocXPathExpressionVarCache(exprState, XPATH_VAR_NODE_SINGLE, false);
+						}
+
+						/*
+						 * The attribute pointer is only added to cache once.
+						 * If it occurs in the expression multiple times, all
+						 * occurrences share the same instance in the cache.
+						 */
+						if (matches == 1)
+						{
+							exprState->nodes[nodeNr] = child;
+						}
+
+						nodeSet->nodes.nodeId = nodeNr;
+						nodeSet->count = 1;
+						nodeSet->isDocument = false;
+
+						opnd->value.isNull = false;
+						opnd->substituted = true;
+						opnd->value.type = XPATH_VAL_NODESET;
+					}
 				}
 				varOffPtr++;
 			}
@@ -1182,7 +1282,7 @@ substituteAttributes(XPathExprState exprState, XMLCompNodeHdr element)
 		}
 		childrenLeft--;
 	}
-	exprState->count[XPATH_VAR_STRING] += attrNr;
+	exprState->count[XPATH_VAR_NODE_SINGLE] += attrNr;
 }
 
 /*
