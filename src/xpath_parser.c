@@ -417,6 +417,12 @@ parseLocationPath(XPath * paths, bool isSubPath, unsigned short *pathCount, char
 	{
 		elog(ERROR, "too many paths in an XPath expression");
 	}
+
+	/*
+	 * Separate instance of the state is used here because we need a separate
+	 * block of memory for each location path (pointer to which will be added
+	 * to 'paths' output array).
+	 */
 	state.outSize = XPATH_PARSER_OUTPUT_CHUNK;
 	state.outChunks = 1;
 	state.output = state.result = (char *) palloc(state.outSize);

@@ -78,6 +78,12 @@ typedef struct XPathData
 								 * structure */
 	uint8		targNdKind;		/* 'uint8' just for storage, values are listed
 								 * in 'enum XMLNodeKind' */
+
+	/*
+	 * 'true' if the path ends with '@*' Parser only sets the appropriate
+	 * value if 'targNdKind' is XMLNODE_ATTRIBUTE. Otherwise 'allAttributes'
+	 * is not defined.
+	 */
 	bool		allAttributes;
 	bool		piTestValue;
 	XPathOffset elements[1];
