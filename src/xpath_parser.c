@@ -390,8 +390,8 @@ XPathExprOperatorIdStore * firstOpIdPtr, char *output, unsigned short *outPos,
 /*
  * Parse location path
  *
- * paths - if 'isSubPath' is true, then store pointer to the (binary) XPath
- * to this array, at position 'pathCount'
+ * paths - the parsed path pointer is stored into this array, at position 'pathCount'.
+ * If the location path has predicates containing other paths, these are stored too.
  *
  * 'isSubPath' - if true, a sub-path is to be parsed. Otherwise a top-level XPath.
  *
@@ -402,10 +402,8 @@ XPathExprOperatorIdStore * firstOpIdPtr, char *output, unsigned short *outPos,
  *
  * 'pos' - position in the source text where the parsing should continue.
  * Unlike 'xpathSrc', this is increased by one for each character, whether it's single-byte or MB.
- *
- * Returns a pointer to the top-level (binary) XPath or NULL for a sub-path
  */
-XPath
+void
 parseLocationPath(XPath * paths, bool isSubPath, unsigned short *pathCount, char **xpathSrc,
 				  unsigned short *pos)
 {
@@ -853,17 +851,9 @@ parseLocationPath(XPath * paths, bool isSubPath, unsigned short *pathCount, char
 	}
 	xpath = (XPath) state.result;
 	xpath->size = state.output - state.result;
-	if (isSubPath)
-	{
-		*xpathSrc = state.c;
-		*pos = state.pos;
-		paths[*pathCount] = xpath;
-		return NULL;
-	}
-	else
-	{
-		return xpath;
-	}
+	*xpathSrc = state.c;
+	*pos = state.pos;
+	paths[*pathCount] = xpath;
 }
 
 /*

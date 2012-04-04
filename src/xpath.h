@@ -457,7 +457,7 @@ extern XPathExprOperatorIdStore *parseXPathExpression(XPathExpression exprCurren
 					 unsigned char termFlags, XPathExprOperatorIdStore * firstOpPtr, char *output, unsigned short *outPos, bool isSubExpr,
   bool argList, XPath * subpaths, unsigned short *subpathCnt, bool mainExpr);
 
-extern XPath parseLocationPath(XPath * subpaths, bool isSubPath, unsigned short *subpathCnt, char **xpathPtr,
+extern void parseLocationPath(XPath * subpaths, bool isSubPath, unsigned short *subpathCnt, char **xpathPtr,
 				  unsigned short *pos);
 
 /*
