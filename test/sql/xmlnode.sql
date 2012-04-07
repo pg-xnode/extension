@@ -394,6 +394,14 @@ select path('/root[@b>"a"]', '<root b="1.1"><b/></root>');
 select path('/root[@b>b]', '<root b="abc"><b>def</b></root>');
 select path('/root[@b<b]', '<root b="abc"><b>def</b></root>');
 
+-- Operator '|' (union)
+-- First, check that operator output type is correctly set:
+select xml.path_debug_print('/a[@i > @j]|/b or /c');
+select xml.path_debug_print('(/a[@i > @j]|/b) or /c');
+-- Does the union operator eliminate duplicate nodes?
+select xml.path('/root/a|/root/a', '<root><a/></root>');
+select xml.path('/root/a|/root/a|/root', '<root><a/></root>');
+
 -- The XPath predicate can be used even if the element has no children/attributes
 select path('/root["a"]', '<root/>');
 select path('/root[@a or a]', '<root/>');

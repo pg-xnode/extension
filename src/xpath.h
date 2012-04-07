@@ -314,13 +314,14 @@ typedef struct XPathExprOperandData
 
 typedef struct XPathExprOperandData *XPathExprOperand;
 
-#define XPATH_EXPR_OPERATOR_KINDS	8
+#define XPATH_EXPR_OPERATOR_KINDS	9
 
 /*
  * The order must be identical to that in 'xpathOperators' array, see xpath.c
  */
 typedef enum XPathExprOperatorId
 {
+	XPATH_EXPR_OPERATOR_UNION,
 	XPATH_EXPR_OPERATOR_LTE,
 	XPATH_EXPR_OPERATOR_LT,
 	XPATH_EXPR_OPERATOR_GTE,

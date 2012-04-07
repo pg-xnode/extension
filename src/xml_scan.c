@@ -35,8 +35,10 @@ static void compareNumToStr(double num, char *numStr, XPathExprOperator operator
 				XPathExprOperandValue result);
 static bool compareValueToNodeSet(XPathExprState exprState, XPathExprOperandValue value, XPathNodeSet ns,
 					  XPathExprOperator operator);
-
 static bool isOnIgnoreList(XMLNodeHdr node, XMLScan scan);
+static void getUnion(XPathExprState exprState, XPathNodeSet setLeft, XPathNodeSet setRight, XPathNodeSet setResult);
+static void copyNodeSet(XPathExprState exprState, XPathNodeSet nodeSet, XMLNodeHdr * output, unsigned int *position);
+static int	nodePtrComparator(const void *arg1, const void *arg2);
 
 /*
  * 'xscan' - the scan to be initialized 'xpath' - location path to be used
@@ -903,7 +905,6 @@ evaluateBinaryOperator(XPathExprState exprState, XPathExprOperandValue valueLeft
 
 		result->type = XPATH_VAL_BOOLEAN;
 		result->v.boolean = (operator->id == XPATH_EXPR_OPERATOR_OR) ? left || right : left && right;
-		return;
 	}
 	else if (operator->id == XPATH_EXPR_OPERATOR_EQ || operator->id == XPATH_EXPR_OPERATOR_NEQ)
 	{
@@ -1046,13 +1047,28 @@ evaluateBinaryOperator(XPathExprState exprState, XPathExprOperandValue valueLeft
 		compareNumValues(exprState, valueLeft, valueRight, operator, result);
 		result->isNull = false;
 		result->type = XPATH_VAL_BOOLEAN;
-		return;
+	}
+	else if (operator->id == XPATH_EXPR_OPERATOR_UNION)
+	{
+		XPathNodeSet nodeSetLeft,
+					nodeSetRight;
+
+		if (valueLeft->type != XPATH_VAL_NODESET || valueRight->type != XPATH_VAL_NODESET)
+		{
+			/* Parser shouldn't allow this, but let's check anyway. */
+			elog(ERROR, "union operator expects nodeset on both sides");
+		}
+
+		nodeSetLeft = &valueLeft->v.nodeSet;
+		nodeSetRight = &valueRight->v.nodeSet;
+		getUnion(exprState, nodeSetLeft, nodeSetRight, &result->v.nodeSet);
+		result->isNull = (result->v.nodeSet.count == 0);
+		result->type = XPATH_VAL_NODESET;
 	}
 	else
 	{
 		elog(ERROR, "unknown operator to evaluate: %u", operator->id);
 		result->v.boolean = false;
-		return;
 	}
 }
 
@@ -2057,5 +2073,114 @@ isOnIgnoreList(XMLNodeHdr node, XMLScan scan)
 	else
 	{
 		return false;
+	}
+}
+
+/*
+ * Generate node set containing nodes from both 'setLeft' and 'setRight', omitting duplicate nodes.
+ *
+ * The simplest approach is to sort the nodes by position in the document, then iterate through the list
+ * and ignore repeated values.
+ *
+ * Given the binary format (children at lower positions than parents) this may produce different order from
+ * what user may expect. For example
+ * xml.path('/root/a|/root/text()|/root/a/text()', '<root><a>b</a>c</root>')
+ * gives
+ * b<a>b</a>c
+ *
+ * Until it's clear if this is in contradiction with XPath standard, let's leave it this way.
+ */
+static void
+getUnion(XPathExprState exprState, XPathNodeSet setLeft, XPathNodeSet setRight, XPathNodeSet setResult)
+{
+	unsigned int countMax = setLeft->count + setRight->count;
+	unsigned int resSize = countMax * sizeof(XMLNodeHdr *);
+	XMLNodeHdr *nodesAll = (XMLNodeHdr *) palloc(resSize);
+	XMLNodeHdr *result = (XMLNodeHdr *) palloc(resSize);
+	unsigned int pos = 0;
+	unsigned int i,
+				j;
+
+	copyNodeSet(exprState, setLeft, nodesAll, &pos);
+	copyNodeSet(exprState, setRight, nodesAll, &pos);
+
+	Assert(pos == countMax);
+	qsort(nodesAll, countMax, sizeof(XMLNodeHdr), nodePtrComparator);
+
+	/* Copy nodes to the result array, but skip the repeating values. */
+	MemSet(result, 0, resSize);
+	j = 0;
+	for (i = 0; i < countMax; i++)
+	{
+		if (i == 0 || (i > 0 && result[j - 1] != nodesAll[i]))
+		{
+			result[j++] = nodesAll[i];
+		}
+	}
+	setResult->count = j;
+	setResult->isDocument = false;
+
+	/*
+	 * Don't add anything to variable cache if the union is empty. The caller
+	 * will handle such a case by setting the operand's 'isNull' to true.
+	 */
+	if (j == 1)
+	{
+		setResult->nodes.nodeId = getXPathOperandId(exprState, result[0], XPATH_VAR_NODE_SINGLE);
+		pfree(result);
+	}
+	else if (j > 1)
+	{
+		setResult->nodes.arrayId = getXPathOperandId(exprState, result, XPATH_VAR_NODE_ARRAY);
+	}
+	pfree(nodesAll);
+}
+
+/*
+ * Copy node(s) from 'nodeSet' to 'output', starting at '*position'.
+ * Sufficient space must be allocated in 'output'.
+ * '*position' gets increased by the number of nodes actually added.
+ */
+static void
+copyNodeSet(XPathExprState exprState, XPathNodeSet nodeSet, XMLNodeHdr * output, unsigned int *position)
+{
+	XMLNodeHdr *start = output + *position;
+
+	if (nodeSet->count == 0)
+	{
+		return;
+	}
+
+	if (nodeSet->count == 1)
+	{
+		*start = (XMLNodeHdr) getXPathOperandValue(exprState, nodeSet->nodes.nodeId, XPATH_VAR_NODE_SINGLE);
+		(*position)++;
+	}
+	else
+	{
+		XMLNodeHdr *nodes = (XMLNodeHdr *) getXPathOperandValue(exprState, nodeSet->nodes.arrayId, XPATH_VAR_NODE_ARRAY);
+
+		memcpy(start, nodes, nodeSet->count * sizeof(XMLNodeHdr *));
+		*position += nodeSet->count;
+	}
+}
+
+static int
+nodePtrComparator(const void *arg1, const void *arg2)
+{
+	XMLNodeHdr *node1 = (XMLNodeHdr *) arg1;
+	XMLNodeHdr *node2 = (XMLNodeHdr *) arg2;
+
+	if (*node1 < *node2)
+	{
+		return -1;
+	}
+	else if (*node1 > *node2)
+	{
+		return 1;
+	}
+	else
+	{
+		return 0;
 	}
 }

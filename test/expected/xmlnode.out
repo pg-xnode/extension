@@ -1586,6 +1586,108 @@ select path('/root[@b<b]', '<root b="abc"><b>def</b></root>');
  
 (1 row)
 
+select xml.path_debug_print('/a[@i > @j]|/b or /c');
+             path_debug_print              
+-------------------------------------------
+ main expr.: (paths / funcs: 3 / 0)       +
+     subexpr. implicit: (val. type: 3)    +
+       <path 0>                           +
+       |                                  +
+       <path 1>                           +
+     or                                   +
+     <path 2>                             +
+   variables:                             +
+     path: 0                              +
+     path: 1                              +
+     path: 2                              +
+                                          +
+                                          +
+ <path 0>                                 +
+                                          +
+ absolute xpath                           +
+                                          +
+ node test:      a                        +
+   predicate expr.: (paths / funcs: 0 / 0)+
+     @i                                   +
+     >                                    +
+     @j                                   +
+   variables:                             +
+     attribute: i                         +
+     attribute: j                         +
+                                          +
+                                          +
+ <path 1>                                 +
+                                          +
+ absolute xpath                           +
+                                          +
+ node test:      b                        +
+                                          +
+                                          +
+ <path 2>                                 +
+                                          +
+ absolute xpath                           +
+                                          +
+ node test:      c                        +
+ 
+(1 row)
+
+select xml.path_debug_print('(/a[@i > @j]|/b) or /c');
+             path_debug_print              
+-------------------------------------------
+ main expr.: (paths / funcs: 3 / 0)       +
+     subexpr. explicit: (val. type: 3)    +
+       <path 0>                           +
+       |                                  +
+       <path 1>                           +
+     or                                   +
+     <path 2>                             +
+   variables:                             +
+     path: 0                              +
+     path: 1                              +
+     path: 2                              +
+                                          +
+                                          +
+ <path 0>                                 +
+                                          +
+ absolute xpath                           +
+                                          +
+ node test:      a                        +
+   predicate expr.: (paths / funcs: 0 / 0)+
+     @i                                   +
+     >                                    +
+     @j                                   +
+   variables:                             +
+     attribute: i                         +
+     attribute: j                         +
+                                          +
+                                          +
+ <path 1>                                 +
+                                          +
+ absolute xpath                           +
+                                          +
+ node test:      b                        +
+                                          +
+                                          +
+ <path 2>                                 +
+                                          +
+ absolute xpath                           +
+                                          +
+ node test:      c                        +
+ 
+(1 row)
+
+select xml.path('/root/a|/root/a', '<root><a/></root>');
+ path 
+------
+ <a/>
+(1 row)
+
+select xml.path('/root/a|/root/a|/root', '<root><a/></root>');
+         path          
+-----------------------
+ <a/><root><a/></root>
+(1 row)
+
 select path('/root["a"]', '<root/>');
   path   
 ---------

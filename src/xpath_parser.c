@@ -16,6 +16,8 @@ static XPathExprOperand readExpressionOperand(XPathExpression exprTop, XPathPars
 static void nextOperandChar(char *value, XPathParserState state, unsigned short *ind,
 				unsigned short indMax, bool endAllowed);
 static void checkExprOperand(XPathExpression exprTop, XPathExprOperand operand, bool mainExpr);
+static void checkOperandValueType(XPathExprOperand operand, XPathValueType valType);
+static XPathValueType getFunctionResultType(XPathExprOperand funcOperand);
 static bool canBeNumber(char *str, double *numValue, char **end);
 static XPathExprOperatorIdStore *readExpressionOperator(XPathParserState state, char *output,
 					   unsigned short *outPos);
@@ -38,16 +40,21 @@ static void dumpXPathExprOperator(char **input, StringInfo output, unsigned shor
 /*
  * If multiple operators start with the same char/substring, the longer
  * one(s) must precede the shorter one(s).
+ *
+ * Even though the standard does not explicitly specify precedence of the union operator,
+ * it's obvious that it has to be at first position. In other words, it makes no sense to
+ * postpone evaluation of the union because no other operator has nodeset as result type.
  */
 XPathExprOperatorTextData xpathOperators[XPATH_EXPR_OPERATOR_KINDS] = {
-	{{XPATH_EXPR_OPERATOR_LTE, 0, XPATH_VAL_BOOLEAN}, "<="},
-	{{XPATH_EXPR_OPERATOR_LT, 0, XPATH_VAL_BOOLEAN}, "<"},
-	{{XPATH_EXPR_OPERATOR_GTE, 0, XPATH_VAL_BOOLEAN}, ">="},
-	{{XPATH_EXPR_OPERATOR_GT, 0, XPATH_VAL_BOOLEAN}, ">"},
-	{{XPATH_EXPR_OPERATOR_EQ, 1, XPATH_VAL_BOOLEAN}, "="},
-	{{XPATH_EXPR_OPERATOR_NEQ, 1, XPATH_VAL_BOOLEAN}, "!="},
-	{{XPATH_EXPR_OPERATOR_AND, 2, XPATH_VAL_BOOLEAN}, "and"},
-	{{XPATH_EXPR_OPERATOR_OR, 3, XPATH_VAL_BOOLEAN}, "or"}
+	{{XPATH_EXPR_OPERATOR_UNION, 0, XPATH_VAL_NODESET}, "|"},
+	{{XPATH_EXPR_OPERATOR_LTE, 1, XPATH_VAL_BOOLEAN}, "<="},
+	{{XPATH_EXPR_OPERATOR_LT, 1, XPATH_VAL_BOOLEAN}, "<"},
+	{{XPATH_EXPR_OPERATOR_GTE, 1, XPATH_VAL_BOOLEAN}, ">="},
+	{{XPATH_EXPR_OPERATOR_GT, 1, XPATH_VAL_BOOLEAN}, ">"},
+	{{XPATH_EXPR_OPERATOR_EQ, 2, XPATH_VAL_BOOLEAN}, "="},
+	{{XPATH_EXPR_OPERATOR_NEQ, 2, XPATH_VAL_BOOLEAN}, "!="},
+	{{XPATH_EXPR_OPERATOR_AND, 3, XPATH_VAL_BOOLEAN}, "and"},
+	{{XPATH_EXPR_OPERATOR_OR, 4, XPATH_VAL_BOOLEAN}, "or"}
 };
 
 /* Order of values must follow that of XPathNodeType enumeration */
@@ -155,6 +162,13 @@ XPathExprOperatorIdStore * firstOpIdPtr, char *output, unsigned short *outPos,
 	unsigned short firstMembOff = (char *) exprCurrent - (char *) output + sizeof(XPathExpressionData);
 
 	/*
+	 * Not any operand type can be cast to nodeset. Therefore, if some
+	 * operator requires nodesets, additional check has to be applied to
+	 * operands.
+	 */
+	bool		nodeSetsOnly = false;
+
+	/*
 	 * If 'firstOperator is not NULL, then '*state->c' points to the 2nd
 	 * operand and not to the 1st one.
 	 */
@@ -187,21 +201,7 @@ XPathExprOperatorIdStore * firstOpIdPtr, char *output, unsigned short *outPos,
 
 		if (operand->type == XPATH_OPERAND_FUNC || operand->type == XPATH_OPERAND_FUNC_NOARG)
 		{
-			XPathFunctionId fid;
-			XPathFunction func;
-
-			if (operand->type == XPATH_OPERAND_FUNC_NOARG)
-			{
-				fid = operand->value.v.funcId;
-			}
-			else
-			{
-				XPathExpression argList = (XPathExpression) operand;
-
-				fid = argList->funcId;
-			}
-			func = &xpathFunctions[fid];
-			exprCurrent->valType = func->resType;
+			exprCurrent->valType = getFunctionResultType(operand);
 		}
 		else
 		{
@@ -253,6 +253,18 @@ XPathExprOperatorIdStore * firstOpIdPtr, char *output, unsigned short *outPos,
 			operator = XPATH_EXPR_OPERATOR(opIdPtr);
 			skipWhiteSpace(state, false);
 		}
+
+		if (exprCurrent->members == 1)
+		{
+			if (operator->id == XPATH_EXPR_OPERATOR_UNION)
+			{
+				XPathExprOperand opndFirst = (XPathExprOperand) ((char *) exprTop + firstMembOff);
+
+				checkOperandValueType(opndFirst, XPATH_VAL_NODESET);
+				nodeSetsOnly = true;
+			}
+		}
+
 		if (firstIter)
 		{
 			if (!isSubExpr || subExprExpl)
@@ -330,6 +342,14 @@ XPathExprOperatorIdStore * firstOpIdPtr, char *output, unsigned short *outPos,
 			}
 			else
 			{
+				/*
+				 * If the current operator is at lower position in terms of
+				 * precedence, everything we've read so far will be enclosed
+				 * in an implicit subexpression. This is not necessary as long
+				 * as expression is evaluated from left to right. However it
+				 * brings advantage in some cases to have only one precedence
+				 * in each (sub)expression.
+				 */
 				char	   *firstMember = (char *) exprTop + firstMembOff;
 				XPathExpression subExpr = (XPathExpression) firstMember;
 				unsigned short subExprSzNew = (char *) opIdPtr - (char *) subExpr + shift;
@@ -340,8 +360,13 @@ XPathExprOperatorIdStore * firstOpIdPtr, char *output, unsigned short *outPos,
 				operator = XPATH_EXPR_OPERATOR(opIdPtr);
 				subExpr->members = exprCurrent->members;
 				subExpr->size = subExprSzNew;
-				subExpr->valType = operator->resType;
+				subExpr->valType = exprCurrent->valType;
+				exprCurrent->valType = operator->resType;
 				operand = readExpressionOperand(exprTop, state, termFlags, output, outPos, paths, pathCnt, mainExpr);
+				if (nodeSetsOnly)
+				{
+					checkOperandValueType(operand, XPATH_VAL_NODESET);
+				}
 				checkExprOperand(exprTop, operand, mainExpr);
 				skipWhiteSpace(state, false);
 				readOperator = true;
@@ -350,7 +375,19 @@ XPathExprOperatorIdStore * firstOpIdPtr, char *output, unsigned short *outPos,
 		}
 		else
 		{
+			/* The operator has the same precedence as the previous did. */
+
+			/*
+			 * Union has unique precedence, therefore parser should not mix it
+			 * with any other operator.
+			 */
+			Assert((nodeSetsOnly && operator->id == XPATH_EXPR_OPERATOR_UNION) || !nodeSetsOnly);
+
 			operand = readExpressionOperand(exprTop, state, termFlags, output, outPos, paths, pathCnt, mainExpr);
+			if (nodeSetsOnly)
+			{
+				checkOperandValueType(operand, XPATH_VAL_NODESET);
+			}
 			checkExprOperand(exprTop, operand, mainExpr);
 			skipWhiteSpace(state, true);
 			readOperator = true;
@@ -1251,6 +1288,70 @@ checkExprOperand(XPathExpression exprTop, XPathExprOperand operand, bool mainExp
 	{
 		exprTop->nlits++;
 	}
+}
+
+static void
+checkOperandValueType(XPathExprOperand operand, XPathValueType valType)
+{
+	bool		match = false;
+
+	if (valType == XPATH_VAL_NODESET)
+	{
+		switch (operand->type)
+		{
+			case XPATH_OPERAND_ATTRIBUTE:
+			case XPATH_OPERAND_PATH:
+				match = true;
+				break;
+
+			case XPATH_OPERAND_EXPR_TOP:
+			case XPATH_OPERAND_EXPR_SUB:
+				{
+					XPathExpression expr = (XPathExpression) operand;
+
+					match = (expr->valType == valType);
+				}
+				break;
+
+			case XPATH_OPERAND_FUNC:
+			case XPATH_OPERAND_FUNC_NOARG:
+				match = (getFunctionResultType(operand) == valType);
+				break;
+		}
+	}
+	else
+	{
+		elog(ERROR, "check of operand value type %u not implemented", valType);
+	}
+
+	if (!match)
+	{
+		elog(ERROR, "xpath expression operand can't be used as %s", xpathValueTypes[valType]);
+	}
+}
+
+static XPathValueType
+getFunctionResultType(XPathExprOperand funcOperand)
+{
+	XPathFunctionId fid = 0;
+	XPathFunction func;
+
+	if (funcOperand->type == XPATH_OPERAND_FUNC_NOARG)
+	{
+		fid = funcOperand->value.v.funcId;
+	}
+	else if (funcOperand->type == XPATH_OPERAND_FUNC)
+	{
+		XPathExpression argList = (XPathExpression) funcOperand;
+
+		fid = argList->funcId;
+	}
+	else
+	{
+		elog(ERROR, "function expected, received operand type %u instead", funcOperand->type);
+	}
+	func = &xpathFunctions[fid];
+	return func->resType;
 }
 
 /*
