@@ -1336,6 +1336,17 @@ substitutePaths(XPathExprState exprState, XPathExpression expression, XMLCompNod
 				opnd->value.isNull = false;
 				opnd->value.v.nodeSet.isDocument = true;
 			}
+			else if (!subPath->relative && subPath->depth == 1 &&
+					 subPath->descendants == 0 && subPath->targNdKind == XMLNODE_ATTRIBUTE)
+			{
+				/*
+				 * Paths like '/@attr' or '/@*' never point to a valid node.
+				 * Further evaluation makes no sense in such cases.
+				 */
+				opnd->value.isNull = true;
+				opnd->value.v.nodeSet.count = 0;
+				opnd->value.v.nodeSet.isDocument = false;
+			}
 			else
 			{
 				XMLCompNodeHdr parent = (subPath->relative) ? element : (XMLCompNodeHdr) XNODE_ROOT(document);

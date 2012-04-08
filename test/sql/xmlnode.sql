@@ -444,8 +444,14 @@ select xml.path('/root[@*=@*]', '<root k="2"/>');
 select xml.path('/root[@*!=@*]', '<root k="2"/>');
 select xml.path('/root[@*=@*]', '<root/>');
 select xml.path('/root[@*!=@*]', '<root/>');
+select xml.path('/@i', '<root i="1"/>');
+select xml.path('/@*', '<root i="1"/>');
+select xml.path('/root', '{"@*"}', '<root i="1"/>');
+select xml.path('//@id', '<a><b id="1" d="1"/></a>');
 -- Related case: if the attribute operand is wrapped in (sub)expression, that expression's value type must be node set
 select xml.path_debug_print('count((@*))');
+
+
 
 -- descendants
 select path('/a//b', '<a><b/><x><b i="3"/><a><b i="2"/></a></x></a>');

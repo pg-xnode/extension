@@ -74,6 +74,7 @@ typedef struct XPathData
 	 * therefore uniqueness of nodes returned has to be checked.
 	 */
 	uint8		descendants;
+
 	uint32		size;			/* Size of the whole XPath, including this
 								 * structure */
 	uint8		targNdKind;		/* 'uint8' just for storage, values are listed
