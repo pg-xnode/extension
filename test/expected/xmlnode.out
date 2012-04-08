@@ -347,687 +347,687 @@ order by id asc;
 select id, path_debug_print(path)
 from paths
 order by id asc;
- id |             path_debug_print              
-----+-------------------------------------------
-  0 | main expr.: (paths / funcs: 1 / 0)       +
-    |     <path 0>                             +
-    |   variables:                             +
-    |     path: 0                              +
-    |                                          +
-    |                                          +
-    | <path 0>                                 +
-    |                                          +
-    | absolute xpath                           +
-    |                                          +
-    | node test:      c                        +
-    |   predicate expr.: (paths / funcs: 0 / 0)+
-    |     subexpr. implicit: (val. type: 0)    +
-    |       subexpr. implicit: (val. type: 0)  +
-    |         @cd                              +
-    |         !=                               +
-    |         @e                               +
-    |         !=                               +
-    |         "a"                              +
-    |       and                                +
-    |       @b                                 +
-    |       and                                +
-    |       @c                                 +
-    |     or                                   +
-    |     @f                                   +
-    |   variables:                             +
-    |     attribute: cd                        +
-    |     attribute: e                         +
-    |     attribute: b                         +
-    |     attribute: c                         +
-    |     attribute: f                         +
-    | attr. test:     @g                       +
+ id |                    path_debug_print                     
+----+---------------------------------------------------------
+  0 | main expr.: (paths / funcs: 1 / 0, val. type: 3)       +
+    |     <path 0>                                           +
+    |   variables:                                           +
+    |     path: 0                                            +
+    |                                                        +
+    |                                                        +
+    | <path 0>                                               +
+    |                                                        +
+    | absolute xpath                                         +
+    |                                                        +
+    | node test:      c                                      +
+    |   predicate expr.: (paths / funcs: 0 / 0, val. type: 0)+
+    |     subexpr. implicit: (val. type: 0)                  +
+    |       subexpr. implicit: (val. type: 0)                +
+    |         @cd                                            +
+    |         !=                                             +
+    |         @e                                             +
+    |         !=                                             +
+    |         "a"                                            +
+    |       and                                              +
+    |       @b                                               +
+    |       and                                              +
+    |       @c                                               +
+    |     or                                                 +
+    |     @f                                                 +
+    |   variables:                                           +
+    |     attribute: cd                                      +
+    |     attribute: e                                       +
+    |     attribute: b                                       +
+    |     attribute: c                                       +
+    |     attribute: f                                       +
+    | attr. test:     @g                                     +
     | 
-  1 | main expr.: (paths / funcs: 1 / 0)       +
-    |     <path 0>                             +
-    |   variables:                             +
-    |     path: 0                              +
-    |                                          +
-    |                                          +
-    | <path 0>                                 +
-    |                                          +
-    | absolute xpath                           +
-    |                                          +
-    | node test:      a                        +
-    |   predicate expr.: (paths / funcs: 0 / 0)+
-    |     @a                                   +
-    |     or                                   +
-    |     subexpr. implicit: (val. type: 0)    +
-    |       subexpr. implicit: (val. type: 0)  +
-    |         @cd                              +
-    |         !=                               +
-    |         @e                               +
-    |         !=                               +
-    |         "a"                              +
-    |       and                                +
-    |       subexpr. implicit: (val. type: 0)  +
-    |         @b                               +
-    |         =                                +
-    |         @k                               +
-    |         =                                +
-    |         @l                               +
-    |     or                                   +
-    |     @s                                   +
-    |   variables:                             +
-    |     attribute: a                         +
-    |     attribute: cd                        +
-    |     attribute: e                         +
-    |     attribute: b                         +
-    |     attribute: k                         +
-    |     attribute: l                         +
-    |     attribute: s                         +
-    | node test:      b                        +
-    | node test:      text()                   +
+  1 | main expr.: (paths / funcs: 1 / 0, val. type: 3)       +
+    |     <path 0>                                           +
+    |   variables:                                           +
+    |     path: 0                                            +
+    |                                                        +
+    |                                                        +
+    | <path 0>                                               +
+    |                                                        +
+    | absolute xpath                                         +
+    |                                                        +
+    | node test:      a                                      +
+    |   predicate expr.: (paths / funcs: 0 / 0, val. type: 0)+
+    |     @a                                                 +
+    |     or                                                 +
+    |     subexpr. implicit: (val. type: 0)                  +
+    |       subexpr. implicit: (val. type: 0)                +
+    |         @cd                                            +
+    |         !=                                             +
+    |         @e                                             +
+    |         !=                                             +
+    |         "a"                                            +
+    |       and                                              +
+    |       subexpr. implicit: (val. type: 0)                +
+    |         @b                                             +
+    |         =                                              +
+    |         @k                                             +
+    |         =                                              +
+    |         @l                                             +
+    |     or                                                 +
+    |     @s                                                 +
+    |   variables:                                           +
+    |     attribute: a                                       +
+    |     attribute: cd                                      +
+    |     attribute: e                                       +
+    |     attribute: b                                       +
+    |     attribute: k                                       +
+    |     attribute: l                                       +
+    |     attribute: s                                       +
+    | node test:      b                                      +
+    | node test:      text()                                 +
     | 
-  2 | main expr.: (paths / funcs: 1 / 0)       +
-    |     <path 0>                             +
-    |   variables:                             +
-    |     path: 0                              +
-    |                                          +
-    |                                          +
-    | <path 0>                                 +
-    |                                          +
-    | absolute xpath                           +
-    |                                          +
-    | node test:      state                    +
-    |   predicate expr.: (paths / funcs: 0 / 0)+
-    |     @tld                                 +
-    |     or                                   +
-    |     subexpr. implicit: (val. type: 0)    +
-    |       subexpr. implicit: (val. type: 0)  +
-    |         "cz"                             +
-    |         =                                +
-    |         "cz"                             +
-    |       and                                +
-    |       @tld                               +
-    |       and                                +
-    |       @a                                 +
-    |     or                                   +
-    |     @b                                   +
-    |   variables:                             +
-    |     attribute: tld                       +
-    |     attribute: tld                       +
-    |     attribute: a                         +
-    |     attribute: b                         +
+  2 | main expr.: (paths / funcs: 1 / 0, val. type: 3)       +
+    |     <path 0>                                           +
+    |   variables:                                           +
+    |     path: 0                                            +
+    |                                                        +
+    |                                                        +
+    | <path 0>                                               +
+    |                                                        +
+    | absolute xpath                                         +
+    |                                                        +
+    | node test:      state                                  +
+    |   predicate expr.: (paths / funcs: 0 / 0, val. type: 0)+
+    |     @tld                                               +
+    |     or                                                 +
+    |     subexpr. implicit: (val. type: 0)                  +
+    |       subexpr. implicit: (val. type: 0)                +
+    |         "cz"                                           +
+    |         =                                              +
+    |         "cz"                                           +
+    |       and                                              +
+    |       @tld                                             +
+    |       and                                              +
+    |       @a                                               +
+    |     or                                                 +
+    |     @b                                                 +
+    |   variables:                                           +
+    |     attribute: tld                                     +
+    |     attribute: tld                                     +
+    |     attribute: a                                       +
+    |     attribute: b                                       +
     | 
-  3 | main expr.: (paths / funcs: 1 / 0)       +
-    |     <path 0>                             +
-    |   variables:                             +
-    |     path: 0                              +
-    |                                          +
-    |                                          +
-    | <path 0>                                 +
-    |                                          +
-    | absolute xpath                           +
-    |                                          +
-    | node test:      state                    +
-    |   predicate expr.: (paths / funcs: 0 / 0)+
-    |     subexpr. implicit: (val. type: 0)    +
-    |       @tld                               +
-    |       =                                  +
-    |       "de"                               +
-    |     or                                   +
-    |     subexpr. implicit: (val. type: 0)    +
-    |       subexpr. implicit: (val. type: 0)  +
-    |         @area                            +
-    |         =                                +
-    |         "78866"                          +
-    |       and                                +
-    |       subexpr. implicit: (val. type: 0)  +
-    |         @population                      +
-    |         =                                +
-    |         "1067494"                        +
-    |   variables:                             +
-    |     attribute: tld                       +
-    |     attribute: area                      +
-    |     attribute: population                +
+  3 | main expr.: (paths / funcs: 1 / 0, val. type: 3)       +
+    |     <path 0>                                           +
+    |   variables:                                           +
+    |     path: 0                                            +
+    |                                                        +
+    |                                                        +
+    | <path 0>                                               +
+    |                                                        +
+    | absolute xpath                                         +
+    |                                                        +
+    | node test:      state                                  +
+    |   predicate expr.: (paths / funcs: 0 / 0, val. type: 0)+
+    |     subexpr. implicit: (val. type: 0)                  +
+    |       @tld                                             +
+    |       =                                                +
+    |       "de"                                             +
+    |     or                                                 +
+    |     subexpr. implicit: (val. type: 0)                  +
+    |       subexpr. implicit: (val. type: 0)                +
+    |         @area                                          +
+    |         =                                              +
+    |         "78866"                                        +
+    |       and                                              +
+    |       subexpr. implicit: (val. type: 0)                +
+    |         @population                                    +
+    |         =                                              +
+    |         "1067494"                                      +
+    |   variables:                                           +
+    |     attribute: tld                                     +
+    |     attribute: area                                    +
+    |     attribute: population                              +
     | 
-  4 | main expr.: (paths / funcs: 1 / 0)       +
-    |     <path 0>                             +
-    |   variables:                             +
-    |     path: 0                              +
-    |                                          +
-    |                                          +
-    | <path 0>                                 +
-    |                                          +
-    | absolute xpath                           +
-    |                                          +
-    | node test:      a                        +
-    |   predicate expr.: (paths / funcs: 0 / 0)+
-    |     subexpr. explicit: (val. type: 0)    +
-    |       subexpr. implicit: (val. type: 0)  +
-    |         subexpr. implicit: (val. type: 0)+
-    |           @b                             +
-    |           !=                             +
-    |           "a"                            +
-    |         and                              +
-    |         @k                               +
-    |       or                                 +
-    |       @l                                 +
-    |   variables:                             +
-    |     attribute: b                         +
-    |     attribute: k                         +
-    |     attribute: l                         +
-    | node test:      b                        +
-    | node test:      text()                   +
+  4 | main expr.: (paths / funcs: 1 / 0, val. type: 3)       +
+    |     <path 0>                                           +
+    |   variables:                                           +
+    |     path: 0                                            +
+    |                                                        +
+    |                                                        +
+    | <path 0>                                               +
+    |                                                        +
+    | absolute xpath                                         +
+    |                                                        +
+    | node test:      a                                      +
+    |   predicate expr.: (paths / funcs: 0 / 0, val. type: 0)+
+    |     subexpr. explicit: (val. type: 0)                  +
+    |       subexpr. implicit: (val. type: 0)                +
+    |         subexpr. implicit: (val. type: 0)              +
+    |           @b                                           +
+    |           !=                                           +
+    |           "a"                                          +
+    |         and                                            +
+    |         @k                                             +
+    |       or                                               +
+    |       @l                                               +
+    |   variables:                                           +
+    |     attribute: b                                       +
+    |     attribute: k                                       +
+    |     attribute: l                                       +
+    | node test:      b                                      +
+    | node test:      text()                                 +
     | 
-  5 | main expr.: (paths / funcs: 1 / 0)       +
-    |     <path 0>                             +
-    |   variables:                             +
-    |     path: 0                              +
-    |                                          +
-    |                                          +
-    | <path 0>                                 +
-    |                                          +
-    | absolute xpath                           +
-    |                                          +
-    | node test:      a                        +
-    |   predicate expr.: (paths / funcs: 0 / 0)+
-    |     subexpr. explicit: (val. type: 0)    +
-    |       subexpr. implicit: (val. type: 0)  +
-    |         @b                               +
-    |         !=                               +
-    |         "a"                              +
-    |       and                                +
-    |       subexpr. explicit: (val. type: 0)  +
-    |         @k                               +
-    |         or                               +
-    |         @l                               +
-    |   variables:                             +
-    |     attribute: b                         +
-    |     attribute: k                         +
-    |     attribute: l                         +
-    | node test:      b                        +
-    | node test:      text()                   +
+  5 | main expr.: (paths / funcs: 1 / 0, val. type: 3)       +
+    |     <path 0>                                           +
+    |   variables:                                           +
+    |     path: 0                                            +
+    |                                                        +
+    |                                                        +
+    | <path 0>                                               +
+    |                                                        +
+    | absolute xpath                                         +
+    |                                                        +
+    | node test:      a                                      +
+    |   predicate expr.: (paths / funcs: 0 / 0, val. type: 0)+
+    |     subexpr. explicit: (val. type: 0)                  +
+    |       subexpr. implicit: (val. type: 0)                +
+    |         @b                                             +
+    |         !=                                             +
+    |         "a"                                            +
+    |       and                                              +
+    |       subexpr. explicit: (val. type: 0)                +
+    |         @k                                             +
+    |         or                                             +
+    |         @l                                             +
+    |   variables:                                           +
+    |     attribute: b                                       +
+    |     attribute: k                                       +
+    |     attribute: l                                       +
+    | node test:      b                                      +
+    | node test:      text()                                 +
     | 
-  6 | main expr.: (paths / funcs: 1 / 0)       +
-    |     <path 2>                             +
-    |   variables:                             +
-    |     path: 2                              +
-    |                                          +
-    |                                          +
-    | <path 0>                                 +
-    |                                          +
-    | relative xpath                           +
-    |                                          +
-    | node test:      i                        +
-    |                                          +
-    |                                          +
-    | <path 1>                                 +
-    |                                          +
-    | relative xpath                           +
-    |                                          +
-    | node test:      l                        +
-    |                                          +
-    |                                          +
-    | <path 2>                                 +
-    |                                          +
-    | absolute xpath                           +
-    |                                          +
-    | node test:      a                        +
-    |   predicate expr.: (paths / funcs: 0 / 0)+
-    |     subexpr. explicit: (val. type: 0)    +
-    |       subexpr. implicit: (val. type: 0)  +
-    |         subexpr. explicit: (val. type: 0)+
-    |           @cd                            +
-    |           and                            +
-    |           @e                             +
-    |         !=                               +
-    |         "a"                              +
-    |       and                                +
-    |       @k                                 +
-    |   variables:                             +
-    |     attribute: cd                        +
-    |     attribute: e                         +
-    |     attribute: k                         +
-    | node test:      b                        +
-    |   predicate expr.: (paths / funcs: 2 / 0)+
-    |     subexpr. implicit: (val. type: 0)    +
-    |       subexpr. explicit: (val. type: 0)  +
-    |         subexpr. implicit: (val. type: 0)+
-    |           @a                             +
-    |           >                              +
-    |           @c                             +
-    |           <=                             +
-    |           @g                             +
-    |         =                                +
-    |         @h                               +
-    |       =                                  +
-    |       <path 0>                           +
-    |     and                                  +
-    |     subexpr. implicit: (val. type: 0)    +
-    |       @k                                 +
-    |       =                                  +
-    |       <path 1>                           +
-    |   variables:                             +
-    |     attribute: a                         +
-    |     attribute: c                         +
-    |     attribute: g                         +
-    |     attribute: h                         +
-    |     path: 0                              +
-    |     attribute: k                         +
-    |     path: 1                              +
-    | node test:      text()                   +
+  6 | main expr.: (paths / funcs: 1 / 0, val. type: 3)       +
+    |     <path 2>                                           +
+    |   variables:                                           +
+    |     path: 2                                            +
+    |                                                        +
+    |                                                        +
+    | <path 0>                                               +
+    |                                                        +
+    | relative xpath                                         +
+    |                                                        +
+    | node test:      i                                      +
+    |                                                        +
+    |                                                        +
+    | <path 1>                                               +
+    |                                                        +
+    | relative xpath                                         +
+    |                                                        +
+    | node test:      l                                      +
+    |                                                        +
+    |                                                        +
+    | <path 2>                                               +
+    |                                                        +
+    | absolute xpath                                         +
+    |                                                        +
+    | node test:      a                                      +
+    |   predicate expr.: (paths / funcs: 0 / 0, val. type: 0)+
+    |     subexpr. explicit: (val. type: 0)                  +
+    |       subexpr. implicit: (val. type: 0)                +
+    |         subexpr. explicit: (val. type: 0)              +
+    |           @cd                                          +
+    |           and                                          +
+    |           @e                                           +
+    |         !=                                             +
+    |         "a"                                            +
+    |       and                                              +
+    |       @k                                               +
+    |   variables:                                           +
+    |     attribute: cd                                      +
+    |     attribute: e                                       +
+    |     attribute: k                                       +
+    | node test:      b                                      +
+    |   predicate expr.: (paths / funcs: 2 / 0, val. type: 0)+
+    |     subexpr. implicit: (val. type: 0)                  +
+    |       subexpr. explicit: (val. type: 0)                +
+    |         subexpr. implicit: (val. type: 0)              +
+    |           @a                                           +
+    |           >                                            +
+    |           @c                                           +
+    |           <=                                           +
+    |           @g                                           +
+    |         =                                              +
+    |         @h                                             +
+    |       =                                                +
+    |       <path 0>                                         +
+    |     and                                                +
+    |     subexpr. implicit: (val. type: 0)                  +
+    |       @k                                               +
+    |       =                                                +
+    |       <path 1>                                         +
+    |   variables:                                           +
+    |     attribute: a                                       +
+    |     attribute: c                                       +
+    |     attribute: g                                       +
+    |     attribute: h                                       +
+    |     path: 0                                            +
+    |     attribute: k                                       +
+    |     path: 1                                            +
+    | node test:      text()                                 +
     | 
-  7 | main expr.: (paths / funcs: 1 / 0)       +
-    |     <path 0>                             +
-    |   variables:                             +
-    |     path: 0                              +
-    |                                          +
-    |                                          +
-    | <path 0>                                 +
-    |                                          +
-    | absolute xpath                           +
-    |                                          +
-    | node test:      a                        +
-    |   predicate expr.: (paths / funcs: 0 / 0)+
-    |     @a                                   +
-    |     or                                   +
-    |     subexpr. explicit: (val. type: 0)    +
-    |       subexpr. implicit: (val. type: 0)  +
-    |         subexpr. explicit: (val. type: 3)+
-    |           @e                             +
-    |         !=                               +
-    |         "a"                              +
-    |         =                                +
-    |         @k                               +
-    |       or                                 +
-    |       @l                                 +
-    |   variables:                             +
-    |     attribute: a                         +
-    |     attribute: e                         +
-    |     attribute: k                         +
-    |     attribute: l                         +
-    | node test:      b                        +
-    | node test:      text()                   +
+  7 | main expr.: (paths / funcs: 1 / 0, val. type: 3)       +
+    |     <path 0>                                           +
+    |   variables:                                           +
+    |     path: 0                                            +
+    |                                                        +
+    |                                                        +
+    | <path 0>                                               +
+    |                                                        +
+    | absolute xpath                                         +
+    |                                                        +
+    | node test:      a                                      +
+    |   predicate expr.: (paths / funcs: 0 / 0, val. type: 0)+
+    |     @a                                                 +
+    |     or                                                 +
+    |     subexpr. explicit: (val. type: 0)                  +
+    |       subexpr. implicit: (val. type: 0)                +
+    |         subexpr. explicit: (val. type: 3)              +
+    |           @e                                           +
+    |         !=                                             +
+    |         "a"                                            +
+    |         =                                              +
+    |         @k                                             +
+    |       or                                               +
+    |       @l                                               +
+    |   variables:                                           +
+    |     attribute: a                                       +
+    |     attribute: e                                       +
+    |     attribute: k                                       +
+    |     attribute: l                                       +
+    | node test:      b                                      +
+    | node test:      text()                                 +
     | 
-  8 | main expr.: (paths / funcs: 1 / 0)       +
-    |     <path 4>                             +
-    |   variables:                             +
-    |     path: 4                              +
-    |                                          +
-    |                                          +
-    | <path 0>                                 +
-    |                                          +
-    | relative xpath                           +
-    |                                          +
-    | node test:      ab                       +
-    | node test:      cd                       +
-    | attr. test:     @a                       +
-    |                                          +
-    |                                          +
-    | <path 1>                                 +
-    |                                          +
-    | relative xpath                           +
-    |                                          +
-    | node test:      b                        +
-    |                                          +
-    |                                          +
-    | <path 2>                                 +
-    |                                          +
-    | relative xpath                           +
-    |                                          +
-    | node test:      a                        +
-    |   predicate expr.: (paths / funcs: 0 / 0)+
-    |     @c                                   +
-    |     and                                  +
-    |     subexpr. explicit: (val. type: 0)    +
-    |       @b                                 +
-    |       or                                 +
-    |       @c                                 +
-    |   variables:                             +
-    |     attribute: c                         +
-    |     attribute: b                         +
-    |     attribute: c                         +
-    |                                          +
-    |                                          +
-    | <path 3>                                 +
-    |                                          +
-    | relative xpath                           +
-    |                                          +
-    | node test:      c                        +
-    | node test:      a                        +
-    |   predicate expr.: (paths / funcs: 1 / 0)+
-    |     @a                                   +
-    |     =                                    +
-    |     @b                                   +
-    |     =                                    +
-    |     <path 2>                             +
-    |   variables:                             +
-    |     attribute: a                         +
-    |     attribute: b                         +
-    |     path: 2                              +
-    |                                          +
-    |                                          +
-    | <path 4>                                 +
-    |                                          +
-    | absolute xpath                           +
-    |                                          +
-    | node test:      a                        +
-    |   predicate expr.: (paths / funcs: 3 / 0)+
-    |     <path 0>                             +
-    |     !=                                   +
-    |     <path 1>                             +
-    |     =                                    +
-    |     <path 3>                             +
-    |     =                                    +
-    |     @a                                   +
-    |   variables:                             +
-    |     path: 0                              +
-    |     path: 1                              +
-    |     path: 3                              +
-    |     attribute: a                         +
+  8 | main expr.: (paths / funcs: 1 / 0, val. type: 3)       +
+    |     <path 4>                                           +
+    |   variables:                                           +
+    |     path: 4                                            +
+    |                                                        +
+    |                                                        +
+    | <path 0>                                               +
+    |                                                        +
+    | relative xpath                                         +
+    |                                                        +
+    | node test:      ab                                     +
+    | node test:      cd                                     +
+    | attr. test:     @a                                     +
+    |                                                        +
+    |                                                        +
+    | <path 1>                                               +
+    |                                                        +
+    | relative xpath                                         +
+    |                                                        +
+    | node test:      b                                      +
+    |                                                        +
+    |                                                        +
+    | <path 2>                                               +
+    |                                                        +
+    | relative xpath                                         +
+    |                                                        +
+    | node test:      a                                      +
+    |   predicate expr.: (paths / funcs: 0 / 0, val. type: 0)+
+    |     @c                                                 +
+    |     and                                                +
+    |     subexpr. explicit: (val. type: 0)                  +
+    |       @b                                               +
+    |       or                                               +
+    |       @c                                               +
+    |   variables:                                           +
+    |     attribute: c                                       +
+    |     attribute: b                                       +
+    |     attribute: c                                       +
+    |                                                        +
+    |                                                        +
+    | <path 3>                                               +
+    |                                                        +
+    | relative xpath                                         +
+    |                                                        +
+    | node test:      c                                      +
+    | node test:      a                                      +
+    |   predicate expr.: (paths / funcs: 1 / 0, val. type: 0)+
+    |     @a                                                 +
+    |     =                                                  +
+    |     @b                                                 +
+    |     =                                                  +
+    |     <path 2>                                           +
+    |   variables:                                           +
+    |     attribute: a                                       +
+    |     attribute: b                                       +
+    |     path: 2                                            +
+    |                                                        +
+    |                                                        +
+    | <path 4>                                               +
+    |                                                        +
+    | absolute xpath                                         +
+    |                                                        +
+    | node test:      a                                      +
+    |   predicate expr.: (paths / funcs: 3 / 0, val. type: 0)+
+    |     <path 0>                                           +
+    |     !=                                                 +
+    |     <path 1>                                           +
+    |     =                                                  +
+    |     <path 3>                                           +
+    |     =                                                  +
+    |     @a                                                 +
+    |   variables:                                           +
+    |     path: 0                                            +
+    |     path: 1                                            +
+    |     path: 3                                            +
+    |     attribute: a                                       +
     | 
-  9 | main expr.: (paths / funcs: 1 / 0)       +
-    |     <path 1>                             +
-    |   variables:                             +
-    |     path: 1                              +
-    |                                          +
-    |                                          +
-    | <path 0>                                 +
-    |                                          +
-    | relative xpath                           +
-    |                                          +
-    | node test:      a                        +
-    |   predicate expr.: (paths / funcs: 0 / 0)+
-    |     @e                                   +
-    |     =                                    +
-    |     @f                                   +
-    |   variables:                             +
-    |     attribute: e                         +
-    |     attribute: f                         +
-    |                                          +
-    |                                          +
-    | <path 1>                                 +
-    |                                          +
-    | absolute xpath                           +
-    |                                          +
-    | node test:      a                        +
-    |   predicate expr.: (paths / funcs: 1 / 0)+
-    |     subexpr. implicit: (val. type: 0)    +
-    |       @a                                 +
-    |       and                                +
-    |       @b                                 +
-    |     or                                   +
-    |     subexpr. explicit: (val. type: 0)    +
-    |       @c                                 +
-    |       =                                  +
-    |       <path 0>                           +
-    |   variables:                             +
-    |     attribute: a                         +
-    |     attribute: b                         +
-    |     attribute: c                         +
-    |     path: 0                              +
+  9 | main expr.: (paths / funcs: 1 / 0, val. type: 3)       +
+    |     <path 1>                                           +
+    |   variables:                                           +
+    |     path: 1                                            +
+    |                                                        +
+    |                                                        +
+    | <path 0>                                               +
+    |                                                        +
+    | relative xpath                                         +
+    |                                                        +
+    | node test:      a                                      +
+    |   predicate expr.: (paths / funcs: 0 / 0, val. type: 0)+
+    |     @e                                                 +
+    |     =                                                  +
+    |     @f                                                 +
+    |   variables:                                           +
+    |     attribute: e                                       +
+    |     attribute: f                                       +
+    |                                                        +
+    |                                                        +
+    | <path 1>                                               +
+    |                                                        +
+    | absolute xpath                                         +
+    |                                                        +
+    | node test:      a                                      +
+    |   predicate expr.: (paths / funcs: 1 / 0, val. type: 0)+
+    |     subexpr. implicit: (val. type: 0)                  +
+    |       @a                                               +
+    |       and                                              +
+    |       @b                                               +
+    |     or                                                 +
+    |     subexpr. explicit: (val. type: 0)                  +
+    |       @c                                               +
+    |       =                                                +
+    |       <path 0>                                         +
+    |   variables:                                           +
+    |     attribute: a                                       +
+    |     attribute: b                                       +
+    |     attribute: c                                       +
+    |     path: 0                                            +
     | 
- 10 | main expr.: (paths / funcs: 1 / 0)       +
-    |     <path 2>                             +
-    |   variables:                             +
-    |     path: 2                              +
-    |                                          +
-    |                                          +
-    | <path 0>                                 +
-    |                                          +
-    | relative xpath                           +
-    |                                          +
-    | node test:      f                        +
-    |                                          +
-    |                                          +
-    | <path 1>                                 +
-    |                                          +
-    | relative xpath                           +
-    |                                          +
-    | node test:      a                        +
-    |   predicate expr.: (paths / funcs: 1 / 0)+
-    |     @e                                   +
-    |     =                                    +
-    |     <path 0>                             +
-    |   variables:                             +
-    |     attribute: e                         +
-    |     path: 0                              +
-    |                                          +
-    |                                          +
-    | <path 2>                                 +
-    |                                          +
-    | absolute xpath                           +
-    |                                          +
-    | node test:      a                        +
-    |   predicate expr.: (paths / funcs: 1 / 0)+
-    |     subexpr. implicit: (val. type: 0)    +
-    |       @a                                 +
-    |       and                                +
-    |       @b                                 +
-    |     or                                   +
-    |     subexpr. explicit: (val. type: 0)    +
-    |       @c                                 +
-    |       =                                  +
-    |       <path 1>                           +
-    |   variables:                             +
-    |     attribute: a                         +
-    |     attribute: b                         +
-    |     attribute: c                         +
-    |     path: 1                              +
+ 10 | main expr.: (paths / funcs: 1 / 0, val. type: 3)       +
+    |     <path 2>                                           +
+    |   variables:                                           +
+    |     path: 2                                            +
+    |                                                        +
+    |                                                        +
+    | <path 0>                                               +
+    |                                                        +
+    | relative xpath                                         +
+    |                                                        +
+    | node test:      f                                      +
+    |                                                        +
+    |                                                        +
+    | <path 1>                                               +
+    |                                                        +
+    | relative xpath                                         +
+    |                                                        +
+    | node test:      a                                      +
+    |   predicate expr.: (paths / funcs: 1 / 0, val. type: 0)+
+    |     @e                                                 +
+    |     =                                                  +
+    |     <path 0>                                           +
+    |   variables:                                           +
+    |     attribute: e                                       +
+    |     path: 0                                            +
+    |                                                        +
+    |                                                        +
+    | <path 2>                                               +
+    |                                                        +
+    | absolute xpath                                         +
+    |                                                        +
+    | node test:      a                                      +
+    |   predicate expr.: (paths / funcs: 1 / 0, val. type: 0)+
+    |     subexpr. implicit: (val. type: 0)                  +
+    |       @a                                               +
+    |       and                                              +
+    |       @b                                               +
+    |     or                                                 +
+    |     subexpr. explicit: (val. type: 0)                  +
+    |       @c                                               +
+    |       =                                                +
+    |       <path 1>                                         +
+    |   variables:                                           +
+    |     attribute: a                                       +
+    |     attribute: b                                       +
+    |     attribute: c                                       +
+    |     path: 1                                            +
     | 
- 11 | main expr.: (paths / funcs: 1 / 0)       +
-    |     <path 1>                             +
-    |   variables:                             +
-    |     path: 1                              +
-    |                                          +
-    |                                          +
-    | <path 0>                                 +
-    |                                          +
-    | relative xpath                           +
-    |                                          +
-    | node test:      a                        +
-    |   predicate expr.: (paths / funcs: 0 / 0)+
-    |     @e                                   +
-    |     =                                    +
-    |     @f                                   +
-    |   variables:                             +
-    |     attribute: e                         +
-    |     attribute: f                         +
-    |                                          +
-    |                                          +
-    | <path 1>                                 +
-    |                                          +
-    | absolute xpath                           +
-    |                                          +
-    | node test:      a                        +
-    |   predicate expr.: (paths / funcs: 1 / 0)+
-    |     subexpr. implicit: (val. type: 0)    +
-    |       @a                                 +
-    |       and                                +
-    |       @b                                 +
-    |     or                                   +
-    |     subexpr. implicit: (val. type: 0)    +
-    |       @c                                 +
-    |       =                                  +
-    |       <path 0>                           +
-    |   variables:                             +
-    |     attribute: a                         +
-    |     attribute: b                         +
-    |     attribute: c                         +
-    |     path: 0                              +
+ 11 | main expr.: (paths / funcs: 1 / 0, val. type: 3)       +
+    |     <path 1>                                           +
+    |   variables:                                           +
+    |     path: 1                                            +
+    |                                                        +
+    |                                                        +
+    | <path 0>                                               +
+    |                                                        +
+    | relative xpath                                         +
+    |                                                        +
+    | node test:      a                                      +
+    |   predicate expr.: (paths / funcs: 0 / 0, val. type: 0)+
+    |     @e                                                 +
+    |     =                                                  +
+    |     @f                                                 +
+    |   variables:                                           +
+    |     attribute: e                                       +
+    |     attribute: f                                       +
+    |                                                        +
+    |                                                        +
+    | <path 1>                                               +
+    |                                                        +
+    | absolute xpath                                         +
+    |                                                        +
+    | node test:      a                                      +
+    |   predicate expr.: (paths / funcs: 1 / 0, val. type: 0)+
+    |     subexpr. implicit: (val. type: 0)                  +
+    |       @a                                               +
+    |       and                                              +
+    |       @b                                               +
+    |     or                                                 +
+    |     subexpr. implicit: (val. type: 0)                  +
+    |       @c                                               +
+    |       =                                                +
+    |       <path 0>                                         +
+    |   variables:                                           +
+    |     attribute: a                                       +
+    |     attribute: b                                       +
+    |     attribute: c                                       +
+    |     path: 0                                            +
     | 
- 12 | main expr.: (paths / funcs: 1 / 0)       +
-    |     <path 2>                             +
-    |   variables:                             +
-    |     path: 2                              +
-    |                                          +
-    |                                          +
-    | <path 0>                                 +
-    |                                          +
-    | relative xpath                           +
-    |                                          +
-    | node test:      f                        +
-    |                                          +
-    |                                          +
-    | <path 1>                                 +
-    |                                          +
-    | relative xpath                           +
-    |                                          +
-    | node test:      a                        +
-    |   predicate expr.: (paths / funcs: 1 / 0)+
-    |     @e                                   +
-    |     =                                    +
-    |     <path 0>                             +
-    |   variables:                             +
-    |     attribute: e                         +
-    |     path: 0                              +
-    |                                          +
-    |                                          +
-    | <path 2>                                 +
-    |                                          +
-    | absolute xpath                           +
-    |                                          +
-    | node test:      a                        +
-    |   predicate expr.: (paths / funcs: 1 / 0)+
-    |     subexpr. implicit: (val. type: 0)    +
-    |       @a                                 +
-    |       and                                +
-    |       @b                                 +
-    |     or                                   +
-    |     subexpr. implicit: (val. type: 0)    +
-    |       @c                                 +
-    |       =                                  +
-    |       <path 1>                           +
-    |   variables:                             +
-    |     attribute: a                         +
-    |     attribute: b                         +
-    |     attribute: c                         +
-    |     path: 1                              +
+ 12 | main expr.: (paths / funcs: 1 / 0, val. type: 3)       +
+    |     <path 2>                                           +
+    |   variables:                                           +
+    |     path: 2                                            +
+    |                                                        +
+    |                                                        +
+    | <path 0>                                               +
+    |                                                        +
+    | relative xpath                                         +
+    |                                                        +
+    | node test:      f                                      +
+    |                                                        +
+    |                                                        +
+    | <path 1>                                               +
+    |                                                        +
+    | relative xpath                                         +
+    |                                                        +
+    | node test:      a                                      +
+    |   predicate expr.: (paths / funcs: 1 / 0, val. type: 0)+
+    |     @e                                                 +
+    |     =                                                  +
+    |     <path 0>                                           +
+    |   variables:                                           +
+    |     attribute: e                                       +
+    |     path: 0                                            +
+    |                                                        +
+    |                                                        +
+    | <path 2>                                               +
+    |                                                        +
+    | absolute xpath                                         +
+    |                                                        +
+    | node test:      a                                      +
+    |   predicate expr.: (paths / funcs: 1 / 0, val. type: 0)+
+    |     subexpr. implicit: (val. type: 0)                  +
+    |       @a                                               +
+    |       and                                              +
+    |       @b                                               +
+    |     or                                                 +
+    |     subexpr. implicit: (val. type: 0)                  +
+    |       @c                                               +
+    |       =                                                +
+    |       <path 1>                                         +
+    |   variables:                                           +
+    |     attribute: a                                       +
+    |     attribute: b                                       +
+    |     attribute: c                                       +
+    |     path: 1                                            +
     | 
- 13 | main expr.: (paths / funcs: 1 / 0)       +
-    |     <path 3>                             +
-    |   variables:                             +
-    |     path: 3                              +
-    |                                          +
-    |                                          +
-    | <path 0>                                 +
-    |                                          +
-    | absolute xpath                           +
-    |                                          +
-    | node test:      a                        +
-    |                                          +
-    |                                          +
-    | <path 1>                                 +
-    |                                          +
-    | absolute xpath                           +
-    |                                          +
-    | node test:      b (desc.)                +
-    |                                          +
-    |                                          +
-    | <path 2>                                 +
-    |                                          +
-    | relative xpath                           +
-    |                                          +
-    | node test:      c                        +
-    |                                          +
-    |                                          +
-    | <path 3>                                 +
-    |                                          +
-    | absolute xpath                           +
-    |                                          +
-    | node test:      root (desc.)             +
-    |   predicate expr.: (paths / funcs: 3 / 0)+
-    |     subexpr. implicit: (val. type: 0)    +
-    |       <path 0>                           +
-    |       and                                +
-    |       <path 1>                           +
-    |     or                                   +
-    |     <path 2>                             +
-    |   variables:                             +
-    |     path: 0                              +
-    |     path: 1                              +
-    |     path: 2                              +
+ 13 | main expr.: (paths / funcs: 1 / 0, val. type: 3)       +
+    |     <path 3>                                           +
+    |   variables:                                           +
+    |     path: 3                                            +
+    |                                                        +
+    |                                                        +
+    | <path 0>                                               +
+    |                                                        +
+    | absolute xpath                                         +
+    |                                                        +
+    | node test:      a                                      +
+    |                                                        +
+    |                                                        +
+    | <path 1>                                               +
+    |                                                        +
+    | absolute xpath                                         +
+    |                                                        +
+    | node test:      b (desc.)                              +
+    |                                                        +
+    |                                                        +
+    | <path 2>                                               +
+    |                                                        +
+    | relative xpath                                         +
+    |                                                        +
+    | node test:      c                                      +
+    |                                                        +
+    |                                                        +
+    | <path 3>                                               +
+    |                                                        +
+    | absolute xpath                                         +
+    |                                                        +
+    | node test:      root (desc.)                           +
+    |   predicate expr.: (paths / funcs: 3 / 0, val. type: 0)+
+    |     subexpr. implicit: (val. type: 0)                  +
+    |       <path 0>                                         +
+    |       and                                              +
+    |       <path 1>                                         +
+    |     or                                                 +
+    |     <path 2>                                           +
+    |   variables:                                           +
+    |     path: 0                                            +
+    |     path: 1                                            +
+    |     path: 2                                            +
     | 
- 14 | main expr.: (paths / funcs: 1 / 0)       +
-    |     <path 0>                             +
-    |   variables:                             +
-    |     path: 0                              +
-    |                                          +
-    |                                          +
-    | <path 0>                                 +
-    |                                          +
-    | absolute xpath                           +
-    |                                          +
-    | node test:      root                     +
-    | node test:      a                        +
-    |   predicate expr.: (paths / funcs: 0 / 2)+
-    |     position()                           +
-    |     =                                    +
-    |     position()                           +
-    |   variables:                             +
-    |     function: position()                 +
-    |     function: position()                 +
+ 14 | main expr.: (paths / funcs: 1 / 0, val. type: 3)       +
+    |     <path 0>                                           +
+    |   variables:                                           +
+    |     path: 0                                            +
+    |                                                        +
+    |                                                        +
+    | <path 0>                                               +
+    |                                                        +
+    | absolute xpath                                         +
+    |                                                        +
+    | node test:      root                                   +
+    | node test:      a                                      +
+    |   predicate expr.: (paths / funcs: 0 / 2, val. type: 0)+
+    |     position()                                         +
+    |     =                                                  +
+    |     position()                                         +
+    |   variables:                                           +
+    |     function: position()                               +
+    |     function: position()                               +
     | 
- 15 | main expr.: (paths / funcs: 1 / 0)       +
-    |     <path 2>                             +
-    |   variables:                             +
-    |     path: 2                              +
-    |                                          +
-    |                                          +
-    | <path 0>                                 +
-    |                                          +
-    | relative xpath                           +
-    |                                          +
-    | node test:      a                        +
-    |                                          +
-    |                                          +
-    | <path 1>                                 +
-    |                                          +
-    | relative xpath                           +
-    |                                          +
-    | node test:      c                        +
-    |                                          +
-    |                                          +
-    | <path 2>                                 +
-    |                                          +
-    | absolute xpath                           +
-    |                                          +
-    | node test:      root                     +
-    | node test:      b                        +
-    |   predicate expr.: (paths / funcs: 2 / 2)+
-    |     count(                               +
-    |       <path 0>                           +
-    |     )                                    +
-    |     >=                                   +
-    |     count(                               +
-    |       <path 1>                           +
-    |     )                                    +
-    |   variables:                             +
-    |     path: 0                              +
-    |     path: 1                              +
+ 15 | main expr.: (paths / funcs: 1 / 0, val. type: 3)       +
+    |     <path 2>                                           +
+    |   variables:                                           +
+    |     path: 2                                            +
+    |                                                        +
+    |                                                        +
+    | <path 0>                                               +
+    |                                                        +
+    | relative xpath                                         +
+    |                                                        +
+    | node test:      a                                      +
+    |                                                        +
+    |                                                        +
+    | <path 1>                                               +
+    |                                                        +
+    | relative xpath                                         +
+    |                                                        +
+    | node test:      c                                      +
+    |                                                        +
+    |                                                        +
+    | <path 2>                                               +
+    |                                                        +
+    | absolute xpath                                         +
+    |                                                        +
+    | node test:      root                                   +
+    | node test:      b                                      +
+    |   predicate expr.: (paths / funcs: 2 / 2, val. type: 0)+
+    |     count(                                             +
+    |       <path 0>                                         +
+    |     )                                                  +
+    |     >=                                                 +
+    |     count(                                             +
+    |       <path 1>                                         +
+    |     )                                                  +
+    |   variables:                                           +
+    |     path: 0                                            +
+    |     path: 1                                            +
     | 
- 16 | main expr.: (paths / funcs: 1 / 0)       +
-    |     <path 1>                             +
-    |   variables:                             +
-    |     path: 1                              +
-    |                                          +
-    |                                          +
-    | <path 0>                                 +
-    |                                          +
-    | relative xpath                           +
-    |                                          +
-    | node test:      a                        +
-    |                                          +
-    |                                          +
-    | <path 1>                                 +
-    |                                          +
-    | absolute xpath                           +
-    |                                          +
-    | node test:      root                     +
-    |   predicate expr.: (paths / funcs: 1 / 1)+
-    |     contains(                            +
-    |       ""                                 +
-    |       ,                                  +
-    |       <path 0>                           +
-    |     )                                    +
-    |   variables:                             +
-    |     path: 0                              +
+ 16 | main expr.: (paths / funcs: 1 / 0, val. type: 3)       +
+    |     <path 1>                                           +
+    |   variables:                                           +
+    |     path: 1                                            +
+    |                                                        +
+    |                                                        +
+    | <path 0>                                               +
+    |                                                        +
+    | relative xpath                                         +
+    |                                                        +
+    | node test:      a                                      +
+    |                                                        +
+    |                                                        +
+    | <path 1>                                               +
+    |                                                        +
+    | absolute xpath                                         +
+    |                                                        +
+    | node test:      root                                   +
+    |   predicate expr.: (paths / funcs: 1 / 1, val. type: 0)+
+    |     contains(                                          +
+    |       ""                                               +
+    |       ,                                                +
+    |       <path 0>                                         +
+    |     )                                                  +
+    |   variables:                                           +
+    |     path: 0                                            +
     | 
 (17 rows)
 
@@ -1587,92 +1587,138 @@ select path('/root[@b<b]', '<root b="abc"><b>def</b></root>');
 (1 row)
 
 select xml.path_debug_print('/a[@i > @j]|/b or /c');
-             path_debug_print              
--------------------------------------------
- main expr.: (paths / funcs: 3 / 0)       +
-     subexpr. implicit: (val. type: 3)    +
-       <path 0>                           +
-       |                                  +
-       <path 1>                           +
-     or                                   +
-     <path 2>                             +
-   variables:                             +
-     path: 0                              +
-     path: 1                              +
-     path: 2                              +
-                                          +
-                                          +
- <path 0>                                 +
-                                          +
- absolute xpath                           +
-                                          +
- node test:      a                        +
-   predicate expr.: (paths / funcs: 0 / 0)+
-     @i                                   +
-     >                                    +
-     @j                                   +
-   variables:                             +
-     attribute: i                         +
-     attribute: j                         +
-                                          +
-                                          +
- <path 1>                                 +
-                                          +
- absolute xpath                           +
-                                          +
- node test:      b                        +
-                                          +
-                                          +
- <path 2>                                 +
-                                          +
- absolute xpath                           +
-                                          +
- node test:      c                        +
+                    path_debug_print                     
+---------------------------------------------------------
+ main expr.: (paths / funcs: 3 / 0, val. type: 0)       +
+     subexpr. implicit: (val. type: 3)                  +
+       <path 0>                                         +
+       |                                                +
+       <path 1>                                         +
+     or                                                 +
+     <path 2>                                           +
+   variables:                                           +
+     path: 0                                            +
+     path: 1                                            +
+     path: 2                                            +
+                                                        +
+                                                        +
+ <path 0>                                               +
+                                                        +
+ absolute xpath                                         +
+                                                        +
+ node test:      a                                      +
+   predicate expr.: (paths / funcs: 0 / 0, val. type: 0)+
+     @i                                                 +
+     >                                                  +
+     @j                                                 +
+   variables:                                           +
+     attribute: i                                       +
+     attribute: j                                       +
+                                                        +
+                                                        +
+ <path 1>                                               +
+                                                        +
+ absolute xpath                                         +
+                                                        +
+ node test:      b                                      +
+                                                        +
+                                                        +
+ <path 2>                                               +
+                                                        +
+ absolute xpath                                         +
+                                                        +
+ node test:      c                                      +
  
 (1 row)
 
 select xml.path_debug_print('(/a[@i > @j]|/b) or /c');
-             path_debug_print              
--------------------------------------------
- main expr.: (paths / funcs: 3 / 0)       +
-     subexpr. explicit: (val. type: 3)    +
-       <path 0>                           +
-       |                                  +
-       <path 1>                           +
-     or                                   +
-     <path 2>                             +
-   variables:                             +
-     path: 0                              +
-     path: 1                              +
-     path: 2                              +
-                                          +
-                                          +
- <path 0>                                 +
-                                          +
- absolute xpath                           +
-                                          +
- node test:      a                        +
-   predicate expr.: (paths / funcs: 0 / 0)+
-     @i                                   +
-     >                                    +
-     @j                                   +
-   variables:                             +
-     attribute: i                         +
-     attribute: j                         +
-                                          +
-                                          +
- <path 1>                                 +
-                                          +
- absolute xpath                           +
-                                          +
- node test:      b                        +
-                                          +
-                                          +
- <path 2>                                 +
-                                          +
- absolute xpath                           +
-                                          +
- node test:      c                        +
+                    path_debug_print                     
+---------------------------------------------------------
+ main expr.: (paths / funcs: 3 / 0, val. type: 0)       +
+     subexpr. explicit: (val. type: 3)                  +
+       <path 0>                                         +
+       |                                                +
+       <path 1>                                         +
+     or                                                 +
+     <path 2>                                           +
+   variables:                                           +
+     path: 0                                            +
+     path: 1                                            +
+     path: 2                                            +
+                                                        +
+                                                        +
+ <path 0>                                               +
+                                                        +
+ absolute xpath                                         +
+                                                        +
+ node test:      a                                      +
+   predicate expr.: (paths / funcs: 0 / 0, val. type: 0)+
+     @i                                                 +
+     >                                                  +
+     @j                                                 +
+   variables:                                           +
+     attribute: i                                       +
+     attribute: j                                       +
+                                                        +
+                                                        +
+ <path 1>                                               +
+                                                        +
+ absolute xpath                                         +
+                                                        +
+ node test:      b                                      +
+                                                        +
+                                                        +
+ <path 2>                                               +
+                                                        +
+ absolute xpath                                         +
+                                                        +
+ node test:      c                                      +
+ 
+(1 row)
+
+select xml.path_debug_print('((/a[@i > @j]|/b) or /c)');
+                    path_debug_print                     
+---------------------------------------------------------
+ main expr.: (paths / funcs: 3 / 0, val. type: 0)       +
+     subexpr. explicit: (val. type: 0)                  +
+       subexpr. explicit: (val. type: 3)                +
+         <path 0>                                       +
+         |                                              +
+         <path 1>                                       +
+       or                                               +
+       <path 2>                                         +
+   variables:                                           +
+     path: 0                                            +
+     path: 1                                            +
+     path: 2                                            +
+                                                        +
+                                                        +
+ <path 0>                                               +
+                                                        +
+ absolute xpath                                         +
+                                                        +
+ node test:      a                                      +
+   predicate expr.: (paths / funcs: 0 / 0, val. type: 0)+
+     @i                                                 +
+     >                                                  +
+     @j                                                 +
+   variables:                                           +
+     attribute: i                                       +
+     attribute: j                                       +
+                                                        +
+                                                        +
+ <path 1>                                               +
+                                                        +
+ absolute xpath                                         +
+                                                        +
+ node test:      b                                      +
+                                                        +
+                                                        +
+ <path 2>                                               +
+                                                        +
+ absolute xpath                                         +
+                                                        +
+ node test:      c                                      +
  
 (1 row)
 
@@ -1849,14 +1895,14 @@ select xml.path('/root[@*!=@*]', '<root/>');
 (1 row)
 
 select xml.path_debug_print('count((@*))');
-            path_debug_print             
------------------------------------------
- main expr.: (paths / funcs: 0 / 1)     +
-     count(                             +
-       subexpr. explicit: (val. type: 3)+
-         @*                             +
-     )                                  +
-   variables:                           +
+                 path_debug_print                 
+--------------------------------------------------
+ main expr.: (paths / funcs: 0 / 1, val. type: 1)+
+     count(                                      +
+       subexpr. explicit: (val. type: 3)         +
+         @*                                      +
+     )                                           +
+   variables:                                    +
      attribute: *
 (1 row)
 

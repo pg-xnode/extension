@@ -398,6 +398,7 @@ select path('/root[@b<b]', '<root b="abc"><b>def</b></root>');
 -- First, check that operator output type is correctly set:
 select xml.path_debug_print('/a[@i > @j]|/b or /c');
 select xml.path_debug_print('(/a[@i > @j]|/b) or /c');
+select xml.path_debug_print('((/a[@i > @j]|/b) or /c)');
 -- Does the union operator eliminate duplicate nodes?
 select xml.path('/root/a|/root/a', '<root><a/></root>');
 select xml.path('/root/a|/root/a|/root', '<root><a/></root>');

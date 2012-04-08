@@ -193,6 +193,7 @@ XPathExprOperatorIdStore * firstOpIdPtr, char *output, unsigned short *outPos,
 		nextChar(state, false);
 		skipWhiteSpace(state, false);
 		operand = readExpressionOperand(exprTop, state, termFlags, output, outPos, paths, pathCnt, mainExpr);
+		Assert(operand->type != XPATH_OPERAND_EXPR_TOP);
 
 		/*
 		 * In case the expression only has 1 member, its value type will be
@@ -202,6 +203,12 @@ XPathExprOperatorIdStore * firstOpIdPtr, char *output, unsigned short *outPos,
 		if (operand->type == XPATH_OPERAND_FUNC || operand->type == XPATH_OPERAND_FUNC_NOARG)
 		{
 			exprCurrent->valType = getFunctionResultType(operand);
+		}
+		else if (operand->type == XPATH_OPERAND_EXPR_SUB)
+		{
+			XPathExpression operandExpr = (XPathExpression) operand;
+
+			exprCurrent->valType = operandExpr->valType;
 		}
 		else
 		{
@@ -669,6 +676,7 @@ parseLocationPath(XPath * paths, bool isSubPath, unsigned short *pathCount, char
 					xpath = (XPath) state.result;
 					if (xpath->targNdKind == XMLNODE_ELEMENT)
 					{
+						/* Explicit subexpression? */
 						if (*state.c == XNODE_CHAR_LBRACKET)
 						{
 							unsigned short outPos;
@@ -1673,7 +1681,7 @@ dumpXPathExpression(XPathExpression expr, XPathHeader xpathHdr, StringInfo outpu
 		{
 			appendStringInfo(output, "\n  predicate expr.:");
 		}
-		appendStringInfo(output, " (paths / funcs: %u / %u)", expr->npaths, expr->nfuncs);
+		appendStringInfo(output, " (paths / funcs: %u / %u, val. type: %u)", expr->npaths, expr->nfuncs, expr->valType);
 	}
 	dumpXPathExpressionInternal(&input, xpathHdr, output, 0, main, debug);
 	if (expr->variables > 0 && debug)

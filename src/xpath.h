@@ -377,7 +377,10 @@ typedef struct XPathExpressionData
 	uint8		type;
 	uint8		flags;
 	uint16		size;
+
+	/* Only defined where type == XPATH_OPERAND_EXPR_TOP. */
 	uint16		variables;
+
 	uint16		members;
 
 	uint16		nlits;			/* Number of string literals. */
