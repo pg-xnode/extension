@@ -529,8 +529,11 @@ xnodeGetNumValue(char *str)
 	double		result;
 	char	   *c;
 
-	errno = 0;
 	result = strtod(str, &c);
+	if (str == c)
+	{
+		elog(ERROR, "'%s' can't be cast to number", str);
+	}
 	while (*c != '\0')
 	{
 		if (!XNODE_WHITESPACE(c))
@@ -640,6 +643,41 @@ dumpXMLNodeDebug(StringInfo output, char *data, XMLNodeOffset off)
 	}
 }
 
+/*
+ * Test if a valid number starts at 'str'.
+ * If it does, then '*end' is set to the first character after the number.
+ *
+ * If 'skipWhitespace' is true, then also skip all the following whitespace
+ * should there be any.
+ */
+bool
+xmlStringIsNumber(char *str, double *numValue, char **end, bool skipWhitespace)
+{
+	*numValue = strtod(str, end);
+
+	if (*end == str)
+	{
+		return false;
+	}
+
+	if (skipWhitespace)
+	{
+		while (**end != '\0')
+		{
+			if (!XNODE_WHITESPACE(*end))
+			{
+				return false;
+			}
+			*end += pg_utf_mblen((unsigned char *) *end);
+		}
+		return true;
+	}
+	else
+	{
+		return true;
+	}
+}
+
 static void
 dumpXMLNodeDebugInternal(char *data, XMLNodeOffset off,
 			XMLNodeOffset offParent, StringInfo output, unsigned short level)
@@ -713,6 +751,7 @@ dumpXMLNodeDebugInternal(char *data, XMLNodeOffset off,
 		appendStringInfo(output, "%s (abs: %u , rel: %u , size: %u)\n", str, off, offRel, size);
 	}
 }
+
 
 #ifdef XNODE_DEBUG
 

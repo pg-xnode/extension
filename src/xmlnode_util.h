@@ -34,5 +34,6 @@ extern char *getElementNodeStr(XMLCompNodeHdr element);
 extern char *getNonElementNodeStr(XMLNodeHdr node);
 
 extern void dumpXMLNodeDebug(StringInfo output, char *data, XMLNodeOffset rootOff);
+extern bool xmlStringIsNumber(char *str, double *numValue, char **end, bool skipWhitespace);
 
 #endif   /* XMLNODE_UTIL_H_ */

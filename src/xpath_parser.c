@@ -7,6 +7,7 @@
 
 #include "xmlnode.h"
 #include "xpath.h"
+#include "xmlnode_util.h"
 
 static void insertSubexpression(XPathExprOperand operand, XPathExprOperatorIdStore ** opIdPtr,
 		XPathExpression exprTop, unsigned short blockSize, bool varsShiftAll,
@@ -18,7 +19,6 @@ static void nextOperandChar(char *value, XPathParserState state, unsigned short 
 static void checkExprOperand(XPathExpression exprTop, XPathExprOperand operand, bool mainExpr);
 static void checkOperandValueType(XPathExprOperand operand, XPathValueType valType);
 static XPathValueType getFunctionResultType(XPathExprOperand funcOperand);
-static bool canBeNumber(char *str, double *numValue, char **end);
 static XPathExprOperatorIdStore *readExpressionOperator(XPathParserState state, char *output,
 					   unsigned short *outPos);
 static int parseFunctionArgList(XPathParserState state, XPathFunction, char *output, unsigned short *outPos,
@@ -1215,13 +1215,15 @@ readExpressionOperand(XPathExpression exprTop, XPathParserState state, unsigned 
 		op->value.castToNumber = true;
 		op->value.isNull = false;
 
-		if (!canBeNumber(state->c, &(op->value.v.num), &numEnd))
+		if (!xmlStringIsNumber(state->c, &(op->value.v.num), &numEnd, false))
 		{
 			elog(ERROR, "invalid numeric value, see position %u of the xpath expression", state->pos);
 		}
 
 		/*
-		 * Move to a character immediately following the number.
+		 * Move to a character immediately following the number. 'nextChar()'
+		 * must be used so that all positions are adjusted correctly. That's
+		 * why 'xmlStringIsNumber()' couldn't receive 'skipWhitespace=true'.
 		 */
 		while (state->c < numEnd)
 		{
@@ -1360,20 +1362,6 @@ getFunctionResultType(XPathExprOperand funcOperand)
 	}
 	func = &xpathFunctions[fid];
 	return func->resType;
-}
-
-/*
- * Test if a valid number starts at 'str'.
- * If it does, then '*end' is set to the first character after the number.
- */
-static bool
-canBeNumber(char *str, double *numValue, char **end)
-{
-	bool		result;
-
-	*numValue = strtod(str, end);
-	result = (*end != str);
-	return result;
 }
 
 static XPathExprOperatorIdStore *

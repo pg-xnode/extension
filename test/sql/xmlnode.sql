@@ -386,6 +386,15 @@ select path('/root[b<1]', '<root><b>1.5</b></root>');
 select path('/root[b>1]', '<root><b>1.5</b></root>');
 select path('/root[1<b]', '<root><b>1.5</b></root>');
 select path('/root[1>b]', '<root><b>1.5</b></root>');
+select path('/a/@j=1', '<a i="0.1 " j="0.1"/>');
+select path('/a/@j<1', '<a i="0.1 " j=""/>');
+select path('/a/@j!=1', '<a i="0.1 " j=""/>');
+select xml.path('/=/a', '<a/>');
+select xml.path('/=/b', '<a/>');
+select xml.path('/=/', '<a/>');
+select xml.path('/=/b', '<a/>');
+select xml.path('/!=/b', '<a/>');
+
 -- No match if one operand can't be cast to a number:
 select path('/root[@b>1.1]', '<root b="1.o1"><b/></root>');
 select path('/root[@b<1.1]', '<root b="1.o1"><b/></root>');

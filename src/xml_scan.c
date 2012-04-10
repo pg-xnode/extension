@@ -951,9 +951,36 @@ evaluateBinaryOperator(XPathExprState exprState, XPathExprOperandValue valueLeft
 				/*
 				 * Document is not a typical node-set, let's exclude it first.
 				 */
-				if (nsLeft->isDocument || nsRight->isDocument)
+				if (nsLeft->isDocument && nsRight->isDocument)
 				{
 					result->v.boolean = operator->id == XPATH_EXPR_OPERATOR_EQ;
+					return;
+				}
+				else if (nsLeft->isDocument || nsRight->isDocument)
+				{
+					XPathNodeSet setDoc,
+								setNonDoc;
+
+					if (nsLeft->isDocument)
+					{
+						setDoc = nsLeft;
+						setNonDoc = nsRight;
+					}
+					else
+					{
+						setDoc = nsRight;
+						setNonDoc = nsLeft;
+					}
+
+					if (setNonDoc->count > 0)
+					{
+						result->v.boolean = (operator->id == XPATH_EXPR_OPERATOR_EQ);
+					}
+					else
+					{
+						result->v.boolean = false;
+					}
+
 					return;
 				}
 
@@ -989,7 +1016,7 @@ evaluateBinaryOperator(XPathExprState exprState, XPathExprOperandValue valueLeft
 
 				if (setValue->v.nodeSet.isDocument)
 				{
-					result->v.boolean = false;
+					result->v.boolean = (operator->id == XPATH_EXPR_OPERATOR_NEQ);
 					return;
 				}
 				nodeSet = &setValue->v.nodeSet;
@@ -1467,129 +1494,37 @@ static void
 compareNumValues(XPathExprState exprState, XPathExprOperandValue valueLeft, XPathExprOperandValue valueRight,
 				 XPathExprOperator operator, XPathExprOperandValue result)
 {
+	XPathExprOperandValueData strOpLeft,
+				strOpRight;
+	char	   *strLeft,
+			   *strRight;
+	double		numLeft,
+				numRight;
+	char	   *strEnd;
 
-	XPathValueType typeLeft = valueLeft->type;
-	XPathValueType typeRight = valueRight->type;
+	result->isNull = false;
 
-	if (typeLeft == XPATH_VAL_NUMBER && typeRight == XPATH_VAL_NUMBER)
+	castXPathExprOperandToStr(exprState, valueLeft, &strOpLeft);
+	castXPathExprOperandToStr(exprState, valueRight, &strOpRight);
+
+	if (strOpLeft.isNull || strOpRight.isNull)
 	{
-		compareNumbers(valueLeft->v.num, valueRight->v.num, operator, result);
+		result->v.boolean = (operator->id == XPATH_EXPR_OPERATOR_NEQ);
 		return;
 	}
-	else if (typeLeft == XPATH_VAL_NUMBER || typeRight == XPATH_VAL_NUMBER)
+	strLeft = getXPathOperandValue(exprState, strOpLeft.v.stringId, XPATH_VAR_STRING);
+	if (!xmlStringIsNumber(strLeft, &numLeft, &strEnd, true))
 	{
-		/* one operand is a number, the other is not */
-		double		num1,
-					num2;
-		bool		reverse = false;
-		XPathExprOperandValue valueNum,
-					valueNonNum;
-
-		if (typeLeft == XPATH_VAL_NUMBER)
-		{
-			valueNum = valueLeft;
-			valueNonNum = valueRight;
-		}
-		else
-		{
-			valueNum = valueRight;
-			valueNonNum = valueLeft;
-			reverse = true;
-		}
-		if (valueNonNum->isNull)
-		{
-			result->v.boolean = false;
-			return;
-		}
-		num1 = valueNum->v.num;
-
-		/*
-		 * Only string, especially one originating from attribute name
-		 * substitution, may have 'xpathValCastToNum' set.
-		 */
-		if (valueNonNum->type == XPATH_VAL_STRING)
-		{
-			if (valueNonNum->castToNumber)
-			{
-				XPathExprOperandValueData valueTmp;
-
-				castXPathExprOperandToNum(exprState, valueNonNum, &valueTmp);
-				num2 = valueTmp.v.num;
-				if (reverse)
-				{
-					compareNumbers(num2, num1, operator, result);
-				}
-				else
-				{
-					compareNumbers(num1, num2, operator, result);
-				}
-			}
-			else
-			{
-				/*
-				 * If one operand is a number and the other is not, the XPath
-				 * standard claims that bot be cast to strings and compared.
-				 * However it doesn't seem to make much sense to compare
-				 * number and NaN values. The strings will always differ.
-				 * (i.e. valid number can't be converted to a non-numeric
-				 * string).
-				 */
-				result->v.boolean = (operator->id == XPATH_EXPR_OPERATOR_NEQ);
-			}
-			return;
-		}
-		else if (valueNonNum->type == XPATH_VAL_NODESET)
-		{
-			if (valueNonNum->v.nodeSet.isDocument)
-			{
-				result->v.boolean = (operator->id == XPATH_EXPR_OPERATOR_NEQ);
-				return;
-			}
-			if (reverse)
-			{
-				switch (operator->id)
-				{
-					case XPATH_EXPR_OPERATOR_LT:
-						operator->id = XPATH_EXPR_OPERATOR_GT;
-						break;
-
-					case XPATH_EXPR_OPERATOR_LTE:
-						operator->id = XPATH_EXPR_OPERATOR_GTE;
-						break;
-
-					case XPATH_EXPR_OPERATOR_GT:
-						operator->id = XPATH_EXPR_OPERATOR_LT;
-						break;
-
-					case XPATH_EXPR_OPERATOR_GTE:
-						operator->id = XPATH_EXPR_OPERATOR_LTE;
-						break;
-
-					default:
-						break;
-
-				}
-			}
-			result->v.boolean = compareValueToNodeSet(exprState, valueNum, &valueNonNum->v.nodeSet, operator);
-			return;
-		}
-		else
-		{
-			/*
-			 * 'number-to-number' comparisons must have been handled elsewhere
-			 * in this function 'number-to-boolean' comparisons must have been
-			 * handled above outside this function. In such a case 'number ->
-			 * boolean' cast has higher precedence than 'boolean->number'
-			 */
-			elog(ERROR, "unexpected value type to be compared to number: %u", valueNonNum->type);
-			return;
-		}
-	}
-	else
-	{
-		result->v.boolean = false;
+		result->v.boolean = (operator->id == XPATH_EXPR_OPERATOR_NEQ);
 		return;
 	}
+	strRight = getXPathOperandValue(exprState, strOpRight.v.stringId, XPATH_VAR_STRING);
+	if (!xmlStringIsNumber(strRight, &numRight, &strEnd, true))
+	{
+		result->v.boolean = (operator->id == XPATH_EXPR_OPERATOR_NEQ);
+		return;
+	}
+	compareNumbers(numLeft, numRight, operator, result);
 }
 
 static void
@@ -1598,6 +1533,7 @@ compareNumbers(double numLeft, double numRight, XPathExprOperator operator,
 {
 
 	result->type = XPATH_VAL_BOOLEAN;
+	result->isNull = false;
 	switch (operator->id)
 	{
 		case XPATH_EXPR_OPERATOR_EQ:

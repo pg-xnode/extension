@@ -554,7 +554,12 @@ castXPathExprOperandToStr(XPathExprState exprState, XPathExprOperandValue valueS
 		case XPATH_VAL_NODESET:
 			if (valueSrc->v.nodeSet.isDocument)
 			{
-				elog(ERROR, "document can't be cast to string");
+				char	   *emptyStr = (char *) palloc(1);
+
+				*emptyStr = '\0';
+				valueDst->v.stringId = getXPathOperandId(exprState, emptyStr, XPATH_VAR_STRING);
+				valueDst->isNull = false;
+				return;
 			}
 
 			{
@@ -625,7 +630,6 @@ castXPathValToBool(XPathValue src)
 float8
 castXPathValToNum(XPathValue src)
 {
-
 	switch (src->type)
 	{
 		case XPATH_VAL_BOOLEAN:

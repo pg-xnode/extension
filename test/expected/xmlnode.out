@@ -1550,6 +1550,54 @@ select path('/root[1>b]', '<root><b>1.5</b></root>');
  
 (1 row)
 
+select path('/a/@j=1', '<a i="0.1 " j="0.1"/>');
+ path  
+-------
+ false
+(1 row)
+
+select path('/a/@j<1', '<a i="0.1 " j=""/>');
+ path  
+-------
+ false
+(1 row)
+
+select path('/a/@j!=1', '<a i="0.1 " j=""/>');
+ path 
+------
+ true
+(1 row)
+
+select xml.path('/=/a', '<a/>');
+ path 
+------
+ true
+(1 row)
+
+select xml.path('/=/b', '<a/>');
+ path  
+-------
+ false
+(1 row)
+
+select xml.path('/=/', '<a/>');
+ path 
+------
+ true
+(1 row)
+
+select xml.path('/=/b', '<a/>');
+ path  
+-------
+ false
+(1 row)
+
+select xml.path('/!=/b', '<a/>');
+ path  
+-------
+ false
+(1 row)
+
 select path('/root[@b>1.1]', '<root b="1.o1"><b/></root>');
  path 
 ------
