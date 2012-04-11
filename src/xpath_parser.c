@@ -40,10 +40,6 @@ static void dumpXPathExprOperator(char **input, StringInfo output, unsigned shor
 /*
  * If multiple operators start with the same char/substring, the longer
  * one(s) must precede the shorter one(s).
- *
- * Even though the standard does not explicitly specify precedence of the union operator,
- * it's obvious that it has to be at first position. In other words, it makes no sense to
- * postpone evaluation of the union because no other operator has nodeset as result type.
  */
 XPathExprOperatorTextData xpathOperators[XPATH_EXPR_OPERATOR_KINDS] = {
 	{{XPATH_EXPR_OPERATOR_UNION, 0, XPATH_VAL_NODESET}, "|"},
