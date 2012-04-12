@@ -524,7 +524,7 @@ utf8cmp(char *c1, char *c2)
 }
 
 double
-xnodeGetNumValue(char *str)
+xnodeGetNumValue(char *str, bool raiseError, bool *isNumber)
 {
 	double		result;
 	char	   *c;
@@ -532,16 +532,33 @@ xnodeGetNumValue(char *str)
 	result = strtod(str, &c);
 	if (str == c)
 	{
-		elog(ERROR, "'%s' can't be cast to number", str);
+		*isNumber = false;
+		if (raiseError)
+		{
+			elog(ERROR, "'%s' can't be cast to number", str);
+		}
+		else
+		{
+			return 0.0;
+		}
 	}
 	while (*c != '\0')
 	{
 		if (!XNODE_WHITESPACE(c))
 		{
-			elog(ERROR, "'%s' can't be cast to number", str);
+			*isNumber = false;
+			if (raiseError)
+			{
+				elog(ERROR, "'%s' can't be cast to number", str);
+			}
+			else
+			{
+				return 0.0;
+			}
 		}
 		c++;
 	}
+	*isNumber = true;
 	return result;
 }
 

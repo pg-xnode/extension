@@ -412,6 +412,36 @@ select xml.path_debug_print('((/a[@i > @j]|/b) or /c)');
 select xml.path('/root/a|/root/a', '<root><a/></root>');
 select xml.path('/root/a|/root/a|/root', '<root><a/></root>');
 
+-- Operators '+' and '-'
+-- Again, check result type
+select xml.path_debug_print('/root[@i + @j > 0]');
+select xml.path_debug_print('/root[(@i + @j) > 0]');
+-- Simple examples
+select xml.path('/root/@i + /root/@j', '<root i="1" j="2"/>');
+select xml.path('/root/@i - /root/@j', '<root i="1" j="2"/>');
+select xml.path('boolean(/root/@i + /root/@j)', '<root i="1" j="2"/>');
+select xml.path('string(/root/@i + /root/@j)', '<root i="1" j="2"/>');
+select xml.path('/root[/root/@i + /root/@j]', '<root i="1" j="2"/>');
+select xml.path('/root[(/root/@j - /root/@i)]', '<root i="1" j="2"/>');
+select xml.path('/root[/root/@j - /root/@i]', '<root i="1" j="2"/>');
+-- Involve null values 
+select xml.path('/root/@i + /root/@k', '<root i="1" j="2"/>');
+select xml.path('/root/@i - /root/@k', '<root i="1" j="2"/>');
+select xml.path('(/root/@j + /root/@k) = (/root/@j + /root/@k)', '<root i="1" j="2"/>');
+select xml.path('(/root/@j + /root/@k) != (/root/@j + /root/@k)', '<root i="1" j="2"/>');
+select xml.path('(/root/@j + /root/@k) = 2', '<root i="1" j="2"/>');
+select xml.path('(/root/@j + /root/@k) != 2', '<root i="1" j="2"/>');
+select xml.path('/root/@j + /root/@k', '<root i="1" j="2"/>');
+select xml.path('(/root/@j + /root/@k)', '<root i="1" j="2"/>');
+select xml.path('boolean(/root/@j + /root/@k)', '<root i="1" j="2"/>');
+select xml.path('string(/root/@j + /root/@k)', '<root i="1" j="2"/>');
+select xml.path('/root[/root/@j + /root/@k]', '<root i="1" j="2"/>');
+select xml.path('/root[(/root/@j + /root/@k)]', '<root i="1" j="2"/>');
+-- null values where short evaluation is expected
+select xml.path('boolean(false() or /root/@j + /root/@k or false())', '<root i="1" j="2"/>');
+select xml.path('boolean(true() and /root/@j + /root/@k and true())', '<root i="1" j="2"/>');
+
+
 -- The XPath predicate can be used even if the element has no children/attributes
 select path('/root["a"]', '<root/>');
 select path('/root[@a or a]', '<root/>');

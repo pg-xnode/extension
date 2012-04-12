@@ -315,7 +315,7 @@ typedef struct XPathExprOperandData
 
 typedef struct XPathExprOperandData *XPathExprOperand;
 
-#define XPATH_EXPR_OPERATOR_KINDS	9
+#define XPATH_EXPR_OPERATOR_KINDS	11
 
 /*
  * The order must be identical to that in 'xpathOperators' array, see xpath.c
@@ -323,6 +323,8 @@ typedef struct XPathExprOperandData *XPathExprOperand;
 typedef enum XPathExprOperatorId
 {
 	XPATH_EXPR_OPERATOR_UNION,
+	XPATH_EXPR_OPERATOR_PLUS,
+	XPATH_EXPR_OPERATOR_MINUS,
 	XPATH_EXPR_OPERATOR_LTE,
 	XPATH_EXPR_OPERATOR_LT,
 	XPATH_EXPR_OPERATOR_GTE,
@@ -604,7 +606,7 @@ extern void freeExpressionState(XPathExprState state);
 extern void castXPathExprOperandToBool(XPathExprState exprState, XPathExprOperandValue valueSrc,
 						   XPathExprOperandValue valueDst);
 extern void castXPathExprOperandToNum(XPathExprState exprState, XPathExprOperandValue valueSrc,
-						  XPathExprOperandValue valueDst);
+						  XPathExprOperandValue valueDst, bool raiseError);
 extern void castXPathExprOperandToStr(XPathExprState exprState, XPathExprOperandValue valueSrc,
 						  XPathExprOperandValue valueDst);
 

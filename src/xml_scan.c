@@ -282,18 +282,39 @@ getNextXMLNode(XMLScan xscan, bool removed)
 					scanLevel->contextPosition++;
 					if (xpEl->hasPredicate)
 					{
-						XPathExprOperandValueData result,
-									resultBool;
+						XPathExprOperandValueData result;
 						XPathExpression exprOrig = (XPathExpression) ((char *) xpEl + sizeof(XPathElementData) +
 														   strlen(nameTest));
 						XPathExprState exprState = prepareXPathExpression(exprOrig, currentElement,
 								 xscan->document, xscan->xpathHeader, xscan);
 
 						evaluateXPathExpression(exprState, exprState->expr, scanLevel, currentElement, 0, &result);
-						castXPathExprOperandToBool(exprState, &result, &resultBool);
-						passed = resultBool.v.boolean;
+
+						if (result.isNull)
+						{
+							passed = false;
+						}
+						else
+						{
+							if (result.type == XPATH_VAL_NUMBER)
+							{
+								/*
+								 * TODO Use the appropriate cast function from
+								 * Postgres core.
+								 */
+								passed = (scanLevel->contextPosition == ((int) (result.v.num)));
+							}
+							else
+							{
+								XPathExprOperandValueData resultCast;
+
+								castXPathExprOperandToBool(exprState, &result, &resultCast);
+								passed = resultCast.v.boolean;
+							}
+						}
 						freeExpressionState(exprState);
 					}
+
 					if (!passed)
 					{
 						XMLCompNodeHdr eh = scanLevel->parent;
@@ -675,26 +696,6 @@ evaluateXPathExpression(XPathExprState exprState, XPathExpression expr, XMLScanO
 	prepareLiteral(exprState, currentOpnd);
 	currentSize = evaluateXPathOperand(exprState, currentOpnd, scan, element, recursionLevel, result);
 
-	if (expr->members == 1)
-	{
-		/*
-		 * A single numeric value indicates position.
-		 */
-		if (scan != NULL && recursionLevel == 0 && currentOpnd->type == XPATH_OPERAND_LITERAL &&
-			currentOpnd->value.type == XPATH_VAL_NUMBER)
-		{
-			int			intValue = (int) currentOpnd->value.v.num;
-
-			result->type = XPATH_VAL_BOOLEAN;
-			result->isNull = false;
-			result->v.boolean = (intValue == scan->contextPosition);
-			return;
-		}
-		else
-		{
-			return;
-		}
-	}
 	for (i = 0; i < expr->members - 1; i++)
 	{
 		XPathExprOperandValueData resTmp,
@@ -725,7 +726,7 @@ evaluateXPathExpression(XPathExprState exprState, XPathExpression expr, XMLScanO
 		if (firstOp == XPATH_EXPR_OPERATOR_OR)
 		{
 			Assert(result->type == XPATH_VAL_BOOLEAN);
-			if (result->v.boolean)
+			if (!result->isNull && result->v.boolean)
 			{
 				return;
 			}
@@ -733,7 +734,7 @@ evaluateXPathExpression(XPathExprState exprState, XPathExpression expr, XMLScanO
 		else if (firstOp == XPATH_EXPR_OPERATOR_AND)
 		{
 			Assert(result->type == XPATH_VAL_BOOLEAN);
-			if (!result->v.boolean)
+			if (result->isNull || (!result->isNull && !result->v.boolean))
 			{
 				return;
 			}
@@ -1072,8 +1073,36 @@ evaluateBinaryOperator(XPathExprState exprState, XPathExprOperandValue valueLeft
 			 operator->id == XPATH_EXPR_OPERATOR_LTE || operator->id == XPATH_EXPR_OPERATOR_GTE)
 	{
 		compareNumValues(exprState, valueLeft, valueRight, operator, result);
+	}
+	else if (operator->id == XPATH_EXPR_OPERATOR_PLUS || operator->id == XPATH_EXPR_OPERATOR_MINUS)
+	{
+		XPathExprOperandValueData numLeft,
+					numRight;
+
 		result->isNull = false;
-		result->type = XPATH_VAL_BOOLEAN;
+		result->type = XPATH_VAL_NUMBER;
+		castXPathExprOperandToNum(exprState, valueLeft, &numLeft, false);
+		castXPathExprOperandToNum(exprState, valueRight, &numRight, false);
+		if (valueLeft->isNull || valueRight->isNull)
+		{
+			result->isNull = true;
+			return;
+		}
+
+		switch (operator->id)
+		{
+			case XPATH_EXPR_OPERATOR_PLUS:
+				result->v.num = numLeft.v.num + numRight.v.num;
+				break;
+
+			case XPATH_EXPR_OPERATOR_MINUS:
+				result->v.num = numLeft.v.num - numRight.v.num;
+				break;
+
+			default:
+				elog(ERROR, "unrecognized operator %u", operator->id);
+				break;
+		}
 	}
 	else if (operator->id == XPATH_EXPR_OPERATOR_UNION)
 	{
@@ -1487,42 +1516,56 @@ substituteFunctions(XPathExpression expression, XMLScan xscan)
 }
 
 /*
- * At least one operand must be a number. The non-numeric operand may only be
- * a string or a node-set.
+ * Both operands are cast to number.
+ * If either cast fails, the operator evaluates to true for != operator and to false in other cases.
  */
 static void
 compareNumValues(XPathExprState exprState, XPathExprOperandValue valueLeft, XPathExprOperandValue valueRight,
 				 XPathExprOperator operator, XPathExprOperandValue result)
 {
-	XPathExprOperandValueData strOpLeft,
-				strOpRight;
-	char	   *strLeft,
-			   *strRight;
 	double		numLeft,
 				numRight;
-	char	   *strEnd;
 
+	result->type = XPATH_VAL_BOOLEAN;
 	result->isNull = false;
-
-	castXPathExprOperandToStr(exprState, valueLeft, &strOpLeft);
-	castXPathExprOperandToStr(exprState, valueRight, &strOpRight);
-
-	if (strOpLeft.isNull || strOpRight.isNull)
+	if (valueLeft->isNull || valueRight->isNull)
 	{
 		result->v.boolean = (operator->id == XPATH_EXPR_OPERATOR_NEQ);
 		return;
 	}
-	strLeft = getXPathOperandValue(exprState, strOpLeft.v.stringId, XPATH_VAR_STRING);
-	if (!xmlStringIsNumber(strLeft, &numLeft, &strEnd, true))
+
+	if (valueLeft->type == XPATH_VAL_NUMBER)
 	{
-		result->v.boolean = (operator->id == XPATH_EXPR_OPERATOR_NEQ);
-		return;
+		numLeft = valueLeft->v.num;
 	}
-	strRight = getXPathOperandValue(exprState, strOpRight.v.stringId, XPATH_VAR_STRING);
-	if (!xmlStringIsNumber(strRight, &numRight, &strEnd, true))
+	else
 	{
-		result->v.boolean = (operator->id == XPATH_EXPR_OPERATOR_NEQ);
-		return;
+		XPathExprOperandValueData valueLeftNum;
+
+		castXPathExprOperandToNum(exprState, valueLeft, &valueLeftNum, false);
+		if (valueLeftNum.isNull)
+		{
+			result->v.boolean = (operator->id == XPATH_EXPR_OPERATOR_NEQ);
+			return;
+		}
+		numLeft = valueLeftNum.v.num;
+	}
+
+	if (valueRight->type == XPATH_VAL_NUMBER)
+	{
+		numRight = valueRight->v.num;
+	}
+	else
+	{
+		XPathExprOperandValueData valueRightNum;
+
+		castXPathExprOperandToNum(exprState, valueRight, &valueRightNum, false);
+		if (valueRightNum.isNull)
+		{
+			result->v.boolean = (operator->id == XPATH_EXPR_OPERATOR_NEQ);
+			return;
+		}
+		numRight = valueRightNum.v.num;
 	}
 	compareNumbers(numLeft, numRight, operator, result);
 }

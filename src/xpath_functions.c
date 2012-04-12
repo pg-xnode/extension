@@ -185,7 +185,7 @@ xpathNumber(XPathExprState exprState, unsigned short nargs, XPathExprOperandValu
 {
 	XPathExprOperandValue src = args;
 
-	castXPathExprOperandToNum(exprState, src, result);
+	castXPathExprOperandToNum(exprState, src, result, true);
 }
 
 void

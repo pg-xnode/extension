@@ -1782,6 +1782,186 @@ select xml.path('/root/a|/root/a|/root', '<root><a/></root>');
  <a/><root><a/></root>
 (1 row)
 
+select xml.path_debug_print('/root[@i + @j > 0]');
+                    path_debug_print                     
+---------------------------------------------------------
+ main expr.: (paths / funcs: 1 / 0, val. type: 3)       +
+     <path 0>                                           +
+   variables:                                           +
+     path: 0                                            +
+                                                        +
+                                                        +
+ <path 0>                                               +
+                                                        +
+ absolute xpath                                         +
+                                                        +
+ node test:      root                                   +
+   predicate expr.: (paths / funcs: 0 / 0, val. type: 0)+
+     subexpr. implicit: (val. type: 1)                  +
+       @i                                               +
+       +                                                +
+       @j                                               +
+     >                                                  +
+     0.00                                               +
+   variables:                                           +
+     attribute: i                                       +
+     attribute: j                                       +
+ 
+(1 row)
+
+select xml.path_debug_print('/root[(@i + @j) > 0]');
+                    path_debug_print                     
+---------------------------------------------------------
+ main expr.: (paths / funcs: 1 / 0, val. type: 3)       +
+     <path 0>                                           +
+   variables:                                           +
+     path: 0                                            +
+                                                        +
+                                                        +
+ <path 0>                                               +
+                                                        +
+ absolute xpath                                         +
+                                                        +
+ node test:      root                                   +
+   predicate expr.: (paths / funcs: 0 / 0, val. type: 0)+
+     subexpr. explicit: (val. type: 1)                  +
+       @i                                               +
+       +                                                +
+       @j                                               +
+     >                                                  +
+     0.00                                               +
+   variables:                                           +
+     attribute: i                                       +
+     attribute: j                                       +
+ 
+(1 row)
+
+select xml.path('/root/@i + /root/@j', '<root i="1" j="2"/>');
+ path 
+------
+ 3
+(1 row)
+
+select xml.path('/root/@i - /root/@j', '<root i="1" j="2"/>');
+ path 
+------
+ -1
+(1 row)
+
+select xml.path('boolean(/root/@i + /root/@j)', '<root i="1" j="2"/>');
+ path 
+------
+ true
+(1 row)
+
+select xml.path('string(/root/@i + /root/@j)', '<root i="1" j="2"/>');
+ path 
+------
+ 3
+(1 row)
+
+select xml.path('/root[/root/@i + /root/@j]', '<root i="1" j="2"/>');
+ path 
+------
+ 
+(1 row)
+
+select xml.path('/root[(/root/@j - /root/@i)]', '<root i="1" j="2"/>');
+        path         
+---------------------
+ <root i="1" j="2"/>
+(1 row)
+
+select xml.path('/root[/root/@j - /root/@i]', '<root i="1" j="2"/>');
+        path         
+---------------------
+ <root i="1" j="2"/>
+(1 row)
+
+select xml.path('/root/@i + /root/@k', '<root i="1" j="2"/>');
+ path 
+------
+ 
+(1 row)
+
+select xml.path('/root/@i - /root/@k', '<root i="1" j="2"/>');
+ path 
+------
+ 
+(1 row)
+
+select xml.path('(/root/@j + /root/@k) = (/root/@j + /root/@k)', '<root i="1" j="2"/>');
+ path  
+-------
+ false
+(1 row)
+
+select xml.path('(/root/@j + /root/@k) != (/root/@j + /root/@k)', '<root i="1" j="2"/>');
+ path 
+------
+ true
+(1 row)
+
+select xml.path('(/root/@j + /root/@k) = 2', '<root i="1" j="2"/>');
+ path  
+-------
+ false
+(1 row)
+
+select xml.path('(/root/@j + /root/@k) != 2', '<root i="1" j="2"/>');
+ path 
+------
+ true
+(1 row)
+
+select xml.path('/root/@j + /root/@k', '<root i="1" j="2"/>');
+ path 
+------
+ 
+(1 row)
+
+select xml.path('(/root/@j + /root/@k)', '<root i="1" j="2"/>');
+ path 
+------
+ 
+(1 row)
+
+select xml.path('boolean(/root/@j + /root/@k)', '<root i="1" j="2"/>');
+ path  
+-------
+ false
+(1 row)
+
+select xml.path('string(/root/@j + /root/@k)', '<root i="1" j="2"/>');
+ path 
+------
+ 
+(1 row)
+
+select xml.path('/root[/root/@j + /root/@k]', '<root i="1" j="2"/>');
+ path 
+------
+ 
+(1 row)
+
+select xml.path('/root[(/root/@j + /root/@k)]', '<root i="1" j="2"/>');
+ path 
+------
+ 
+(1 row)
+
+select xml.path('boolean(false() or /root/@j + /root/@k or false())', '<root i="1" j="2"/>');
+ path  
+-------
+ false
+(1 row)
+
+select xml.path('boolean(true() and /root/@j + /root/@k and true())', '<root i="1" j="2"/>');
+ path  
+-------
+ false
+(1 row)
+
 select path('/root["a"]', '<root/>');
   path   
 ---------

@@ -265,20 +265,14 @@ xpath_single(PG_FUNCTION_ARGS)
 	evaluateXPathExpression(exprState, exprState->expr, NULL, (XMLCompNodeHdr) XNODE_ROOT(doc), 0, &resData);
 	result = getXPathExprValue(exprState, doc, &notNull, &resData);
 	freeExpressionState(exprState);
-	if (resData.type == XPATH_VAL_NODESET)
+
+	if (notNull)
 	{
-		if (notNull)
-		{
-			PG_RETURN_POINTER(result);
-		}
-		else
-		{
-			PG_RETURN_NULL();
-		}
+		PG_RETURN_POINTER(result);
 	}
 	else
 	{
-		PG_RETURN_POINTER(result);
+		PG_RETURN_NULL();
 	}
 }
 
@@ -479,15 +473,24 @@ castXPathExprOperandToBool(XPathExprState exprState, XPathExprOperandValue value
 * Neither null value nor NaN strings expected.
 */
 void
-castXPathExprOperandToNum(XPathExprState exprState, XPathExprOperandValue valueSrc, XPathExprOperandValue valueDst)
+castXPathExprOperandToNum(XPathExprState exprState, XPathExprOperandValue valueSrc, XPathExprOperandValue valueDst,
+						  bool raiseError)
 {
+	bool		isNumber = false;
 
 	valueDst->type = XPATH_VAL_NUMBER;
 	valueDst->isNull = valueSrc->isNull;
 
 	if (valueSrc->isNull)
 	{
-		elog(ERROR, "null value can't be cast to a number");
+		if (raiseError)
+		{
+			elog(ERROR, "null value can't be cast to a number");
+		}
+		else
+		{
+			return;
+		}
 	}
 
 	switch (valueSrc->type)
@@ -502,7 +505,8 @@ castXPathExprOperandToNum(XPathExprState exprState, XPathExprOperandValue valueS
 
 		case XPATH_VAL_STRING:
 			valueDst->v.num = xnodeGetNumValue((char *) getXPathOperandValue(exprState, valueSrc->v.stringId,
-														  XPATH_VAR_STRING));
+								   XPATH_VAR_STRING), raiseError, &isNumber);
+			valueDst->isNull = !isNumber;
 			break;
 
 		case XPATH_VAL_NODESET:
@@ -511,7 +515,8 @@ castXPathExprOperandToNum(XPathExprState exprState, XPathExprOperandValue valueS
 
 				castXPathExprOperandToStr(exprState, valueSrc, &valueTmp);
 				valueDst->v.num = xnodeGetNumValue((char *) getXPathOperandValue(exprState, valueTmp.v.stringId,
-														  XPATH_VAR_STRING));
+								   XPATH_VAR_STRING), raiseError, &isNumber);
+				valueDst->isNull = !isNumber;
 				break;
 			}
 
@@ -630,6 +635,8 @@ castXPathValToBool(XPathValue src)
 float8
 castXPathValToNum(XPathValue src)
 {
+	bool		isNull = false;
+
 	switch (src->type)
 	{
 		case XPATH_VAL_BOOLEAN:
@@ -639,7 +646,7 @@ castXPathValToNum(XPathValue src)
 			return src->v.numVal;
 
 		case XPATH_VAL_STRING:
-			return xnodeGetNumValue(src->v.strVal);
+			return xnodeGetNumValue(src->v.strVal, true, &isNull);
 
 		case XPATH_VAL_NODESET:
 			{
@@ -659,7 +666,7 @@ castXPathValToNum(XPathValue src)
 				{
 					nodeStr = getNonElementNodeStr(node);
 				}
-				return xnodeGetNumValue(nodeStr);
+				return xnodeGetNumValue(nodeStr, true, &isNull);
 			}
 
 		default:
