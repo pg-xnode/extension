@@ -1950,6 +1950,30 @@ select xml.path('/root[(/root/@j + /root/@k)]', '<root i="1" j="2"/>');
  
 (1 row)
 
+select xml.path('boolean(1+/root)', '<root/>');
+ path  
+-------
+ false
+(1 row)
+
+select xml.path('string(1+/root)', '<root/>');
+ path 
+------
+ 
+(1 row)
+
+select xml.path('boolean(1+/root)', '<root>1</root>');
+ path 
+------
+ true
+(1 row)
+
+select xml.path('string(1+/root)', '<root>1</root>');
+ path 
+------
+ 2
+(1 row)
+
 select xml.path('boolean(false() or /root/@j + /root/@k or false())', '<root i="1" j="2"/>');
  path  
 -------

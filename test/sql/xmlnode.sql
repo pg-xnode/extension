@@ -437,6 +437,10 @@ select xml.path('boolean(/root/@j + /root/@k)', '<root i="1" j="2"/>');
 select xml.path('string(/root/@j + /root/@k)', '<root i="1" j="2"/>');
 select xml.path('/root[/root/@j + /root/@k]', '<root i="1" j="2"/>');
 select xml.path('/root[(/root/@j + /root/@k)]', '<root i="1" j="2"/>');
+select xml.path('boolean(1+/root)', '<root/>');
+select xml.path('string(1+/root)', '<root/>');
+select xml.path('boolean(1+/root)', '<root>1</root>');
+select xml.path('string(1+/root)', '<root>1</root>');
 -- null values where short evaluation is expected
 select xml.path('boolean(false() or /root/@j + /root/@k or false())', '<root i="1" j="2"/>');
 select xml.path('boolean(true() and /root/@j + /root/@k and true())', '<root i="1" j="2"/>');

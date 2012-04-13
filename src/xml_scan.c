@@ -1083,7 +1083,7 @@ evaluateBinaryOperator(XPathExprState exprState, XPathExprOperandValue valueLeft
 		result->type = XPATH_VAL_NUMBER;
 		castXPathExprOperandToNum(exprState, valueLeft, &numLeft, false);
 		castXPathExprOperandToNum(exprState, valueRight, &numRight, false);
-		if (valueLeft->isNull || valueRight->isNull)
+		if (numLeft.isNull || numRight.isNull)
 		{
 			result->isNull = true;
 			return;
