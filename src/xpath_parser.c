@@ -1234,7 +1234,19 @@ readExpressionOperand(XPathExpression exprTop, XPathParserState state, unsigned 
 	}
 	if (setSize)
 	{
-		op->size = *outPos - outPosInit;
+		unsigned int opSize = *outPos - outPosInit;
+
+		Assert(op->type != XPATH_OPERAND_EXPR_SUB && op->type != XPATH_OPERAND_EXPR_TOP);
+		if (op->type == XPATH_OPERAND_FUNC)
+		{
+			XPathExpression argList = (XPathExpression) op;
+
+			argList->size = opSize;
+		}
+		else
+		{
+			op->size = *outPos - outPosInit;
+		}
 	}
 	return op;
 }
