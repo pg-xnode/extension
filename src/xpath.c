@@ -524,6 +524,12 @@ castXPathExprOperandToNum(XPathExprState exprState, XPathExprOperandValue valueS
 			elog(ERROR, "unable to cast type %u to number", valueSrc->type);
 			break;
 	}
+
+	if (valueSrc->negative)
+	{
+		valueDst->v.num *= -1.0f;
+	}
+	valueDst->negative = false;
 }
 
 void

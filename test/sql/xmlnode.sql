@@ -445,6 +445,19 @@ select xml.path('string(1+/root)', '<root>1</root>');
 select xml.path('boolean(false() or /root/@j + /root/@k or false())', '<root i="1" j="2"/>');
 select xml.path('boolean(true() and /root/@j + /root/@k and true())', '<root i="1" j="2"/>');
 
+-- Unary operator
+select xml.path('boolean(-/root)', '<root/>');
+select xml.path('boolean((-/root))', '<root/>');
+select xml.path('string(-/root)', '<root/>');
+select xml.path('string((-/root))', '<root/>');
+select xml.path('-/root<3', '<root>3</root>');
+select xml.path('-/root+-2', '<root>3</root>');
+select xml.path('/root + - boolean(/root)', '<root>3</root>');
+select xml.path('/root/@i + - 1 + 2', '<root i="3"/>'); 
+select xml.path('/root/@i + - (1 + 2)', '<root i="3"/>');
+select xml.path_debug_print('/root + - boolean(/root)');
+select xml.path_debug_print('/root/@i + - 1 + 2'); 
+select xml.path_debug_print('/root/@i + - (1 + 2)');
 
 -- The XPath predicate can be used even if the element has no children/attributes
 select path('/root["a"]', '<root/>');

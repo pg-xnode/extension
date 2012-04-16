@@ -268,6 +268,7 @@ typedef struct XPathExprOperandValueData
 {
 	uint8		type;			/* Which member of the 'union
 								 * XPathExprGenericValue'. */
+	bool		negative;
 
 	/*
 	 * isNull - true when element being tested does contain node (attribute,
@@ -380,6 +381,8 @@ typedef struct XPathExpressionData
 	uint8		type;
 	uint8		flags;
 	uint16		size;
+
+	bool		negative;
 
 	/* Only defined where type == XPATH_OPERAND_EXPR_TOP. */
 	uint16		variables;

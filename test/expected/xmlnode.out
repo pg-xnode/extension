@@ -1986,6 +1986,134 @@ select xml.path('boolean(true() and /root/@j + /root/@k and true())', '<root i="
  false
 (1 row)
 
+select xml.path('boolean(-/root)', '<root/>');
+ path 
+------
+ true
+(1 row)
+
+select xml.path('boolean((-/root))', '<root/>');
+ path 
+------
+ true
+(1 row)
+
+select xml.path('string(-/root)', '<root/>');
+ path 
+------
+ 
+(1 row)
+
+select xml.path('string((-/root))', '<root/>');
+ path 
+------
+ 
+(1 row)
+
+select xml.path('-/root<3', '<root>3</root>');
+ path 
+------
+ true
+(1 row)
+
+select xml.path('-/root+-2', '<root>3</root>');
+ path 
+------
+ -5
+(1 row)
+
+select xml.path('/root + - boolean(/root)', '<root>3</root>');
+ path 
+------
+ 2
+(1 row)
+
+select xml.path('/root/@i + - 1 + 2', '<root i="3"/>');
+ path 
+------
+ 4
+(1 row)
+
+select xml.path('/root/@i + - (1 + 2)', '<root i="3"/>');
+ path 
+------
+ 0
+(1 row)
+
+select xml.path_debug_print('/root + - boolean(/root)');
+                 path_debug_print                 
+--------------------------------------------------
+ main expr.: (paths / funcs: 2 / 1, val. type: 1)+
+     <path 0>                                    +
+     +                                           +
+     - boolean(                                  +
+       <path 1>                                  +
+     )                                           +
+   variables:                                    +
+     path: 0                                     +
+     path: 1                                     +
+                                                 +
+                                                 +
+ <path 0>                                        +
+                                                 +
+ absolute xpath                                  +
+                                                 +
+ node test:      root                            +
+                                                 +
+                                                 +
+ <path 1>                                        +
+                                                 +
+ absolute xpath                                  +
+                                                 +
+ node test:      root                            +
+ 
+(1 row)
+
+select xml.path_debug_print('/root/@i + - 1 + 2');
+                 path_debug_print                 
+--------------------------------------------------
+ main expr.: (paths / funcs: 1 / 0, val. type: 1)+
+     <path 0>                                    +
+     +                                           +
+     -1.00                                       +
+     +                                           +
+     2.00                                        +
+   variables:                                    +
+     path: 0                                     +
+                                                 +
+                                                 +
+ <path 0>                                        +
+                                                 +
+ absolute xpath                                  +
+                                                 +
+ node test:      root                            +
+ attr. test:     @i                              +
+ 
+(1 row)
+
+select xml.path_debug_print('/root/@i + - (1 + 2)');
+                 path_debug_print                 
+--------------------------------------------------
+ main expr.: (paths / funcs: 1 / 0, val. type: 1)+
+     <path 0>                                    +
+     +                                           +
+     - subexpr. explicit: (val. type: 1)         +
+       1.00                                      +
+       +                                         +
+       2.00                                      +
+   variables:                                    +
+     path: 0                                     +
+                                                 +
+                                                 +
+ <path 0>                                        +
+                                                 +
+ absolute xpath                                  +
+                                                 +
+ node test:      root                            +
+ attr. test:     @i                              +
+ 
+(1 row)
+
 select path('/root["a"]', '<root/>');
   path   
 ---------

@@ -696,6 +696,11 @@ evaluateXPathExpression(XPathExprState exprState, XPathExpression expr, XMLScanO
 	prepareLiteral(exprState, currentOpnd);
 	currentSize = evaluateXPathOperand(exprState, currentOpnd, scan, element, recursionLevel, result);
 
+	if (expr->members == 1)
+	{
+		result->negative = expr->negative;
+	}
+
 	for (i = 0; i < expr->members - 1; i++)
 	{
 		XPathExprOperandValueData resTmp,
@@ -728,6 +733,7 @@ evaluateXPathExpression(XPathExprState exprState, XPathExpression expr, XMLScanO
 			Assert(result->type == XPATH_VAL_BOOLEAN);
 			if (!result->isNull && result->v.boolean)
 			{
+				result->negative = expr->negative;
 				return;
 			}
 		}
@@ -736,12 +742,13 @@ evaluateXPathExpression(XPathExprState exprState, XPathExpression expr, XMLScanO
 			Assert(result->type == XPATH_VAL_BOOLEAN);
 			if (result->isNull || (!result->isNull && !result->v.boolean))
 			{
+				result->negative = expr->negative;
 				return;
 			}
 		}
 	}
+	result->negative = expr->negative;
 }
-
 
 void
 freeExpressionState(XPathExprState state)
@@ -818,6 +825,8 @@ evaluateXPathFunction(XPathExprState exprState, XPathExpression funcExpr, XMLSca
 	XPathFunctionId funcId;
 	XPathFunction function;
 	XpathFuncImpl funcImpl;
+
+	result->negative = funcExpr->negative;
 
 	argsTmp = args = (XPathExprOperandValue) palloc(funcExpr->members * sizeof(XPathExprOperandValueData));
 
@@ -1087,6 +1096,15 @@ evaluateBinaryOperator(XPathExprState exprState, XPathExprOperandValue valueLeft
 		{
 			result->isNull = true;
 			return;
+		}
+
+		if (numLeft.negative)
+		{
+			numLeft.v.num *= -1.0f;
+		}
+		if (numRight.negative)
+		{
+			numRight.v.num *= -1.0f;
 		}
 
 		switch (operator->id)
@@ -1528,6 +1546,7 @@ compareNumValues(XPathExprState exprState, XPathExprOperandValue valueLeft, XPat
 
 	result->type = XPATH_VAL_BOOLEAN;
 	result->isNull = false;
+
 	if (valueLeft->isNull || valueRight->isNull)
 	{
 		result->v.boolean = (operator->id == XPATH_EXPR_OPERATOR_NEQ);
@@ -1537,6 +1556,10 @@ compareNumValues(XPathExprState exprState, XPathExprOperandValue valueLeft, XPat
 	if (valueLeft->type == XPATH_VAL_NUMBER)
 	{
 		numLeft = valueLeft->v.num;
+		if (valueLeft->negative)
+		{
+			numLeft *= -1.0f;
+		}
 	}
 	else
 	{
@@ -1554,6 +1577,10 @@ compareNumValues(XPathExprState exprState, XPathExprOperandValue valueLeft, XPat
 	if (valueRight->type == XPATH_VAL_NUMBER)
 	{
 		numRight = valueRight->v.num;
+		if (valueRight->negative)
+		{
+			numRight *= -1.0f;
+		}
 	}
 	else
 	{
@@ -1567,6 +1594,7 @@ compareNumValues(XPathExprState exprState, XPathExprOperandValue valueLeft, XPat
 		}
 		numRight = valueRightNum.v.num;
 	}
+
 	compareNumbers(numLeft, numRight, operator, result);
 }
 

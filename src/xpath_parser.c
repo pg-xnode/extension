@@ -948,6 +948,7 @@ insertSubexpression(XPathExprOperand operand, XPathExprOperatorIdStore ** opIdPt
 	}
 	subExpr->type = XPATH_OPERAND_EXPR_SUB;
 	subExpr->flags = 0;
+	subExpr->negative = false;
 	*outPos += subExprSz;
 }
 
@@ -971,15 +972,8 @@ readExpressionOperand(XPathExpression exprTop, XPathParserState state, unsigned 
 	unsigned short indMax;
 	unsigned short outPosInit = *outPos;
 	bool		setSize = true;
+	bool		negative = false;
 	XPathOffset *variables = (XPathOffset *) (output + sizeof(XPathExpressionData));
-
-	checkExpressionBuffer(*outPos + sizeof(XPathExprOperandData));
-	if (*state->c != XNODE_CHAR_LBRKT_RND)
-	{
-		*outPos += sizeof(XPathExprOperandData);
-	}
-	/* '-1' stands for terminating '\0' */
-	indMax = XPATH_EXPR_BUFFER_SIZE - *outPos - 1;
 
 	op->value.castToNumber = false;
 
@@ -991,6 +985,28 @@ readExpressionOperand(XPathExpression exprTop, XPathParserState state, unsigned 
 	{
 		elog(ERROR, "unexpected end of xpath expression or subexpression at position %u", state->pos);
 	}
+
+	if (*state->c == XNODE_CHAR_DASH)
+	{
+		nextChar(state, false);
+		skipWhiteSpace(state, false);
+		negative = true;
+	}
+
+	checkExpressionBuffer(*outPos + sizeof(XPathExprOperandData));
+
+	/*
+	 * Ensure that we don't overwrite the operand header. If subexpression
+	 * starts here, do nothing. The *outPos will be increased accordingly
+	 * during insertion of the subexpression header.
+	 */
+	if (*state->c != XNODE_CHAR_LBRKT_RND)
+	{
+		*outPos += sizeof(XPathExprOperandData);
+	}
+	/* '-1' stands for terminating '\0' */
+	indMax = XPATH_EXPR_BUFFER_SIZE - *outPos - 1;
+
 	if (*state->c == XNODE_CHAR_LBRKT_RND)
 	{
 		XPathExpression subExpr = (XPathExpression) op;
@@ -1003,6 +1019,7 @@ readExpressionOperand(XPathExpression exprTop, XPathParserState state, unsigned 
 
 		subExpr->type = XPATH_OPERAND_EXPR_SUB;
 		subExpr->flags = XPATH_SUBEXPRESSION_EXPLICIT;
+		subExpr->negative = negative;
 		nextChar(state, true);
 
 		/*
@@ -1127,9 +1144,9 @@ readExpressionOperand(XPathExpression exprTop, XPathParserState state, unsigned 
 							argList->members = parseFunctionArgList(state, func, output, outPos, paths, pathCnt,
 																	mainExpr);
 							argList->type = XPATH_OPERAND_FUNC;
+							argList->negative = negative;
 							argList->funcId = func->id;
 							argList->valType = func->resType;
-
 							checkFunctionArgTypes(argList, func);
 						}
 					}
@@ -1152,6 +1169,7 @@ readExpressionOperand(XPathExpression exprTop, XPathParserState state, unsigned 
 		if (op->type != XPATH_OPERAND_FUNC)
 		{
 			op->value.isNull = true;
+			op->value.negative = negative;
 			op->substituted = false;
 		}
 
@@ -1191,6 +1209,7 @@ readExpressionOperand(XPathExpression exprTop, XPathParserState state, unsigned 
 
 		op->type = XPATH_OPERAND_LITERAL;
 		op->value.type = XPATH_VAL_STRING;
+		op->value.negative = negative;
 		op->value.isNull = false;
 
 		nextChar(state, false);
@@ -1210,6 +1229,7 @@ readExpressionOperand(XPathExpression exprTop, XPathParserState state, unsigned 
 
 		op->type = XPATH_OPERAND_LITERAL;
 		op->value.type = XPATH_VAL_NUMBER;
+		op->value.negative = negative;
 		op->value.castToNumber = true;
 		op->value.isNull = false;
 
@@ -1910,6 +1930,36 @@ dumpXPathExprOperand(char **input, XPathHeader xpathHdr, StringInfo output, unsi
 		appendStringInfoChar(output, '\n');
 		appendStringInfoSpaces(output, 2 * (level + 2));
 	}
+
+	switch (operand->type)
+	{
+		case XPATH_OPERAND_LITERAL:
+		case XPATH_OPERAND_ATTRIBUTE:
+		case XPATH_OPERAND_PATH:
+		case XPATH_OPERAND_FUNC_NOARG:
+			if (operand->value.negative)
+			{
+				appendStringInfoChar(output, XNODE_CHAR_DASH);
+			}
+			break;
+
+		case XPATH_OPERAND_FUNC:
+		case XPATH_OPERAND_EXPR_SUB:
+			{
+				XPathExpression expr = (XPathExpression) operand;
+
+				if (expr->negative)
+				{
+					appendStringInfo(output, "%c ", XNODE_CHAR_DASH);
+				}
+			}
+			break;
+
+		default:
+			elog(ERROR, "unrecognized xpath operand type");
+			break;
+	}
+
 	switch (operand->type)
 	{
 		case XPATH_OPERAND_LITERAL:
