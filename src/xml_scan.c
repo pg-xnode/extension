@@ -25,6 +25,7 @@ static void substituteFunctions(XPathExpression expression, XMLScan xscan);
 
 static void compareNumValues(XPathExprState exprState, XPathExprOperandValue valueLeft,
 				 XPathExprOperandValue valueRight, XPathExprOperator operator, XPathExprOperandValue result);
+static bool xmlNumberToDouble(XPathExprState exprState, XPathExprOperandValue numOperand, double *simple);
 static void compareNumbers(double numLeft, double numRight, XPathExprOperator operator,
 			   XPathExprOperandValue result);
 static bool compareNodeSets(XPathExprState exprState, XPathNodeSet ns1, XPathNodeSet ns2, XPathExprOperator operator);
@@ -1553,49 +1554,43 @@ compareNumValues(XPathExprState exprState, XPathExprOperandValue valueLeft, XPat
 		return;
 	}
 
-	if (valueLeft->type == XPATH_VAL_NUMBER)
+	if (!xmlNumberToDouble(exprState, valueLeft, &numLeft))
 	{
-		numLeft = valueLeft->v.num;
-		if (valueLeft->negative)
-		{
-			numLeft *= -1.0f;
-		}
+		result->v.boolean = (operator->id == XPATH_EXPR_OPERATOR_NEQ);
+		return;
 	}
-	else
+	if (!xmlNumberToDouble(exprState, valueRight, &numRight))
 	{
-		XPathExprOperandValueData valueLeftNum;
-
-		castXPathExprOperandToNum(exprState, valueLeft, &valueLeftNum, false);
-		if (valueLeftNum.isNull)
-		{
-			result->v.boolean = (operator->id == XPATH_EXPR_OPERATOR_NEQ);
-			return;
-		}
-		numLeft = valueLeftNum.v.num;
-	}
-
-	if (valueRight->type == XPATH_VAL_NUMBER)
-	{
-		numRight = valueRight->v.num;
-		if (valueRight->negative)
-		{
-			numRight *= -1.0f;
-		}
-	}
-	else
-	{
-		XPathExprOperandValueData valueRightNum;
-
-		castXPathExprOperandToNum(exprState, valueRight, &valueRightNum, false);
-		if (valueRightNum.isNull)
-		{
-			result->v.boolean = (operator->id == XPATH_EXPR_OPERATOR_NEQ);
-			return;
-		}
-		numRight = valueRightNum.v.num;
+		result->v.boolean = (operator->id == XPATH_EXPR_OPERATOR_NEQ);
+		return;
 	}
 
 	compareNumbers(numLeft, numRight, operator, result);
+}
+
+static bool
+xmlNumberToDouble(XPathExprState exprState, XPathExprOperandValue numOperand, double *simple)
+{
+	if (numOperand->type == XPATH_VAL_NUMBER)
+	{
+		*simple = numOperand->v.num;
+		if (numOperand->negative)
+		{
+			*simple *= -1.0f;
+		}
+	}
+	else
+	{
+		XPathExprOperandValueData opValueNum;
+
+		castXPathExprOperandToNum(exprState, numOperand, &opValueNum, false);
+		if (opValueNum.isNull)
+		{
+			return false;
+		}
+		*simple = opValueNum.v.num;
+	}
+	return true;
 }
 
 static void
