@@ -765,6 +765,11 @@ parseLocationPath(XPath * paths, bool isSubPath, unsigned short *pathCount, char
 				}
 			}
 
+			if (*state.c == XNODE_CHAR_SLASH && xpath->targNdKind == XMLNODE_ATTRIBUTE)
+			{
+				elog(ERROR, "if location path contains attribute test, it must be the last location step");
+			}
+
 			/*
 			 * We're at the first character after the xpath element. That can
 			 * be '/', white space, operator, right bracket...
