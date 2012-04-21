@@ -4,7 +4,7 @@
 
 #include "postgres.h"
 #include "funcapi.h"
-#include "catalog/pg_type.h"
+#include "catalog/pg_proc.h"
 #include "mb/pg_wchar.h"
 #include "utils/array.h"
 #include "utils/builtins.h"
@@ -55,15 +55,6 @@ UTF8Interval nameCharIntervals[XNODE_NAME_CHAR_INTERVALS] =
 	{{0xe2, 0x80, 0xbf, 0x00}, {0xe2, 0x81, 0x80, 0x00}},
 };
 
-/*
- * Workaround for missing catalog entry (and constant Oid).
- *
- * The type name and namespace name constants must match those in xnode--<version>.sql
- */
-
-#define XNODE_NAMESPACE_NAME	"xml"
-#define XNODE_TYPE_NAME			"node"
-
 typedef struct TypeInfo
 {
 	Oid			oid;
@@ -73,24 +64,17 @@ typedef struct TypeInfo
 } TypeInfo;
 
 static void
-initXNodeTypeInfo(TypeInfo *ti)
+initXNodeTypeInfo(Oid fnOid, int argNr, TypeInfo *ti)
 {
 	HeapTuple	tup;
-	Oid			nameSpOid;
-	Form_pg_type typeStruct;
+	Form_pg_proc procStruct;
 
-	tup = SearchSysCache1(NAMESPACENAME, CStringGetDatum(XNODE_NAMESPACE_NAME));
+	tup = SearchSysCache1(PROCOID, ObjectIdGetDatum(fnOid));
 	Assert(HeapTupleIsValid(tup));
-	nameSpOid = HeapTupleGetOid(tup);
+	procStruct = (Form_pg_proc) GETSTRUCT(tup);
+	ti->oid = procStruct->proargtypes.values[argNr];
 	ReleaseSysCache(tup);
-
-	tup = SearchSysCache2(TYPENAMENSP, CStringGetDatum(XNODE_TYPE_NAME), ObjectIdGetDatum(nameSpOid));
-	Assert(HeapTupleIsValid(tup));
-	typeStruct = (Form_pg_type) GETSTRUCT(tup);
-
-	ti->oid = HeapTupleGetOid(tup);
 	get_typlenbyvalalign(ti->oid, &ti->elmlen, &ti->elmbyval, &ti->elmalign);
-	ReleaseSysCache(tup);
 }
 
 
@@ -393,7 +377,15 @@ xmlnode_children(PG_FUNCTION_ARGS)
 	TypeInfo	nodeType;
 	ArrayType  *result;
 
-	initXNodeTypeInfo(&nodeType);
+	/*
+	 * Unfortunately the type info has to be retrieved every time again. If
+	 * the backend used global variable to remember the values, all backends
+	 * would have to invalidate the values whenever the extension gets dropped
+	 * / created.
+	 */
+
+	Assert(fcinfo->flinfo != NULL);
+	initXNodeTypeInfo(fcinfo->flinfo->fn_oid, 0, &nodeType);
 
 	if (node->kind == XMLNODE_DOC || node->kind == XMLNODE_ELEMENT || node->kind == XMLNODE_DOC_FRAGMENT)
 	{
