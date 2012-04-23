@@ -76,7 +76,7 @@ CREATE TYPE @extschema@.path (
 CREATE FUNCTION path_debug_print(@extschema@.path) RETURNS text
 	as 'MODULE_PATHNAME', 'xpath_debug_print'
 	LANGUAGE C
-	STABLE
+	IMMUTABLE	
 	STRICT;
 
 
@@ -182,28 +182,28 @@ CREATE FUNCTION path(@extschema@.path, doc)
 	RETURNS pathval 
 	as 'MODULE_PATHNAME', 'xpath_single'
 	LANGUAGE C
-	VOLATILE
+	IMMUTABLE	
 	STRICT;
 
 CREATE FUNCTION @extschema@.path(@extschema@.path, @extschema@.path[], doc)
 	RETURNS SETOF pathval[] 
 	as 'MODULE_PATHNAME', 'xpath_array'
 	LANGUAGE C
-	VOLATILE
+	IMMUTABLE	
 	STRICT;
 
 CREATE FUNCTION children(node)
 	RETURNS node[] 
 	as 'MODULE_PATHNAME', 'xmlnode_children'
 	LANGUAGE C
-	VOLATILE
+	IMMUTABLE
 	STRICT;
 
 CREATE FUNCTION element(text, text[][2], node)
 	RETURNS node 
 	as 'MODULE_PATHNAME', 'xmlelement'
 	LANGUAGE C
-	VOLATILE;
+	IMMUTABLE;
 
 
 CREATE DOMAIN add_mode AS CHAR(1)
@@ -214,7 +214,7 @@ CREATE FUNCTION add(doc, @extschema@.path, node, add_mode)
 	RETURNS doc
 	as 'MODULE_PATHNAME', 'xmlnode_add'
 	LANGUAGE C
-	VOLATILE
+	IMMUTABLE
 	STRICT;
 
 
@@ -222,7 +222,7 @@ CREATE FUNCTION remove(doc, @extschema@.path)
 	RETURNS doc
 	as 'MODULE_PATHNAME', 'xmlnode_remove'
 	LANGUAGE C
-	VOLATILE
+	IMMUTABLE
 	STRICT;
 
 
