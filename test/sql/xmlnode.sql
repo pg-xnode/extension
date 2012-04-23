@@ -66,6 +66,10 @@ path('/state/languages/language/text()', data) as language
 from states
 order by id;
 
+select id, path('count(//city)', data)
+from states
+order by id;
+
 
 -- Common table expression can be used to avoid parsing the xpath expression for each row
 with paths(name, area, population)
@@ -480,6 +484,7 @@ select path('/root/a[position()=@i]', '<root><a i="2"/><a i="1"/><a i="3.0"/></r
 select path('/root/a[position()=1 or position()=2]', '<root><a i="1"/><a i="2"/></root>'); 
 select path('/state/city[6]/@name', data) from states where id=1;
 select path('/state/region[5]/city[1]/@name', data) from states where id=2;
+select path('/root//a[position()=3]', '<root><a i="1"/><a i="2"><a i="3">xy</a></a><a i="4"/></root>');
 
 select id, path('/state/comment()', data)
 from states
@@ -530,6 +535,7 @@ select path('/root[contains("", a)]', '<root><a>xy</a><a>z</a></root>');
 select path('/root[contains(b, a)]', '<root><a>xy</a><a>z</a></root>');
 select path('/root[contains(a, b)]', '<root><a>xy</a><a>z</a></root>');
 select path('/root[contains(b, c)]', '<root><a>xy</a><a>z</a></root>');
+select path('contains("c", /root/a)', '<root><a/><a/></root>');
 select path('/state[contains(@name, "rep") and (@area<=100000 or @population>11000000)]', '{@name, @area, @population}', data) 
 from states
 order by id;

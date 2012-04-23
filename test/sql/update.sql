@@ -74,3 +74,5 @@ from a
 order by a.i;
 
 drop table a;
+
+select xml.remove('<a><b><c/><c/></b><b><c/><c/></b></a>', '/a/b/c');

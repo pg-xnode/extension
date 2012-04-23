@@ -96,6 +96,16 @@ order by id;
  Österreich                 | at     | Deutsch
 (3 rows)
 
+select id, path('count(//city)', data)
+from states
+order by id;
+ id | path 
+----+------
+  1 | 3
+  2 | 8
+  3 | 4
+(3 rows)
+
 with paths(name, area, population)
 as (select '/state/@name'::xml.path, '/state/@area'::xml.path, '/state/@population'::xml.path)
 select  id, path(p.name, data) as name, path(p.area, data) as area,
@@ -2204,6 +2214,12 @@ select path('/state/region[5]/city[1]/@name', data) from states where id=2;
  Saarbrücken
 (1 row)
 
+select path('/root//a[position()=3]', '<root><a i="1"/><a i="2"><a i="3">xy</a></a><a i="4"/></root>');
+    path    
+------------
+ <a i="4"/>
+(1 row)
+
 select id, path('/state/comment()', data)
 from states
 order by id;
@@ -2386,6 +2402,12 @@ select path('/root[contains(b, c)]', '<root><a>xy</a><a>z</a></root>');
               path              
 --------------------------------
  <root><a>xy</a><a>z</a></root>
+(1 row)
+
+select path('contains("c", /root/a)', '<root><a/><a/></root>');
+ path 
+------
+ true
 (1 row)
 
 select path('/state[contains(@name, "rep") and (@area<=100000 or @population>11000000)]', '{@name, @area, @population}', data) 

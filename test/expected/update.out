@@ -1103,3 +1103,9 @@ order by a.i;
 
 drop table a;
 DROP TABLE
+select xml.remove('<a><b><c/><c/></b><b><c/><c/></b></a>', '/a/b/c');
+     remove      
+-----------------
+ <a><b/><b/></a>
+(1 row)
+
