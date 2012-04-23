@@ -1,8 +1,8 @@
 build:
-	make -C src xnode.so
+	$(MAKE) -C src xnode.so
 
 install: build
-	make -C src install
+	$(MAKE) -C src install
 
 clean:
-	make -C src clean
+	$(MAKE) -C src clean
