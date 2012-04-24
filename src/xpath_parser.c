@@ -179,6 +179,7 @@ XPathExprOperatorIdStore * firstOpIdPtr, char *output, unsigned short *outPos,
 	{
 		exprCurrent->type = XPATH_OPERAND_EXPR_TOP;
 		exprCurrent->variables = 0;
+		exprCurrent->negative = false;
 
 		exprCurrent->nlits = 0;
 		exprCurrent->npaths = 0;

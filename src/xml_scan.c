@@ -3,6 +3,7 @@
  */
 
 #include "postgres.h"
+#include "utils/builtins.h"
 
 #include "xpath.h"
 #include "xmlnode_util.h"
@@ -299,11 +300,23 @@ getNextXMLNode(XMLScan xscan, bool removed)
 						{
 							if (result.type == XPATH_VAL_NUMBER)
 							{
+								XPathExprOperandValueData resSigned;
+
 								/*
-								 * TODO Use the appropriate cast function from
-								 * Postgres core.
+								 * The cast is used to get rid of the
+								 * 'negative' flag.
 								 */
-								passed = (scanLevel->contextPosition == ((int) (result.v.num)));
+								castXPathExprOperandToNum(exprState, &result, &resSigned, false);
+								if (resSigned.v.num <= 0.0f || resSigned.v.num > XMLNODE_MAX_CHILDREN)
+								{
+									passed = false;
+								}
+								else
+								{
+									int2		posInt2 = DatumGetInt16(DirectFunctionCall1Coll(dtoi2, InvalidOid, Float8GetDatum(resSigned.v.num)));
+
+									passed = (scanLevel->contextPosition == posInt2);
+								}
 							}
 							else
 							{
@@ -685,6 +698,7 @@ evaluateXPathExpression(XPathExprState exprState, XPathExpression expr, XMLScanO
 	unsigned int currentSize;
 	XPathExprOperator operator;
 	XPathExprOperatorId firstOp = 0;
+	bool		neg;
 
 	currentPtr += sizeof(XPathExpressionData);
 	if (recursionLevel == 0)
@@ -696,11 +710,6 @@ evaluateXPathExpression(XPathExprState exprState, XPathExpression expr, XMLScanO
 	currentOpnd = (XPathExprOperand) currentPtr;
 	prepareLiteral(exprState, currentOpnd);
 	currentSize = evaluateXPathOperand(exprState, currentOpnd, scan, element, recursionLevel, result);
-
-	if (expr->members == 1)
-	{
-		result->negative = expr->negative;
-	}
 
 	for (i = 0; i < expr->members - 1; i++)
 	{
@@ -734,8 +743,7 @@ evaluateXPathExpression(XPathExprState exprState, XPathExpression expr, XMLScanO
 			Assert(result->type == XPATH_VAL_BOOLEAN);
 			if (!result->isNull && result->v.boolean)
 			{
-				result->negative = expr->negative;
-				return;
+				break;
 			}
 		}
 		else if (firstOp == XPATH_EXPR_OPERATOR_AND)
@@ -743,12 +751,28 @@ evaluateXPathExpression(XPathExprState exprState, XPathExpression expr, XMLScanO
 			Assert(result->type == XPATH_VAL_BOOLEAN);
 			if (result->isNull || (!result->isNull && !result->v.boolean))
 			{
-				result->negative = expr->negative;
-				return;
+				break;;
 			}
 		}
 	}
+
+	/*
+	 * If the operand has minus sign, then the containing expression will have
+	 * to take it over.
+	 *
+	 * In fact this can only happen for expressions having 1 operand. If there
+	 * are 2 or more, then evaluateBinaryOperator() gives numeric value that
+	 * reflects the sign and it sets 'result->negative' to false.
+	 */
+	neg = result->negative;
+	Assert((neg && expr->members == 1) || !neg);
+	/* In general, the result has to take the expression's '-'. */
 	result->negative = expr->negative;
+	/* As mentioned above, take over the (single) operand's sign. */
+	if (neg)
+	{
+		result->negative = !result->negative;
+	}
 }
 
 void
@@ -892,6 +916,10 @@ static void
 evaluateBinaryOperator(XPathExprState exprState, XPathExprOperandValue valueLeft, XPathExprOperandValue valueRight,
 					   XPathExprOperator operator, XPathExprOperandValue result, XMLCompNodeHdr element)
 {
+
+
+	/* If numeric value is the output, the value will reflect the sign itself */
+	result->negative = false;
 
 	if (operator->id == XPATH_EXPR_OPERATOR_OR || operator->id == XPATH_EXPR_OPERATOR_AND)
 	{

@@ -1050,6 +1050,10 @@ getXPathExprValue(XPathExprState exprState, xmldoc document, bool *notNull, XPat
 			if (res->type == XPATH_VAL_NUMBER)
 			{
 				xpval->v.numVal = res->v.num;
+				if (res->negative)
+				{
+					xpval->v.numVal *= -1.0f;
+				}
 			}
 			else
 			{

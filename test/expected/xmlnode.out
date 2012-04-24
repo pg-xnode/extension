@@ -2124,6 +2124,120 @@ select xml.path_debug_print('/root/@i + - (1 + 2)');
  
 (1 row)
 
+select xml.path('-(-(-(1)))', '<a/>');
+ path 
+------
+ -1
+(1 row)
+
+select xml.path('-(-(-1))', '<a/>');
+ path 
+------
+ -1
+(1 row)
+
+select xml.path('-(-(1))', '<a/>');
+ path 
+------
+ 1
+(1 row)
+
+select xml.path('-(-1)', '<a/>');
+ path 
+------
+ 1
+(1 row)
+
+select xml.path('-(1)', '<a/>');
+ path 
+------
+ -1
+(1 row)
+
+select xml.path('-1', '<a/>');
+ path 
+------
+ -1
+(1 row)
+
+select xml.path('-(-(1 - 2))', '<a/>');
+ path 
+------
+ -1
+(1 row)
+
+select xml.path('-((-(1 - 2) + -count(/a)))', '<a/>');
+ path 
+------
+ -0
+(1 row)
+
+select xml.path('-((-(1 - 2) + -count(/a)))', '<a><b/><b/></a>');
+ path 
+------
+ -0
+(1 row)
+
+select xml.path('-((-(1 - 2) + -count(/a/b)))', '<a><b/><b/></a>');
+ path 
+------
+ 1
+(1 row)
+
+select xml.path('-((-(1 - 2) + (-count(/a/b))))', '<a><b/><b/></a>');
+ path 
+------
+ 1
+(1 row)
+
+select xml.path('-((-(1 - 2) + -(-count(/a/b))))', '<a><b/><b/></a>');
+ path 
+------
+ -3
+(1 row)
+
+select xml.path('-((-(1 - 2) + -(count(/a/b))))', '<a><b/><b/></a>');
+ path 
+------
+ 1
+(1 row)
+
+select xml.path('/root/a[-((-1 + -count(/root)))]', '<root><a/></root>');
+ path 
+------
+ 
+(1 row)
+
+select xml.path('/root/a[-((-(1) + -count(/root/a)))]', '<root><a/></root>');
+ path 
+------
+ 
+(1 row)
+
+select xml.path('/root/a[-((-1 + -count(/root/a)))]', '<root><a/><a/></root>');
+ path 
+------
+ 
+(1 row)
+
+select xml.path('/root/a[-((-(1) + (-count(/root/a))))]', '<root><a/><a/></root>');
+ path 
+------
+ 
+(1 row)
+
+select xml.path('/root/a[-((-1 + -(-count(/root/a))))]', '<root><a></a></root>');
+ path 
+------
+ 
+(1 row)
+
+select xml.path('/root/a[-((-(1) + -(count(/root/a))))]', '<root><a/><a/></root>');
+ path 
+------
+ 
+(1 row)
+
 select path('/root["a"]', '<root/>');
   path   
 ---------

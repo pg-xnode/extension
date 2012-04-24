@@ -268,6 +268,22 @@ typedef struct XPathExprOperandValueData
 {
 	uint8		type;			/* Which member of the 'union
 								 * XPathExprGenericValue'. */
+
+	/*
+	 * On evaluation: It makes lot of sense for castXPathExprOperandToNum() to
+	 * produce either positive or negative float value where we no longer have
+	 * to check the 'negative' attribute. However that brings a requirement
+	 * not to flip the sign back and forth by repeated cast.
+	 *
+	 * Therefore the convention is not to apply the sign to operands or
+	 * subexpressions. Instead, it just gets propagated to the top-level
+	 * expression. The sign may only be evaluated at the top level.
+	 *
+	 * evaluateBinaryOperator() is special case in that it does apply the sign
+	 * to its arguments. This is o.k. because these 'binary operands' are
+	 * replaced by a new value (i.e. nothing like repeated cast can happen to
+	 * them afterwards).
+	 */
 	bool		negative;
 
 	/*

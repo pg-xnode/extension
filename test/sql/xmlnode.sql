@@ -462,6 +462,28 @@ select xml.path('/root/@i + - (1 + 2)', '<root i="3"/>');
 select xml.path_debug_print('/root + - boolean(/root)');
 select xml.path_debug_print('/root/@i + - 1 + 2'); 
 select xml.path_debug_print('/root/@i + - (1 + 2)');
+--Special cases where the '-' has to be propagated to top-level exression
+select xml.path('-(-(-(1)))', '<a/>');
+select xml.path('-(-(-1))', '<a/>');
+select xml.path('-(-(1))', '<a/>');
+select xml.path('-(-1)', '<a/>');
+select xml.path('-(1)', '<a/>');
+select xml.path('-1', '<a/>');
+select xml.path('-(-(1 - 2))', '<a/>');
+--..similar, with functions instead of subexpressions
+select xml.path('-((-(1 - 2) + -count(/a)))', '<a/>');
+select xml.path('-((-(1 - 2) + -count(/a)))', '<a><b/><b/></a>');
+select xml.path('-((-(1 - 2) + -count(/a/b)))', '<a><b/><b/></a>');
+select xml.path('-((-(1 - 2) + (-count(/a/b))))', '<a><b/><b/></a>');
+select xml.path('-((-(1 - 2) + -(-count(/a/b))))', '<a><b/><b/></a>');
+select xml.path('-((-(1 - 2) + -(count(/a/b))))', '<a><b/><b/></a>');
+--...and some where node test predicate is the top-level expression
+select xml.path('/root/a[-((-1 + -count(/root)))]', '<root><a/></root>');
+select xml.path('/root/a[-((-(1) + -count(/root/a)))]', '<root><a/></root>');
+select xml.path('/root/a[-((-1 + -count(/root/a)))]', '<root><a/><a/></root>');
+select xml.path('/root/a[-((-(1) + (-count(/root/a))))]', '<root><a/><a/></root>');
+select xml.path('/root/a[-((-1 + -(-count(/root/a))))]', '<root><a></a></root>');
+select xml.path('/root/a[-((-(1) + -(count(/root/a))))]', '<root><a/><a/></root>');
 
 -- The XPath predicate can be used even if the element has no children/attributes
 select path('/root["a"]', '<root/>');
