@@ -14,12 +14,12 @@
 extern void xmlnodeContainerInit(XMLNodeContainer cont);
 extern void xmlnodeContainerFree(XMLNodeContainer cont);
 extern void xmlnodePushSingle(XMLNodeContainer stack, XMLNodeOffset value);
-extern void xmlnodeAddListItem(XMLNodeContainer cont, XNodeListItem * itemNew);
+extern void xmlnodeAddListItem(XMLNodeContainer cont, XNodeListItem *itemNew);
 extern XMLNodeOffset xmlnodePop(XMLNodeContainer stack);
 
 extern unsigned int getXMLNodeSize(XMLNodeHdr node, bool subtree);
 extern char *getXMLNodeKindStr(XMLNodeKind k);
-extern char *copyXMLNode(XMLNodeHdr node, char *target, bool xmlnode, XMLNodeOffset * root);
+extern char *copyXMLNode(XMLNodeHdr node, char *target, bool xmlnode, XMLNodeOffset *root);
 extern char **copyXMLDocFragment(XMLCompNodeHdr fragNode, char **resCursorPtr);
 extern void copyXMLNodeOrDocFragment(XMLNodeHdr newNode, unsigned int newNdSize, char **resCursor,
 						 char **newNdRoot, char ***newNdRoots);

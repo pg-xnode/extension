@@ -39,7 +39,7 @@ static bool compareValueToNodeSet(XPathExprState exprState, XPathExprOperandValu
 					  XPathExprOperator operator);
 static bool isOnIgnoreList(XMLNodeHdr node, XMLScan scan);
 static void getUnion(XPathExprState exprState, XPathNodeSet setLeft, XPathNodeSet setRight, XPathNodeSet setResult);
-static void copyNodeSet(XPathExprState exprState, XPathNodeSet nodeSet, XMLNodeHdr * output, unsigned int *position);
+static void copyNodeSet(XPathExprState exprState, XPathNodeSet nodeSet, XMLNodeHdr *output, unsigned int *position);
 static int	nodePtrComparator(const void *arg1, const void *arg2);
 
 /*
@@ -61,6 +61,7 @@ initXMLScan(XMLScan xscan, XMLScan parent, XPath xpath, XPathHeader xpHdr, XMLCo
 	xscan->done = false;
 
 	xscan->xpath = xpath;
+
 	xscan->xpathHeader = xpHdr;
 	xscan->xpathRoot = 0;
 	if (xscan->xpath->depth > 0)
@@ -1178,16 +1179,17 @@ evaluateBinaryOperator(XPathExprState exprState, XPathExprOperandValue valueLeft
 void
 initScanForTextNodes(XMLScan xscan, XMLCompNodeHdr root)
 {
-	XPath		xpath = (XPath) palloc(sizeof(XPathData) + sizeof(XPathElementData));
-	XPathElement xpEl = (XPathElement) ((char *) xpath + sizeof(XPathData));
+	XPath		xp = (XPath) palloc(sizeof(XPathData) + sizeof(XPathElementData));
+	XPathElement xpEl = (XPathElement) ((char *) xp + sizeof(XPathData));
 
 	xpEl->descendant = true;
 	xpEl->hasPredicate = false;
-	xpath->depth = 1;
-	xpath->targNdKind = XMLNODE_TEXT;
-	xpath->allAttributes = false;
-	xpath->elements[0] = sizeof(XPathData);
-	initXMLScan(xscan, NULL, xpath, NULL, root, xscan->document, false);
+	xp->depth = 1;
+	xp->targNdKind = XMLNODE_TEXT;
+	xp->allAttributes = false;
+	xp->elements[0] = sizeof(XPathData);
+
+	initXMLScan(xscan, NULL, xp, NULL, root, xscan->document, false);
 }
 
 void
@@ -1460,7 +1462,7 @@ substitutePaths(XPathExprState exprState, XPathExpression expression, XMLCompNod
 					XMLNodeHdr *array = NULL;
 
 					Assert((matching->kind == xscanSub.xpath->targNdKind && xscanSub.xpath->targNdKind != XMLNODE_NODE)
-						   || xscanSub.xpath->targNdKind == XMLNODE_NODE);
+						   ||xscanSub.xpath->targNdKind == XMLNODE_NODE);
 
 					if (count == 0)
 					{
@@ -2183,7 +2185,7 @@ getUnion(XPathExprState exprState, XPathNodeSet setLeft, XPathNodeSet setRight, 
  * '*position' gets increased by the number of nodes actually added.
  */
 static void
-copyNodeSet(XPathExprState exprState, XPathNodeSet nodeSet, XMLNodeHdr * output, unsigned int *position)
+copyNodeSet(XPathExprState exprState, XPathNodeSet nodeSet, XMLNodeHdr *output, unsigned int *position)
 {
 	XMLNodeHdr *start = output + *position;
 

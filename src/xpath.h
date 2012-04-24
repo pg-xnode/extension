@@ -145,7 +145,7 @@ typedef enum XPathValueType
 	 * declare that function argument can be of any type.
 	 */
 	XPATH_VAL_OBJECT
-}	XPathValueType;
+} XPathValueType;
 
 extern char *xpathValueTypes[];
 
@@ -192,7 +192,7 @@ typedef enum XPathExprVar
 	XPATH_VAR_STRING,
 	XPATH_VAR_NODE_SINGLE,
 	XPATH_VAR_NODE_ARRAY
-}	XPathExprVar;
+} XPathExprVar;
 
 /*
  * All nodes in the set are supposed to be of the same kind
@@ -218,7 +218,7 @@ typedef struct XPathNodeSetData
 		unsigned short nodeId;
 		unsigned short arrayId;
 	}			nodes;
-}	XPathNodeSetData;
+} XPathNodeSetData;
 
 typedef struct XPathNodeSetData *XPathNodeSet;
 
@@ -244,7 +244,7 @@ typedef enum XPathFunctionId
 
 	XPATH_FUNC_COUNT,
 	XPATH_FUNC_CONCAT
-}	XPathFunctionId;
+} XPathFunctionId;
 
 
 typedef union XPathExprGenericValue
@@ -270,7 +270,7 @@ typedef union XPathExprGenericValue
 	uint16		path;
 	XPathNodeSetData nodeSet;
 	uint8		funcId;
-}	XPathExprGenericValue;
+} XPathExprGenericValue;
 
 typedef struct XPathExprOperandValueData
 {
@@ -308,7 +308,7 @@ typedef struct XPathExprOperandValueData
 	 * The union must be the last member of the structure
 	 */
 	XPathExprGenericValue v;
-}	XPathExprOperandValueData;
+} XPathExprOperandValueData;
 
 typedef struct XPathExprOperandValueData *XPathExprOperandValue;
 
@@ -358,7 +358,7 @@ typedef enum XPathExprOperatorId
 	XPATH_EXPR_OPERATOR_NEQ,
 	XPATH_EXPR_OPERATOR_AND,
 	XPATH_EXPR_OPERATOR_OR
-}	XPathExprOperatorId;
+} XPathExprOperatorId;
 
 typedef uint8 XPathExprOperatorIdStore;
 
@@ -370,7 +370,7 @@ typedef struct XPathExprOperatorData
 	XPathExprOperatorIdStore id;
 	uint8		precedence;
 	uint8		resType;
-}	XPathExprOperatorData;
+} XPathExprOperatorData;
 
 typedef struct XPathExprOperatorData *XPathExprOperator;
 
@@ -381,7 +381,7 @@ typedef struct XPathExprOperatorTextData
 {
 	XPathExprOperatorData op;
 	char	   *text;
-}	XPathExprOperatorTextData;
+} XPathExprOperatorTextData;
 
 typedef struct XPathExprOperatorTextData *XPathExprOperatorText;
 
@@ -480,7 +480,7 @@ typedef struct XPathParserStateData
 	 * free space in 'result' is being checked.
 	 */
 	unsigned int outSize;
-}	XPathParserStateData;
+} XPathParserStateData;
 
 typedef struct XPathParserStateData *XPathParserState;
 
@@ -497,10 +497,10 @@ typedef enum XPathNodeType
 
 
 extern XPathExprOperatorIdStore *parseXPathExpression(XPathExpression exprCurrent, XPathParserState state,
-					 unsigned char termFlags, XPathExprOperatorIdStore * firstOpPtr, char *output, unsigned short *outPos, bool isSubExpr,
-  bool argList, XPath * subpaths, unsigned short *subpathCnt, bool mainExpr);
+					 unsigned char termFlags, XPathExprOperatorIdStore *firstOpPtr, char *output, unsigned short *outPos, bool isSubExpr,
+   bool argList, XPath *subpaths, unsigned short *subpathCnt, bool mainExpr);
 
-extern void parseLocationPath(XPath * subpaths, bool isSubPath, unsigned short *subpathCnt, char **xpathPtr,
+extern void parseLocationPath(XPath *subpaths, bool isSubPath, unsigned short *subpathCnt, char **xpathPtr,
 				  unsigned short *pos);
 
 /*
@@ -527,7 +527,7 @@ typedef struct XMLScanOneLevelData *XMLScanOneLevel;
 
 typedef struct XMLScanData
 {
-	XPath		xpath;
+	XPath xpath;
 
 	/*
 	 * Even if the current 'xpath' expression is known, we need the
@@ -578,7 +578,7 @@ typedef struct XMLScanData
 
 	/* Direct parent in the scan hierarchy. */
 	struct XMLScanData *parent;
-}	XMLScanData;
+} XMLScanData;
 
 typedef struct XMLScanData *XMLScan;
 
@@ -675,7 +675,7 @@ typedef struct XPathFunctionData
 	XPathValueType resType;
 	bool		predicateOnly;	/* May the function only appear within a
 								 * predicate? */
-}	XPathFunctionData;
+} XPathFunctionData;
 
 typedef struct XPathFunctionData *XPathFunction;
 

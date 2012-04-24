@@ -49,7 +49,7 @@ typedef enum XMLNodeKind
 	XMLNODE_TEXT,
 	XMLNODE_DOC_FRAGMENT,
 	XMLNODE_NODE
-}	XMLNodeKind;
+} XMLNodeKind;
 
 typedef uint32 XMLNodeOffset;
 
@@ -60,7 +60,7 @@ typedef struct XMLNodeCommonData
 	 */
 	uint8		kind;
 	uint8		flags;
-}	XMLNodeCommonData;
+} XMLNodeCommonData;
 
 /*
  * For simple (non-compound) node types, content follows the structure immediately
@@ -93,7 +93,7 @@ typedef struct XMLCompNodeHdrData
 	XMLNodeCommonData common;
 
 	uint16		children;
-}	XMLCompNodeHdrData;
+} XMLCompNodeHdrData;
 
 typedef XMLCompNodeHdrData *XMLCompNodeHdr;
 
@@ -189,13 +189,13 @@ typedef enum XNodeListItemKind
 {
 	XNODE_LIST_ITEM_SINGLE,
 	XNODE_LIST_ITEM_RANGE
-}	XNodeListItemKind;
+} XNodeListItemKind;
 
 typedef struct XNodeOffsetRange
 {
 	XMLNodeOffset lower;
 	XMLNodeOffset upper;
-}	XNodeOffsetRange;
+} XNodeOffsetRange;
 
 typedef struct XNodeListItem
 {
@@ -208,7 +208,7 @@ typedef struct XNodeListItem
 		XMLNodeOffset single;
 		XNodeOffsetRange range;
 	}			value;
-}	XNodeListItem;
+} XNodeListItem;
 
 /*
  * A container to be used as a stack in most cases, but sometimes we used it
@@ -220,7 +220,7 @@ typedef struct XMLNodeContainerData
 	unsigned int size;
 	unsigned int position;
 	XNodeListItem *content;
-}	XMLNodeContainerData;
+} XMLNodeContainerData;
 typedef struct XMLNodeContainerData *XMLNodeContainer;
 
 
@@ -230,12 +230,12 @@ typedef struct UTF8Interval
 {
 	char		first[UTF_MAX_WIDTH];
 	char		last[UTF_MAX_WIDTH];
-}	UTF8Interval;
+} UTF8Interval;
 
 
 extern UTF8Interval nameStartCharIntervals[XNODE_NAME_START_CHAR_INTERVALS];
 extern UTF8Interval nameCharIntervals[XNODE_NAME_CHAR_INTERVALS];
-extern bool isXMLCharInInterval(char *c, UTF8Interval * intervals, unsigned short int intCount);
+extern bool isXMLCharInInterval(char *c, UTF8Interval *intervals, unsigned short int intCount);
 
 
 /*
@@ -296,7 +296,7 @@ typedef enum XMLNodeAction
 {
 	XMLNODE_ACTION_ADD,
 	XMLNODE_ACTION_REMOVE
-}	XMLNodeAction;
+} XMLNodeAction;
 
 /*
  * DOM functions

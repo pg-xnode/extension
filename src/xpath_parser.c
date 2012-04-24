@@ -9,11 +9,11 @@
 #include "xpath.h"
 #include "xmlnode_util.h"
 
-static void insertSubexpression(XPathExprOperand operand, XPathExprOperatorIdStore ** opIdPtr,
+static void insertSubexpression(XPathExprOperand operand, XPathExprOperatorIdStore **opIdPtr,
 		XPathExpression exprTop, unsigned short blockSize, bool varsShiftAll,
 					char *output, unsigned short *outPos);
 static XPathExprOperand readExpressionOperand(XPathExpression exprTop, XPathParserState state, unsigned char termFlags,
-					  char *output, unsigned short *outPos, XPath * paths, unsigned short *pathCnt, bool mainExpr);
+					  char *output, unsigned short *outPos, XPath *paths, unsigned short *pathCnt, bool mainExpr);
 static void nextOperandChar(char *value, XPathParserState state, unsigned short *ind,
 				unsigned short indMax, bool endAllowed);
 static void checkExprOperand(XPathExpression exprTop, XPathExprOperand operand, bool mainExpr);
@@ -22,7 +22,7 @@ static XPathValueType getFunctionResultType(XPathExprOperand funcOperand);
 static XPathExprOperatorIdStore *readExpressionOperator(XPathParserState state, char *output,
 					   unsigned short *outPos);
 static int parseFunctionArgList(XPathParserState state, XPathFunction, char *output, unsigned short *outPos,
-					 XPath * paths, unsigned short *pathCnt, bool mainExpr);
+					 XPath *paths, unsigned short *pathCnt, bool mainExpr);
 static void checkFunctionArgTypes(XPathExpression argList, XPathFunction function);
 static void nextChar(XPathParserState state, bool endAllowed);
 static void skipWhiteSpace(XPathParserState state, bool endAllowed);
@@ -145,8 +145,8 @@ validXPathTermChar(char c, unsigned char flags)
 
 XPathExprOperatorIdStore *
 parseXPathExpression(XPathExpression exprCurrent, XPathParserState state, unsigned char termFlags,
-XPathExprOperatorIdStore * firstOpIdPtr, char *output, unsigned short *outPos,
-					 bool isSubExpr, bool argList, XPath * paths, unsigned short *pathCnt, bool mainExpr)
+XPathExprOperatorIdStore *firstOpIdPtr, char *output, unsigned short *outPos,
+					 bool isSubExpr, bool argList, XPath *paths, unsigned short *pathCnt, bool mainExpr)
 {
 
 	XPathExpression exprTop = (XPathExpression) output;
@@ -447,10 +447,10 @@ XPathExprOperatorIdStore * firstOpIdPtr, char *output, unsigned short *outPos,
  * Unlike 'xpathSrc', this is increased by one for each character, whether it's single-byte or MB.
  */
 void
-parseLocationPath(XPath * paths, bool isSubPath, unsigned short *pathCount, char **xpathSrc,
+parseLocationPath(XPath *paths, bool isSubPath, unsigned short *pathCount, char **xpathSrc,
 				  unsigned short *pos)
 {
-	XPath		xpath;
+	XPath		locPath;
 	XPathParserStateData state;
 	char	   *xpathStr = *xpathSrc;
 	bool		slashAllowed = true;
@@ -469,20 +469,20 @@ parseLocationPath(XPath * paths, bool isSubPath, unsigned short *pathCount, char
 	state.outSize = XPATH_PARSER_OUTPUT_CHUNK;
 	state.outChunks = 1;
 	state.output = state.result = (char *) palloc(state.outSize);
-	xpath = (XPath) ensureSpace(sizeof(XPathData), &state);
-	xpath->depth = 0;
-	xpath->descendants = 0;
-	xpath->relative = (*xpathStr != XNODE_CHAR_SLASH);
+	locPath = (XPath) ensureSpace(sizeof(XPathData), &state);
+	locPath->depth = 0;
+	locPath->descendants = 0;
+	locPath->relative = (*xpathStr != XNODE_CHAR_SLASH);
 
 	if (isSubPath)
 	{
-		state.pos = xpath->relative ? *pos : *pos + 1;
+		state.pos = locPath->relative ? *pos : *pos + 1;
 	}
 	else
 	{
-		state.pos = xpath->relative ? 1 : 2;
+		state.pos = locPath->relative ? 1 : 2;
 	}
-	state.c = xpath->relative ? xpathStr : xpathStr + 1;
+	state.c = locPath->relative ? xpathStr : xpathStr + 1;
 
 	if (isSubPath)
 	{
@@ -491,7 +491,7 @@ parseLocationPath(XPath * paths, bool isSubPath, unsigned short *pathCount, char
 	}
 	else
 	{
-		nonEmpty = (!xpath->relative && strlen(xpathStr) > 1) || (xpath->relative && strlen(xpathStr) > 0);
+		nonEmpty = (!locPath->relative && strlen(xpathStr) > 1) || (locPath->relative && strlen(xpathStr) > 0);
 	}
 
 	if (nonEmpty)
@@ -526,8 +526,9 @@ parseLocationPath(XPath * paths, bool isSubPath, unsigned short *pathCount, char
 			 * it's clear that no reallocation of the output array happened
 			 * since the last use of the 'hdr' pointer.
 			 */
-			xpath = (XPath) state.result;
-			if (xpath->depth >= XPATH_MAX_DEPTH)
+			locPath = (XPath) state.result;
+
+			if (locPath->depth >= XPATH_MAX_DEPTH)
 			{
 				elog(ERROR, "maximum xpath depth (%u elements) exceeded.", XPATH_MAX_DEPTH);
 			}
@@ -540,9 +541,10 @@ parseLocationPath(XPath * paths, bool isSubPath, unsigned short *pathCount, char
 				{
 					if (*state.c == XNODE_CHAR_AT)
 					{
-						xpath = (XPath) state.result;
-						xpath->targNdKind = XMLNODE_ATTRIBUTE;
-						xpath->allAttributes = false;
+						locPath = (XPath) state.result;
+						locPath->targNdKind = XMLNODE_ATTRIBUTE;
+						locPath->allAttributes = false;
+
 						nextChar(&state, false);
 						nameSrcPos++;
 					}
@@ -581,23 +583,28 @@ parseLocationPath(XPath * paths, bool isSubPath, unsigned short *pathCount, char
 								 */
 								ndTestLen++;
 							}
-							xpath = (XPath) state.result;
+							locPath = (XPath) state.result;
+
 							switch (nodeType)
 							{
 								case XPATH_NODE_TYPE_COMMENT:
-									xpath->targNdKind = XMLNODE_COMMENT;
+									locPath->targNdKind = XMLNODE_COMMENT;
+
 									break;
 
 								case XPATH_NODE_TYPE_TEXT:
-									xpath->targNdKind = XMLNODE_TEXT;
+									locPath->targNdKind = XMLNODE_TEXT;
+
 									break;
 
 								case XPATH_NODE_TYPE_NODE:
-									xpath->targNdKind = XMLNODE_NODE;
+									locPath->targNdKind = XMLNODE_NODE;
+
 									break;
 
 								case XPATH_NODE_TYPE_PI:
-									xpath->targNdKind = XMLNODE_PI;
+									locPath->targNdKind = XMLNODE_PI;
+
 									break;
 
 								default:
@@ -628,11 +635,11 @@ parseLocationPath(XPath * paths, bool isSubPath, unsigned short *pathCount, char
 									nameLen = state.c - piTarget;
 									nextChar(&state, false);
 									skipWhiteSpace(&state, false);
-									xpath->piTestValue = true;
+									locPath->piTestValue = true;
 								}
 								else
 								{
-									xpath->piTestValue = false;
+									locPath->piTestValue = false;
 								}
 								if (*state.c != XNODE_CHAR_RBRKT_RND)
 								{
@@ -649,8 +656,9 @@ parseLocationPath(XPath * paths, bool isSubPath, unsigned short *pathCount, char
 						{
 							if (XNODE_VALID_NAME_START(state.c))
 							{
-								xpath = (XPath) state.result;
-								xpath->targNdKind = XMLNODE_ELEMENT;
+								locPath = (XPath) state.result;
+								locPath->targNdKind = XMLNODE_ELEMENT;
+
 								nameLen += state.cWidth;
 								nextChar(&state, true);
 							}
@@ -672,8 +680,9 @@ parseLocationPath(XPath * paths, bool isSubPath, unsigned short *pathCount, char
 				else
 				{
 					/* state.elementPos > 0 */
-					xpath = (XPath) state.result;
-					if (xpath->targNdKind == XMLNODE_ELEMENT)
+					locPath = (XPath) state.result;
+
+					if (locPath->targNdKind == XMLNODE_ELEMENT)
 					{
 						/* Explicit subexpression? */
 						if (*state.c == XNODE_CHAR_LBRACKET)
@@ -716,13 +725,14 @@ parseLocationPath(XPath * paths, bool isSubPath, unsigned short *pathCount, char
 							break;
 						}
 					}
-					else if (xpath->targNdKind == XMLNODE_ATTRIBUTE)
+					else if (locPath->targNdKind == XMLNODE_ATTRIBUTE)
 					{
 						if (*state.c == XNODE_CHAR_ASTERISK)
 						{
 							if (state.elementPos == 1)
 							{
-								xpath->allAttributes = true;
+								locPath->allAttributes = true;
+
 								nextChar(&state, true);
 								break;
 							}
@@ -766,7 +776,7 @@ parseLocationPath(XPath * paths, bool isSubPath, unsigned short *pathCount, char
 				}
 			}
 
-			if (*state.c == XNODE_CHAR_SLASH && xpath->targNdKind == XMLNODE_ATTRIBUTE)
+			if (*state.c == XNODE_CHAR_SLASH && locPath->targNdKind == XMLNODE_ATTRIBUTE)
 			{
 				elog(ERROR, "if location path contains attribute test, it must be the last location step");
 			}
@@ -833,14 +843,15 @@ parseLocationPath(XPath * paths, bool isSubPath, unsigned short *pathCount, char
 				}
 			}
 
-			xpath = (XPath) state.result;
+			locPath = (XPath) state.result;
 
 			/*
 			 * Save the xpath element
 			 */
-			xpath->elements[xpath->depth] = xpelOff;
-			if (xpath->targNdKind == XMLNODE_ELEMENT || xpath->targNdKind == XMLNODE_PI ||
-			(xpath->targNdKind == XMLNODE_ATTRIBUTE && !xpath->allAttributes))
+			locPath->elements[locPath->depth] = xpelOff;
+
+			if (locPath->targNdKind == XMLNODE_ELEMENT || locPath->targNdKind == XMLNODE_PI ||
+				(locPath->targNdKind == XMLNODE_ATTRIBUTE && !locPath->allAttributes))
 			{
 				ensureSpace(nameLen, &state);
 
@@ -867,48 +878,50 @@ parseLocationPath(XPath * paths, bool isSubPath, unsigned short *pathCount, char
 			}
 			if (xpel->descendant)
 			{
-				xpath->descendants++;
+				locPath->descendants++;
 			}
 			slashAllowed = true;
-			xpath = (XPath) state.result;
-			xpath->depth++;
+			locPath = (XPath) state.result;
+			locPath->depth++;
 		}
 
 		/*
 		 * If there's unused space in the array of element offsets, shift all
 		 * elements left
 		 */
-		xpath = (XPath) state.result;
-		if (xpath->depth < XPATH_MAX_DEPTH)
+		locPath = (XPath) state.result;
+
+		if (locPath->depth < XPATH_MAX_DEPTH)
 		{
-			unsigned short shift = (XPATH_MAX_DEPTH - xpath->depth) * sizeof(XPathOffset);
-			char	   *firstEl = state.result + xpath->elements[0];
+			unsigned short shift = (XPATH_MAX_DEPTH - locPath->depth) * sizeof(XPathOffset);
+			char	   *firstEl = state.result + locPath->elements[0];
 			unsigned short len = state.output - firstEl;
 			unsigned short i;
 
 			memmove(firstEl - shift, firstEl, len);
 			state.output -= shift;
 
-			for (i = 0; i < xpath->depth; i++)
+			for (i = 0; i < locPath->depth; i++)
 			{
-				xpath->elements[i] -= shift;
+				locPath->elements[i] -= shift;
 			}
 		}
 	}
 	else
 	{
-		if (xpath->relative)
+		if (locPath->relative)
 		{
 			elog(ERROR, "empty xpath expression");
 		}
-		xpath->depth = 0;
-		xpath->targNdKind = XMLNODE_DOC;
+		locPath->depth = 0;
+		locPath->targNdKind = XMLNODE_DOC;
 	}
-	xpath = (XPath) state.result;
-	xpath->size = state.output - state.result;
+	locPath = (XPath) state.result;
+	locPath->size = state.output - state.result;
+
 	*xpathSrc = state.c;
 	*pos = state.pos;
-	paths[*pathCount] = xpath;
+	paths[*pathCount] = locPath;
 }
 
 /*
@@ -920,7 +933,7 @@ parseLocationPath(XPath * paths, bool isSubPath, unsigned short *pathCount, char
  * It's also necessary to adjust variables already pointing to the operands that we shift.
  */
 static void
-insertSubexpression(XPathExprOperand operand, XPathExprOperatorIdStore ** opIdPtr,
+insertSubexpression(XPathExprOperand operand, XPathExprOperatorIdStore **opIdPtr,
 		XPathExpression exprTop, unsigned short blockSize, bool varsShiftAll,
 					char *output, unsigned short *outPos)
 {
@@ -971,7 +984,7 @@ insertSubexpression(XPathExprOperand operand, XPathExprOperatorIdStore ** opIdPt
  */
 static XPathExprOperand
 readExpressionOperand(XPathExpression exprTop, XPathParserState state, unsigned char termFlags,
-					  char *output, unsigned short *outPos, XPath * paths, unsigned short *pathCnt, bool mainExpr)
+					  char *output, unsigned short *outPos, XPath *paths, unsigned short *pathCnt, bool mainExpr)
 {
 	XPathExprOperand op = (XPathExprOperand) ((char *) output + *outPos);
 	unsigned short ind = 0;
@@ -1456,7 +1469,7 @@ readExpressionOperator(XPathParserState state, char *output, unsigned short *out
  */
 static int
 parseFunctionArgList(XPathParserState state, XPathFunction func, char *output, unsigned short *outPos,
-					 XPath * paths, unsigned short *pathCnt, bool mainExpr)
+					 XPath *paths, unsigned short *pathCnt, bool mainExpr)
 {
 
 	XPathExpression exprTop = (XPathExpression) output;
@@ -1755,12 +1768,12 @@ dumpLocationPath(XPathHeader xpathHdr, StringInfo output, bool debug, unsigned s
 				last;
 	XPathOffset o;
 	XPathElement el;
-	XPath		xpath = (XPath) ((char *) xpathHdr + xpathHdr->paths[pathNr]);
+	XPath		locPath = (XPath) ((char *) xpathHdr + xpathHdr->paths[pathNr]);
 
 	if (debug)
 	{
 		appendStringInfo(output, "<path %u>\n\n", pathNr);
-		if (xpath->relative)
+		if (locPath->relative)
 		{
 			appendStringInfoString(output, "relative ");
 		}
@@ -1772,23 +1785,24 @@ dumpLocationPath(XPathHeader xpathHdr, StringInfo output, bool debug, unsigned s
 	}
 	else
 	{
-		if (!xpath->relative)
+		if (!locPath->relative)
 		{
 			appendStringInfoChar(output, XNODE_CHAR_SLASH);
 		}
 	}
-	if (xpath->depth == 0)
+	if (locPath->depth == 0)
 	{
 		return;
 	}
-	last = (xpath->targNdKind == XMLNODE_ELEMENT) ? xpath->depth : xpath->depth - 1;
+	last = (locPath->targNdKind == XMLNODE_ELEMENT) ? locPath->depth : locPath->depth - 1;
 
 	for (i = 1; i <= last; i++)
 	{
 		unsigned short nameLen;
 
-		o = xpath->elements[i - 1];
-		el = (XPathElement) ((char *) xpath + o);
+		o = locPath->elements[i - 1];
+
+		el = (XPathElement) ((char *) locPath + o);
 		nameLen = strlen(el->name);
 
 		if (debug)
@@ -1811,17 +1825,17 @@ dumpLocationPath(XPathHeader xpathHdr, StringInfo output, bool debug, unsigned s
 
 			dumpXPathExpression(pexpr, xpathHdr, output, false, debug);
 		}
-		if (!debug && ((i < last) || (xpath->targNdKind != XMLNODE_ELEMENT)))
+		if (!debug && ((i < last) || (locPath->targNdKind != XMLNODE_ELEMENT)))
 		{
 			appendStringInfoChar(output, XNODE_CHAR_SLASH);
 		}
 	}
 
-	if (xpath->targNdKind != XMLNODE_ELEMENT)
+	if (locPath->targNdKind != XMLNODE_ELEMENT)
 	{
 		if (debug)
 		{
-			if (xpath->targNdKind == XMLNODE_ATTRIBUTE)
+			if (locPath->targNdKind == XMLNODE_ATTRIBUTE)
 			{
 				appendStringInfoString(output, "\nattr. test:\t");
 			}
@@ -1831,15 +1845,16 @@ dumpLocationPath(XPathHeader xpathHdr, StringInfo output, bool debug, unsigned s
 			}
 		}
 
-		o = xpath->elements[i - 1];
-		el = (XPathElement) ((char *) xpath + o);
+		o = locPath->elements[i - 1];
+
+		el = (XPathElement) ((char *) locPath + o);
 
 		if (!debug && el->descendant)
 		{
 			appendStringInfoChar(output, XNODE_CHAR_SLASH);
 		}
 
-		switch (xpath->targNdKind)
+		switch (locPath->targNdKind)
 		{
 			case XMLNODE_COMMENT:
 				appendStringInfoString(output, nodeTypes[XPATH_NODE_TYPE_COMMENT]);
@@ -1855,7 +1870,7 @@ dumpLocationPath(XPathHeader xpathHdr, StringInfo output, bool debug, unsigned s
 
 			case XMLNODE_PI:
 				appendStringInfo(output, "%s%c", nodeTypes[XPATH_NODE_TYPE_PI], XNODE_CHAR_LBRKT_RND);
-				el = (XPathElement) ((char *) xpath + xpath->elements[xpath->depth - 1]);
+				el = (XPathElement) ((char *) locPath + locPath->elements[locPath->depth - 1]);
 				if (strlen(el->name) > 0)
 				{
 					appendStringInfo(output, "\"%s\"", el->name);
@@ -1864,7 +1879,7 @@ dumpLocationPath(XPathHeader xpathHdr, StringInfo output, bool debug, unsigned s
 				break;
 
 			case XMLNODE_ATTRIBUTE:
-				if (xpath->allAttributes)
+				if (locPath->allAttributes)
 				{
 					appendStringInfoString(output, "@*");
 				}
@@ -1875,7 +1890,7 @@ dumpLocationPath(XPathHeader xpathHdr, StringInfo output, bool debug, unsigned s
 				break;
 
 			default:
-				elog(ERROR, "invalid node kind: %u", xpath->targNdKind);
+				elog(ERROR, "invalid node kind: %u", locPath->targNdKind);
 				break;
 		}
 
@@ -1897,7 +1912,7 @@ dumpXPathExpressionInternal(char **input, XPathHeader xpathHdr, StringInfo outpu
 {
 
 	unsigned short i;
-	XPathExpression expr = (XPathExpression) * input;
+	XPathExpression expr = (XPathExpression) *input;
 
 	*input += sizeof(XPathExpressionData);
 	if (level == 0)
@@ -1926,7 +1941,7 @@ dumpXPathExprOperand(char **input, XPathHeader xpathHdr, StringInfo output, unsi
 {
 
 	unsigned short shortValue;
-	XPathExprOperand operand = (XPathExprOperand) * input;
+	XPathExprOperand operand = (XPathExprOperand) *input;
 	XPathExpression subExpr;
 	XPathFunction func;
 	unsigned short size;
@@ -2008,7 +2023,7 @@ dumpXPathExprOperand(char **input, XPathHeader xpathHdr, StringInfo output, unsi
 			break;
 
 		case XPATH_OPERAND_EXPR_SUB:
-			subExpr = (XPathExpression) * input;
+			subExpr = (XPathExpression) *input;
 			if (debug)
 			{
 				appendStringInfo(output, "subexpr. ");
@@ -2034,7 +2049,7 @@ dumpXPathExprOperand(char **input, XPathHeader xpathHdr, StringInfo output, unsi
 			break;
 
 		case XPATH_OPERAND_FUNC:
-			subExpr = (XPathExpression) * input;
+			subExpr = (XPathExpression) *input;
 			func = &xpathFunctions[subExpr->funcId];
 			appendStringInfo(output, "%s(", func->name);
 			{

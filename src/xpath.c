@@ -337,6 +337,7 @@ xpath_array(PG_FUNCTION_ARGS)
 		initXMLScan(xScanCtx->baseScan, NULL, xpathBase, xpHdrBase, docRoot, doc, xpathBase->descendants > 0);
 
 		baseTarget = xScanCtx->baseScan->xpath->targNdKind;
+
 		if (baseTarget != XMLNODE_DOC && baseTarget != XMLNODE_ELEMENT)
 		{
 			elog(ERROR, "base path must point to element or document");

@@ -9,7 +9,7 @@
 
 static void adjustIgnoreList(XMLScan scan, XMLNodeOffset minimum, int shift);
 static void propagateChange(XMLScanOneLevel levelScan, int *shift, int *hdrSizeIncr, char *tree, char *resData,
-			 char **srcCursor, char **resCursor, XMLNodeOffset * newRootOff);
+			  char **srcCursor, char **resCursor, XMLNodeOffset *newRootOff);
 static void copyXMLDecl(XMLCompNodeHdr doc, char **resCursor);
 static void copySiblings(XMLCompNodeHdr parent, char **srcCursor, char **resCursor);
 
@@ -22,7 +22,7 @@ xmlnode_add(PG_FUNCTION_ARGS)
 	xpath		xpathPtr = (xpath) PG_GETARG_POINTER(1);
 	XPathExpression exprBase = (XPathExpression) VARDATA(xpathPtr);
 	XPathHeader xpHdr = (XPathHeader) ((char *) exprBase + exprBase->size);
-	XPath		xpath = getSingleXPath(exprBase, xpHdr);
+	XPath xpath = getSingleXPath(exprBase, xpHdr);
 	xmlnode		newNdVar = (xmlnode) PG_GETARG_VARLENA_P(2);
 	BpChar	   *modeVar = PG_GETARG_BPCHAR_PP(3);
 	char		mode = *(VARDATA_ANY(modeVar));
@@ -60,7 +60,7 @@ xmlnode_remove(PG_FUNCTION_ARGS)
 	xpath		xpathPtr = (xpath) PG_GETARG_POINTER(1);
 	XPathExpression exprBase = (XPathExpression) VARDATA(xpathPtr);
 	XPathHeader xpHdr = (XPathHeader) ((char *) exprBase + exprBase->size);
-	XPath		xpath = getSingleXPath(exprBase, xpHdr);
+	XPath xpath = getSingleXPath(exprBase, xpHdr);
 	xmldoc		result;
 	XMLScanData xscan;
 	XMLCompNodeHdr docRoot;
@@ -173,7 +173,7 @@ updateXMLDocument(XMLScan xscan, xmldoc doc, XMLNodeAction action, XMLNodeHdr ne
  */
 xmldoc
 xmlnodeAdd(xmldoc doc, XMLScan xscan, XMLNodeHdr targNode, XMLNodeHdr newNode,
-		   XMLAddMode mode, bool freeSrc, XNodeListItem * ignore)
+		   XMLAddMode mode, bool freeSrc, XNodeListItem *ignore)
 {
 
 	char	   *inputTree = (char *) VARDATA(doc);
@@ -1178,7 +1178,7 @@ adjustIgnoreList(XMLScan scan, XMLNodeOffset minimum, int shift)
  */
 static void
 propagateChange(XMLScanOneLevel levelScan, int *shift, int *hdrSizeIncr,
-				char *tree, char *resData, char **srcCursor, char **resCursor, XMLNodeOffset * newRootOff)
+				char *tree, char *resData, char **srcCursor, char **resCursor, XMLNodeOffset *newRootOff)
 {
 
 	while (levelScan->up)

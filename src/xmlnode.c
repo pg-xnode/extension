@@ -592,7 +592,7 @@ xmlelement(PG_FUNCTION_ARGS)
 			{
 				attrValFlags[i - 1] |= XNODE_ATTR_CONTAINS_REF;
 			}
-			attrsSizeTotal += sizeof(XMLNodeHdrData) + strlen(nameStr) + strlen(valueStr) + 2;
+			attrsSizeTotal += sizeof(XMLNodeHdrData) + strlen(nameStr) +strlen(valueStr) + 2;
 		}
 	}
 

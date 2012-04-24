@@ -43,7 +43,7 @@ xmlnodePushSingle(XMLNodeContainer cont, XMLNodeOffset singleNode)
 }
 
 void
-xmlnodeAddListItem(XMLNodeContainer cont, XNodeListItem * itemNew)
+xmlnodeAddListItem(XMLNodeContainer cont, XNodeListItem *itemNew)
 {
 	unsigned int pos = cont->position;
 	XNodeListItem *item = cont->content + pos;
@@ -214,7 +214,7 @@ getXMLNodeKindStr(XMLNodeKind k)
  * is located. If 'xmlnode' is true, VARHDRSZ is *not* included in this offset.
  */
 char *
-copyXMLNode(XMLNodeHdr node, char *target, bool xmlnode, XMLNodeOffset * root)
+copyXMLNode(XMLNodeHdr node, char *target, bool xmlnode, XMLNodeOffset *root)
 {
 	char	   *content = NULL;
 	unsigned int cntLen = 0;
@@ -478,7 +478,7 @@ checkXMLWellFormedness(XMLCompNodeHdr root)
  * Check if UTF-8 character 'c' fits one item of the 'intervals'.array.
  */
 bool
-isXMLCharInInterval(char *c, UTF8Interval * intervals, unsigned short int intCount)
+isXMLCharInInterval(char *c, UTF8Interval *intervals, unsigned short int intCount)
 {
 	unsigned short int i;
 	UTF8Interval *interval = intervals;

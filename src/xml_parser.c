@@ -40,7 +40,7 @@ typedef enum XMLNodeToken
 	TOKEN_TEXT = (1 << 9),
 	TOKEN_REFERENCE = (1 << 10),
 	TOKEN_MISC = TOKEN_COMMENT | TOKEN_PI | TOKEN_WHITESPACE,
-}	XMLNodeToken;
+} XMLNodeToken;
 
 /*
  * Order of these strings must follow the order of items enumerated in
@@ -105,14 +105,14 @@ typedef struct XMLNodeInternalData
 	bool		entPredef;
 	bool		headerSaved;
 	XMLNodeToken tokenType;
-}	XMLNodeInternalData;
+} XMLNodeInternalData;
 
 typedef struct XMLNodeInternalData *XMLNodeInternal;
 
 static void processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowed);
 static XMLNodeToken processTag(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowed,
-		   XMLNodeHdr * declAttrs, unsigned short *declAttrNum);
-static void checkXMLDeclaration(XMLNodeHdr * declAttrs, unsigned int attCount, XMLDecl decl);
+		   XMLNodeHdr *declAttrs, unsigned short *declAttrNum);
+static void checkXMLDeclaration(XMLNodeHdr *declAttrs, unsigned int attCount, XMLDecl decl);
 static char *getEncodingSimplified(const char *original);
 static void readName(XMLParserState state, bool whitespace);
 static unsigned int readComment(XMLParserState state);
@@ -1164,7 +1164,7 @@ readName(XMLParserState state, bool whitespace)
 
 static XMLNodeToken
 processTag(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowed,
-		   XMLNodeHdr * declAttrs, unsigned short *declAttrNum)
+		   XMLNodeHdr *declAttrs, unsigned short *declAttrNum)
 {
 
 	bool		mustEnd = false;
@@ -1391,7 +1391,7 @@ processTag(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowed,
  * http://www.w3.org/TR/xml/#NT-XMLDecl
  */
 static void
-checkXMLDeclaration(XMLNodeHdr * declAttrs, unsigned int attCount, XMLDecl decl)
+checkXMLDeclaration(XMLNodeHdr *declAttrs, unsigned int attCount, XMLDecl decl)
 {
 	unsigned int i;
 

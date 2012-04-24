@@ -51,7 +51,7 @@ typedef enum XNodeSpecString
 	XNODE_STR_CDATA_END,
 	XNODE_STR_PI_START,
 	XNODE_STR_PI_END
-}	XNodeSpecString;
+} XNodeSpecString;
 
 typedef enum XNodeSpecStringDTD
 {
@@ -116,7 +116,7 @@ typedef struct XMLParserStateData
 	bool		saveHeader;
 	XMLNodeContainerData stack;
 	XMLDecl		decl;
-}	XMLNodeParserStateData;
+} XMLNodeParserStateData;
 
 typedef struct XMLParserStateData *XMLParserState;
 
