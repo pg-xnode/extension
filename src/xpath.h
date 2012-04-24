@@ -62,6 +62,14 @@ extern bool validXPathTermChar(char c, unsigned char flags);
  */
 typedef uint16 XPathOffset;
 
+/*
+ * This in fact means 'location' path as opposed to the full XPath expression
+ * (see XPathExpressionData structure). It shouldn't be a problem as location
+ * path is often considered XPath by users. Specific name like 'XLocPathData'
+ * wouldn't look nice.
+ *
+ * Similarly, XPathHeaderData represents storage for *location paths*.
+ */
 typedef struct XPathData
 {
 	bool		relative;
@@ -436,6 +444,9 @@ extern void dumpLocationPath(XPathHeader xpathHdr, StringInfo output, bool debug
 
 extern XPath getSingleXPath(XPathExpression expr, XPathHeader xpHdr);
 
+/*
+ * Element of location path, i.e. location step.
+ */
 typedef struct XPathElementData
 {
 	/*
