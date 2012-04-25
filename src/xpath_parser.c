@@ -43,16 +43,17 @@ static void dumpXPathExprOperator(char **input, StringInfo output, unsigned shor
  */
 XPathExprOperatorTextData xpathOperators[XPATH_EXPR_OPERATOR_KINDS] = {
 	{{XPATH_EXPR_OPERATOR_UNION, 0, XPATH_VAL_NODESET}, "|"},
-	{{XPATH_EXPR_OPERATOR_PLUS, 1, XPATH_VAL_NUMBER}, "+"},
-	{{XPATH_EXPR_OPERATOR_MINUS, 1, XPATH_VAL_NUMBER}, "-"},
-	{{XPATH_EXPR_OPERATOR_LTE, 2, XPATH_VAL_BOOLEAN}, "<="},
-	{{XPATH_EXPR_OPERATOR_LT, 2, XPATH_VAL_BOOLEAN}, "<"},
-	{{XPATH_EXPR_OPERATOR_GTE, 2, XPATH_VAL_BOOLEAN}, ">="},
-	{{XPATH_EXPR_OPERATOR_GT, 2, XPATH_VAL_BOOLEAN}, ">"},
-	{{XPATH_EXPR_OPERATOR_EQ, 3, XPATH_VAL_BOOLEAN}, "="},
-	{{XPATH_EXPR_OPERATOR_NEQ, 3, XPATH_VAL_BOOLEAN}, "!="},
-	{{XPATH_EXPR_OPERATOR_AND, 4, XPATH_VAL_BOOLEAN}, "and"},
-	{{XPATH_EXPR_OPERATOR_OR, 5, XPATH_VAL_BOOLEAN}, "or"}
+	{{XPATH_EXPR_OPERATOR_MULTIPLY, 1, XPATH_VAL_NUMBER}, "*"},
+	{{XPATH_EXPR_OPERATOR_PLUS, 2, XPATH_VAL_NUMBER}, "+"},
+	{{XPATH_EXPR_OPERATOR_MINUS, 2, XPATH_VAL_NUMBER}, "-"},
+	{{XPATH_EXPR_OPERATOR_LTE, 3, XPATH_VAL_BOOLEAN}, "<="},
+	{{XPATH_EXPR_OPERATOR_LT, 3, XPATH_VAL_BOOLEAN}, "<"},
+	{{XPATH_EXPR_OPERATOR_GTE, 3, XPATH_VAL_BOOLEAN}, ">="},
+	{{XPATH_EXPR_OPERATOR_GT, 3, XPATH_VAL_BOOLEAN}, ">"},
+	{{XPATH_EXPR_OPERATOR_EQ, 4, XPATH_VAL_BOOLEAN}, "="},
+	{{XPATH_EXPR_OPERATOR_NEQ, 4, XPATH_VAL_BOOLEAN}, "!="},
+	{{XPATH_EXPR_OPERATOR_AND, 5, XPATH_VAL_BOOLEAN}, "and"},
+	{{XPATH_EXPR_OPERATOR_OR, 6, XPATH_VAL_BOOLEAN}, "or"}
 };
 
 /* Order of values must follow that of XPathNodeType enumeration */
@@ -732,14 +733,15 @@ parseLocationPath(XPath *paths, bool isSubPath, unsigned short *pathCount, char 
 							if (state.elementPos == 1)
 							{
 								locPath->allAttributes = true;
-
 								nextChar(&state, true);
-								break;
 							}
-							else
-							{
-								elog(ERROR, "'*' not expected at position %u of xpath expression", state.pos);
-							}
+
+							/*
+							 * If (state.elementPos > 1) then we're reading
+							 * multiply operator: don't move on.
+							 */
+							break;
+
 						}
 						if (nameLen == 0)
 						{

@@ -1113,7 +1113,8 @@ evaluateBinaryOperator(XPathExprState exprState, XPathExprOperandValue valueLeft
 	{
 		compareNumValues(exprState, valueLeft, valueRight, operator, result);
 	}
-	else if (operator->id == XPATH_EXPR_OPERATOR_PLUS || operator->id == XPATH_EXPR_OPERATOR_MINUS)
+	else if (operator->id == XPATH_EXPR_OPERATOR_PLUS || operator->id == XPATH_EXPR_OPERATOR_MINUS ||
+			 operator->id == XPATH_EXPR_OPERATOR_MULTIPLY)
 	{
 		XPathExprOperandValueData numLeft,
 					numRight;
@@ -1122,6 +1123,7 @@ evaluateBinaryOperator(XPathExprState exprState, XPathExprOperandValue valueLeft
 		result->type = XPATH_VAL_NUMBER;
 		castXPathExprOperandToNum(exprState, valueLeft, &numLeft, false);
 		castXPathExprOperandToNum(exprState, valueRight, &numRight, false);
+
 		if (numLeft.isNull || numRight.isNull)
 		{
 			result->isNull = true;
@@ -1145,6 +1147,10 @@ evaluateBinaryOperator(XPathExprState exprState, XPathExprOperandValue valueLeft
 
 			case XPATH_EXPR_OPERATOR_MINUS:
 				result->v.num = numLeft.v.num - numRight.v.num;
+				break;
+
+			case XPATH_EXPR_OPERATOR_MULTIPLY:
+				result->v.num = numLeft.v.num * numRight.v.num;
 				break;
 
 			default:

@@ -1996,6 +1996,76 @@ select xml.path('boolean(true() and /root/@j + /root/@k and true())', '<root i="
  false
 (1 row)
 
+select xml.path_debug_print('/a/@i*/a/@j');
+                 path_debug_print                 
+--------------------------------------------------
+ main expr.: (paths / funcs: 2 / 0, val. type: 1)+
+     <path 0>                                    +
+     *                                           +
+     <path 1>                                    +
+   variables:                                    +
+     path: 0                                     +
+     path: 1                                     +
+                                                 +
+                                                 +
+ <path 0>                                        +
+                                                 +
+ absolute xpath                                  +
+                                                 +
+ node test:      a                               +
+ attr. test:     @i                              +
+                                                 +
+                                                 +
+ <path 1>                                        +
+                                                 +
+ absolute xpath                                  +
+                                                 +
+ node test:      a                               +
+ attr. test:     @j                              +
+ 
+(1 row)
+
+select xml.path_debug_print('/a/@**/a/@j');
+                 path_debug_print                 
+--------------------------------------------------
+ main expr.: (paths / funcs: 2 / 0, val. type: 1)+
+     <path 0>                                    +
+     *                                           +
+     <path 1>                                    +
+   variables:                                    +
+     path: 0                                     +
+     path: 1                                     +
+                                                 +
+                                                 +
+ <path 0>                                        +
+                                                 +
+ absolute xpath                                  +
+                                                 +
+ node test:      a                               +
+ attr. test:     @*                              +
+                                                 +
+                                                 +
+ <path 1>                                        +
+                                                 +
+ absolute xpath                                  +
+                                                 +
+ node test:      a                               +
+ attr. test:     @j                              +
+ 
+(1 row)
+
+select xml.path('/a/@i*/a/@j', '<a i="3" j="2"/>');
+ path 
+------
+ 6
+(1 row)
+
+select xml.path('/a/@**/a/@j', '<a i="3" j="2"/>');
+ path 
+------
+ 6
+(1 row)
+
 select xml.path('boolean(-/root)', '<root/>');
  path 
 ------

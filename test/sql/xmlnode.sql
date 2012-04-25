@@ -449,6 +449,12 @@ select xml.path('string(1+/root)', '<root>1</root>');
 select xml.path('boolean(false() or /root/@j + /root/@k or false())', '<root i="1" j="2"/>');
 select xml.path('boolean(true() and /root/@j + /root/@k and true())', '<root i="1" j="2"/>');
 
+-- Multiply operator
+select xml.path_debug_print('/a/@i*/a/@j');
+select xml.path_debug_print('/a/@**/a/@j');
+select xml.path('/a/@i*/a/@j', '<a i="3" j="2"/>');
+select xml.path('/a/@**/a/@j', '<a i="3" j="2"/>');
+
 -- Unary operator
 select xml.path('boolean(-/root)', '<root/>');
 select xml.path('boolean((-/root))', '<root/>');
