@@ -1114,7 +1114,8 @@ evaluateBinaryOperator(XPathExprState exprState, XPathExprOperandValue valueLeft
 		compareNumValues(exprState, valueLeft, valueRight, operator, result);
 	}
 	else if (operator->id == XPATH_EXPR_OPERATOR_PLUS || operator->id == XPATH_EXPR_OPERATOR_MINUS ||
-			 operator->id == XPATH_EXPR_OPERATOR_MULTIPLY)
+			 operator->id == XPATH_EXPR_OPERATOR_MULTIPLY || operator->id == XPATH_EXPR_OPERATOR_DIV ||
+			 operator->id == XPATH_EXPR_OPERATOR_MOD)
 	{
 		XPathExprOperandValueData numLeft,
 					numRight;
@@ -1153,6 +1154,18 @@ evaluateBinaryOperator(XPathExprState exprState, XPathExprOperandValue valueLeft
 				result->v.num = numLeft.v.num * numRight.v.num;
 				break;
 
+			case XPATH_EXPR_OPERATOR_DIV:
+			case XPATH_EXPR_OPERATOR_MOD:
+				result->v.num = DatumGetFloat8(DirectFunctionCall2Coll(float8div, InvalidOid,
+																	   Float8GetDatum(numLeft.v.num), Float8GetDatum(numRight.v.num)));
+
+				if (operator->id == XPATH_EXPR_OPERATOR_MOD)
+				{
+					float8		truncated = DatumGetFloat8(DirectFunctionCall1Coll(dtrunc, InvalidOid, Float8GetDatum(result->v.num)));
+
+					result->v.num = numLeft.v.num - truncated * numRight.v.num;
+				}
+				break;
 			default:
 				elog(ERROR, "unrecognized operator %u", operator->id);
 				break;

@@ -44,6 +44,8 @@ static void dumpXPathExprOperator(char **input, StringInfo output, unsigned shor
 XPathExprOperatorTextData xpathOperators[XPATH_EXPR_OPERATOR_KINDS] = {
 	{{XPATH_EXPR_OPERATOR_UNION, 0, XPATH_VAL_NODESET}, "|"},
 	{{XPATH_EXPR_OPERATOR_MULTIPLY, 1, XPATH_VAL_NUMBER}, "*"},
+	{{XPATH_EXPR_OPERATOR_DIV, 1, XPATH_VAL_NUMBER}, "div"},
+	{{XPATH_EXPR_OPERATOR_MOD, 1, XPATH_VAL_NUMBER}, "mod"},
 	{{XPATH_EXPR_OPERATOR_PLUS, 2, XPATH_VAL_NUMBER}, "+"},
 	{{XPATH_EXPR_OPERATOR_MINUS, 2, XPATH_VAL_NUMBER}, "-"},
 	{{XPATH_EXPR_OPERATOR_LTE, 3, XPATH_VAL_BOOLEAN}, "<="},
@@ -1424,6 +1426,7 @@ readExpressionOperator(XPathParserState state, char *output, unsigned short *out
 
 	checkExpressionBuffer(*outPos + sizeof(XPathExprOperatorIdStore));
 	*outPos += sizeof(XPathExprOperatorIdStore);
+
 	for (i = 0; i < XPATH_EXPR_OPERATOR_KINDS; i++)
 	{
 		XPathExprOperatorText ot = xpathOperators + i;
@@ -1437,10 +1440,13 @@ readExpressionOperator(XPathParserState state, char *output, unsigned short *out
 			{
 				nextChar(state, false);
 			}
-			if ((i == XPATH_EXPR_OPERATOR_AND || i == XPATH_EXPR_OPERATOR_OR) &&
-				!XNODE_WHITESPACE(state->c))
+			if ((i == XPATH_EXPR_OPERATOR_AND || i == XPATH_EXPR_OPERATOR_OR || i == XPATH_EXPR_OPERATOR_DIV ||
+				 i == XPATH_EXPR_OPERATOR_MOD) &&
+				!(XNODE_WHITESPACE(state->c) || *state->c == XNODE_CHAR_AT || *state->c == XNODE_CHAR_SLASH ||
+				  *state->c == XNODE_CHAR_LBRKT_RND || *state->c == XNODE_CHAR_QUOTMARK ||
+				  *state->c == XNODE_CHAR_APOSTR))
 			{
-				elog(ERROR, "white space expected at position %u", state->pos);
+				elog(ERROR, "white space or xpath operand expected at position %u (%u)", state->pos, i);
 			}
 			*opIdPtr = ot->op.id;
 			return opIdPtr;
