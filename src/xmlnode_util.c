@@ -695,6 +695,33 @@ xmlStringIsNumber(char *str, double *numValue, char **end, bool skipWhitespace)
 	}
 }
 
+/*
+ * It shouldn't be possible to create a document fragment containing mixture
+ * of attribute and non-attribute nodes. Nevertheless, it's better to check all
+ * direct children.
+ */
+bool
+checkFragmentForAttributes(XMLCompNodeHdr fragment)
+{
+	unsigned char bwidth;
+	char	   *refPtr;
+	XMLNodeHdr	child;
+	unsigned short i;
+
+	Assert(fragment->common.kind == XMLNODE_DOC_FRAGMENT);
+	bwidth = XNODE_GET_REF_BWIDTH(fragment);
+	refPtr = XNODE_FIRST_REF(fragment);
+	for (i = 0; i < fragment->children; i++)
+	{
+		child = (XMLNodeHdr) ((char *) fragment - readXMLNodeOffset(&refPtr, bwidth, true));
+		if (child->kind == XMLNODE_ATTRIBUTE)
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
 static void
 dumpXMLNodeDebugInternal(char *data, XMLNodeOffset off,
 			XMLNodeOffset offParent, StringInfo output, unsigned short level)

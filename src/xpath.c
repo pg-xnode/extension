@@ -1008,17 +1008,6 @@ getXPathExprValue(XPathExprState exprState, xmldoc document, bool *notNull, XPat
 						char	   *ndTarget = outTmp + targetPos;
 
 						node = nodeArray[k];
-						if (node->kind == XMLNODE_ATTRIBUTE)
-						{
-							/*
-							 * There seems to be no reasonable way how such a
-							 * fragment could be printed out. It would also
-							 * bring unnecessary complexity to xml.add()
-							 * function if users could pass such special
-							 * fragment.
-							 */
-							elog(ERROR, "document fragment can't contain attributes");
-						}
 						copyXMLNode(node, ndTarget, false, &root);
 						dist = nodeSizeTotal - (targetPos + root);
 						writeXMLNodeOffset(dist, &refTarget, bwidth, true);

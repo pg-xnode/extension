@@ -235,9 +235,20 @@ xmlnodeAdd(xmldoc doc, XMLScan xscan, XMLNodeHdr targNode, XMLNodeHdr newNode,
 			elog(ERROR, "'replace' mode can't be used to replace attribute with non-attribute node and vice versa.");
 		}
 	}
+
+	/*
+	 * If document fragment is passed as the new node, it must not contain any
+	 * attribute. Specific requirements have to be maintained for attributes
+	 * (e.g. uniqueness or position in the tree). That's a reason to use a
+	 * separate function to set attributes.
+	 */
 	if (newNode->kind == XMLNODE_DOC_FRAGMENT)
 	{
 		Assert(((XMLCompNodeHdr) newNode)->children > 0);
+		if (checkFragmentForAttributes((XMLCompNodeHdr) newNode))
+		{
+			elog(ERROR, "document fragment can't be added as long as it contains attribute(s)");
+		}
 	}
 
 	/*

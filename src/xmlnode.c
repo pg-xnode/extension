@@ -323,6 +323,17 @@ dumpXMLNode(char *data, XMLNodeOffset rootNdOff)
 
 	resultTmp = NULL;
 	resultPos = 0;
+
+	if (root->kind == XMLNODE_DOC_FRAGMENT)
+	{
+		XMLCompNodeHdr fragment = (XMLCompNodeHdr) root;
+
+		if (checkFragmentForAttributes(fragment))
+		{
+			elog(ERROR, "document fragment having attributes as direct children can't be dumped.");
+		}
+	}
+
 	xmlnodeDumpNode(data, rootNdOff, &resultTmp, &resultPos);
 	if (root->kind == XMLNODE_DOC && (root->flags & XNODE_DOC_XMLDECL))
 	{
