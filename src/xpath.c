@@ -699,12 +699,9 @@ castXPathValToStr(XPathValue src)
 		case XPATH_VAL_STRING:
 			{
 				char	   *str = NULL;
-				unsigned int len = strlen(src->v.strVal);
 
-				str = (char *) palloc(len + 1);
-				memcpy(str, src->v.strVal, len);
-
-				str[len] = '\0';
+				str = (char *) palloc(strlen(src->v.strVal) + 1);
+				strcpy(str, src->v.strVal);
 				return str;
 			}
 
@@ -1059,8 +1056,7 @@ getXPathExprValue(XPathExprState exprState, xmldoc document, bool *notNull, XPat
 			resSize = VARHDRSZ + sizeof(XPathValueData) + len;
 			output = (char *) palloc(resSize);
 			xpval = (XPathValue) VARDATA(output);
-			memcpy(xpval->v.strVal, resStr, len);
-			xpval->v.strVal[len] = '\0';
+			strcpy(xpval->v.strVal, resStr);
 			xpval->type = res->type;
 			*notNull = true;
 		}

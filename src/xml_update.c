@@ -565,11 +565,9 @@ xmlnodeAdd(xmldoc doc, XMLScan xscan, XMLNodeHdr targNode, XMLNodeHdr newNode,
 		srcCursor = XNODE_ELEMENT_NAME(targElement);
 		resCursor = refDstPtr;
 		cntLen = strlen(srcCursor);
-		memcpy(resCursor, srcCursor, cntLen);
+		strcpy(resCursor, srcCursor);
 		srcCursor += cntLen + 1;
-		resCursor += cntLen;
-		*resCursor = '\0';
-		resCursor++;
+		resCursor += cntLen + 1;
 
 		if (bws != bwt)
 		{
@@ -877,11 +875,9 @@ xmlnodeAdd(xmldoc doc, XMLScan xscan, XMLNodeHdr targNode, XMLNodeHdr newNode,
 	{
 		unsigned int cntLen = strlen(srcCursor);
 
-		memcpy(resCursor, srcCursor, cntLen);
+		strcpy(resCursor, srcCursor);
 		srcCursor += cntLen + 1;
-		resCursor += cntLen;
-		*resCursor = '\0';
-		resCursor++;
+		resCursor += cntLen + 1;
 	}
 
 	/*
@@ -1092,11 +1088,9 @@ xmlnodeRemove(xmldoc doc, XMLScan xscan, XMLNodeHdr targNode, bool freeSrc)
 		 */
 		unsigned int cntLen = strlen(srcCursor);
 
-		memcpy(resCursor, srcCursor, cntLen);
+		strcpy(resCursor, srcCursor);
 		srcCursor += cntLen + 1;
-		resCursor += cntLen;
-		*resCursor = '\0';
-		resCursor++;
+		resCursor += cntLen + 1;
 
 		/*
 		 * ... does it become empty element?
@@ -1277,11 +1271,9 @@ propagateChange(XMLScanOneLevel levelScan, int *shift, int *hdrSizeIncr,
 			 */
 			unsigned int cntLen = strlen(*srcCursor);
 
-			memcpy(*resCursor, *srcCursor, cntLen);
+			strcpy(*resCursor, *srcCursor);
 			*srcCursor += cntLen + 1;
-			*resCursor += cntLen;
-			**resCursor = '\0';
-			(*resCursor)++;
+			*resCursor += cntLen + 1;
 		}
 
 		/*

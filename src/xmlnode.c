@@ -671,9 +671,7 @@ xmlelement(PG_FUNCTION_ARGS)
 		{
 			XMLNodeHdr	attrNode = (XMLNodeHdr) resCursor;
 			char	   *name = attrNames[i];
-			unsigned int nameLen = strlen(name);
 			char	   *value = attrValues[i];
-			unsigned int valueLen = strlen(value);
 
 			attrNodes[i] = attrNode;
 			attrNode->kind = XMLNODE_ATTRIBUTE;
@@ -685,14 +683,12 @@ xmlelement(PG_FUNCTION_ARGS)
 			}
 
 			resCursor = XNODE_CONTENT(attrNode);
-			memcpy(resCursor, name, nameLen);
-			resCursor += nameLen;
-			*(resCursor++) = '\0';
+			strcpy(resCursor, name);
+			resCursor += strlen(name) + 1;
 			pfree(name);
 
-			memcpy(resCursor, value, valueLen);
-			resCursor += valueLen;
-			*(resCursor++) = '\0';
+			strcpy(resCursor, value);
+			resCursor += strlen(value) + 1;
 			pfree(value);
 		}
 		pfree(attrNames);
@@ -799,8 +795,7 @@ xmlelement(PG_FUNCTION_ARGS)
 
 	/* And finally set the element name. */
 	nameDst = XNODE_ELEMENT_NAME(element);
-	memcpy(nameDst, elName, nameLen);
-	nameDst[nameLen] = '\0';
+	strcpy(nameDst, elName);
 	resCursor = nameDst + strlen(elName) + 1;
 
 	SET_VARSIZE(result, (char *) resCursor - result + sizeof(XMLNodeOffset));
