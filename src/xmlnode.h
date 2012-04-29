@@ -115,7 +115,6 @@ typedef struct XMLDeclData *XMLDecl;
 #define XMLDECL_GET_QUOT_MARK(decl, i) (decl->flags & (1 << (i + 2))) ? XNODE_CHAR_APOSTR :\
 		XNODE_CHAR_QUOTMARK;
 
-/* The second constant bellow depend on the first one. */
 #define XMLNODE_MAX_CHILDREN	0xFFFF
 
 #define XNODE_WHITESPACE(c) (*(c) == 0x9 || *(c) == 0xA || *(c) == 0xD || *(c) == 0x20)

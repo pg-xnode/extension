@@ -29,13 +29,39 @@ extern XMLNodeHdr getNextXMLNode(XMLScan xscan, bool removed);
 extern void checkXMLWellFormedness(XMLCompNodeHdr root);
 extern int	utf8cmp(char *c1, char *c2);
 
-extern double xnodeGetNumValue(char *str, bool raiseError, bool *isNumber);
+extern double xnodeGetNumValue(char *str, bool raiseError, bool * isNumber);
 extern char *getElementNodeStr(XMLCompNodeHdr element);
 extern char *getNonElementNodeStr(XMLNodeHdr node);
 
+/*
+ * Abstracted functionality to walk through the XML document tree recursively.
+ *
+ * IMPORTANT: the visitor function *must not* change any node in 'stack', neither
+ * the 'depth' argument.
+ */
+
+typedef void (*VisitXMLNode) (XMLNodeHdr *stack, unsigned int depth, void *userData);
+
+#define XMLTREE_STACK_CHUNK			16
+#define XMLTREE_WALKER_MAX_DEPTH	0xFF
+
+typedef struct
+{
+	XMLNodeHdr *stack;
+	unsigned short stackSize;
+	unsigned short depth;
+	void	   *userData;
+	VisitXMLNode visitor;
+} XMLTreeWalkerContext;
+
+extern void walkThroughXMLTree(XMLNodeHdr rootNode, VisitXMLNode visitor, void *userData);
+
 extern void dumpXMLNodeDebug(StringInfo output, char *data, XMLNodeOffset rootOff);
+
 extern bool xmlStringIsNumber(char *str, double *numValue, char **end, bool skipWhitespace);
 
 extern bool checkFragmentForAttributes(XMLCompNodeHdr fragment);
+
+
 
 #endif   /* XMLNODE_UTIL_H_ */
