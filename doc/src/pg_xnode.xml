@@ -472,5 +472,32 @@ xml.path_debug_print(xml.path xpath) returns text
     </listitem>
    </itemizedlist>
   </sect1>
+  
+  <sect1>
+   <title>Release 0.7.0</title>
+   <itemizedlist>
+    <listitem>
+     <para>
+      Function <literal>xml.element()</literal>
+     </para>
+    </listitem>
+    <listitem>
+     <para>
+      XPath core library function <literal>starts-with()</literal>
+     </para>
+    </listitem>
+    <listitem>
+     <para>
+      XPath operators: <literal>|</literal>, <literal>+</literal>, <literal>-</literal>
+      (both binary and unary), <literal>*</literal>, <literal>div</literal>, <literal>mod</literal>.
+     </para>
+    </listitem>
+    <listitem>
+     <para>
+      Bug fixes, refactoring, comments.
+     </para>
+    </listitem>
+   </itemizedlist>
+  </sect1>
 </appendix>
 </article>
