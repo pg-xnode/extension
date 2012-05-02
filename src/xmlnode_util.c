@@ -531,7 +531,7 @@ utf8cmp(char *c1, char *c2)
 }
 
 double
-xnodeGetNumValue(char *str, bool raiseError, bool * isNumber)
+xnodeGetNumValue(char *str, bool raiseError, bool *isNumber)
 {
 	double		result;
 	char	   *c;
@@ -748,7 +748,7 @@ xmlTreeWalker(XMLTreeWalkerContext *context)
 		context->depth++;
 		if (context->depth == XMLTREE_WALKER_MAX_DEPTH)
 		{
-			elog(INFO, "maximum tree depth %u reached while walking through the document tree", XMLTREE_WALKER_MAX_DEPTH);
+			elog(ERROR, "maximum tree depth %u reached while walking through the document tree", XMLTREE_WALKER_MAX_DEPTH);
 		}
 		if (context->depth == context->stackSize)
 		{

@@ -6,6 +6,20 @@
 
 #include "xpath.h"
 
+static char *getEmptyString();
+
+/*
+ * IMPORTANT
+ *
+ * The functions are ordered by argument count: first function having no arguments, then
+ * those having non-zero argument count. This is especially important where function can
+ * have zero or more arguments (e.g. name()). XPath parser does rely on such ordering in these cases.
+ *
+ * Where the number of arguments is equal, the functions are ordered by return type in this order:
+ * boolean, number, string, node set.
+ *
+ * If some function
+ */
 XPathFunctionData xpathFunctions[] = {
 	{
 		XPATH_FUNC_TRUE,
@@ -36,6 +50,13 @@ XPathFunctionData xpathFunctions[] = {
 		XPATH_VAL_NUMBER, true
 	},
 	{
+		XPATH_FUNC_NAME_NOARG,
+		"name", 0,
+		{0, 0, 0, 0}, false,
+		{.noargs = xpathNameNoArgs},
+		XPATH_VAL_STRING, true
+	},
+	{
 		XPATH_FUNC_CONTAINS,
 		"contains", 2,
 		{XPATH_VAL_STRING, XPATH_VAL_STRING, 0, 0}, false,
@@ -64,6 +85,13 @@ XPathFunctionData xpathFunctions[] = {
 		XPATH_VAL_STRING, false
 	},
 	{
+		XPATH_FUNC_NAME,
+		"name", 1,
+		{XPATH_VAL_NODESET, 0, 0, 0}, false,
+		{.args = xpathName},
+		XPATH_VAL_STRING, false
+	},
+	{
 		XPATH_FUNC_STARTS_WITH,
 		"starts-with", 2,
 		{XPATH_VAL_STRING, XPATH_VAL_STRING, 0, 0}, false,
@@ -87,7 +115,7 @@ XPathFunctionData xpathFunctions[] = {
 };
 
 void
-xpathTrue(XMLScan xscan, XPathExprOperandValue result)
+xpathTrue(XMLScan xscan, XPathExprState exprState, XPathExprOperandValue result)
 {
 	result->type = XPATH_VAL_BOOLEAN;
 	result->isNull = false;
@@ -95,7 +123,7 @@ xpathTrue(XMLScan xscan, XPathExprOperandValue result)
 }
 
 void
-xpathFalse(XMLScan xscan, XPathExprOperandValue result)
+xpathFalse(XMLScan xscan, XPathExprState exprState, XPathExprOperandValue result)
 {
 	result->type = XPATH_VAL_BOOLEAN;
 	result->isNull = false;
@@ -103,7 +131,7 @@ xpathFalse(XMLScan xscan, XPathExprOperandValue result)
 }
 
 void
-xpathPosition(XMLScan xscan, XPathExprOperandValue result)
+xpathPosition(XMLScan xscan, XPathExprState exprState, XPathExprOperandValue result)
 {
 	XMLScanOneLevel scanLevel = XMLSCAN_CURRENT_LEVEL(xscan);
 
@@ -113,7 +141,7 @@ xpathPosition(XMLScan xscan, XPathExprOperandValue result)
 }
 
 void
-xpathLast(XMLScan xscan, XPathExprOperandValue result)
+xpathLast(XMLScan xscan, XPathExprState exprState, XPathExprOperandValue result)
 {
 	XMLScanOneLevel scanLevel = XMLSCAN_CURRENT_LEVEL(xscan);
 
@@ -165,6 +193,24 @@ xpathLast(XMLScan xscan, XPathExprOperandValue result)
 	result->v.num = scanLevel->contextSize;
 }
 
+void
+xpathNameNoArgs(XMLScan xscan, XPathExprState exprState, XPathExprOperandValue result)
+{
+	XMLScanOneLevel scanLevel = XMLSCAN_CURRENT_LEVEL(xscan);
+	XMLCompNodeHdr eh = scanLevel->parent;
+	XMLCompNodeHdr contextNode = (XMLCompNodeHdr) ((char *) eh -
+												   readXMLNodeOffset(&scanLevel->nodeRefPtr, XNODE_GET_REF_BWIDTH(eh), false));
+	char	   *elName,
+			   *elNameCopy;
+
+	Assert(contextNode->common.kind == XMLNODE_ELEMENT);
+	elName = XNODE_ELEMENT_NAME(contextNode);
+	elNameCopy = (char *) palloc(strlen(elName) + 1);
+	strcpy(elNameCopy, elName);
+	result->type = XPATH_VAL_STRING;
+	result->isNull = false;
+	result->v.stringId = getXPathOperandId(exprState, elNameCopy, XPATH_VAR_STRING);
+}
 
 /*
  * Even though types are checked at XPath parse time, each argument needs to be cast to the target type.
@@ -195,9 +241,8 @@ xpathString(XPathExprState exprState, unsigned short nargs, XPathExprOperandValu
 
 	if (src->isNull)
 	{
-		char	   *emptyStr = (char *) palloc(sizeof(char));
+		char	   *emptyStr = getEmptyString();
 
-		emptyStr[0] = '\0';
 		result->v.stringId = getXPathOperandId(exprState, emptyStr, XPATH_VAR_STRING);
 		result->type = XPATH_VAL_STRING;
 		result->isNull = false;
@@ -205,6 +250,59 @@ xpathString(XPathExprState exprState, unsigned short nargs, XPathExprOperandValu
 	}
 
 	castXPathExprOperandToStr(exprState, src, result);
+}
+
+void
+xpathName(XPathExprState exprState, unsigned short nargs, XPathExprOperandValue args,
+		  XPathExprOperandValue result)
+{
+
+	XPathNodeSet nodeSet;
+	XMLNodeHdr	node;
+	char	   *resStr,
+			   *resStrCopy;
+
+	Assert(nargs == 1);
+	result->type = XPATH_VAL_STRING;
+	result->isNull = false;
+
+	nodeSet = &args->v.nodeSet;
+	if (nodeSet->isDocument || nodeSet->count == 0)
+	{
+		resStr = getEmptyString();
+		result->v.stringId = getXPathOperandId(exprState, resStr, XPATH_VAR_STRING);
+		return;
+	}
+
+	if (nodeSet->count == 1)
+	{
+		node = getXPathOperandValue(exprState, nodeSet->nodes.nodeId, XPATH_VAR_NODE_SINGLE);
+	}
+	else
+	{
+		XMLNodeHdr *nodes = getXPathOperandValue(exprState, nodeSet->nodes.arrayId, XPATH_VAR_NODE_ARRAY);
+
+		node = nodes[0];
+	}
+
+	if (node->kind == XMLNODE_ELEMENT)
+	{
+		resStr = XNODE_ELEMENT_NAME((XMLCompNodeHdr) node);
+	}
+	else if (node->kind == XMLNODE_ATTRIBUTE)
+	{
+		resStr = XNODE_CONTENT(node);
+	}
+	else
+	{
+		resStr = getEmptyString();
+		result->v.stringId = getXPathOperandId(exprState, resStr, XPATH_VAR_STRING);
+		return;
+	}
+
+	resStrCopy = (char *) palloc(strlen(resStr) + 1);
+	strcpy(resStrCopy, resStr);
+	result->v.stringId = getXPathOperandId(exprState, resStrCopy, XPATH_VAR_STRING);
 }
 
 void
@@ -323,4 +421,13 @@ xpathConcat(XPathExprState exprState, unsigned short nargs, XPathExprOperandValu
 	result->type = XPATH_VAL_STRING;
 	result->isNull = false;
 	result->v.stringId = getXPathOperandId(exprState, out.data, XPATH_VAR_STRING);
+}
+
+static char *
+getEmptyString()
+{
+	char	   *result = (char *) palloc(sizeof(char));
+
+	result[0] = '\0';
+	return result;
 }

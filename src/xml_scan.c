@@ -20,9 +20,9 @@ static bool considerSubScan(XPathElement xpEl, XMLNodeHdr node, XMLScan xscan, b
 static void addNodeToIgnoreList(XMLNodeHdr node, XMLScan scan);
 
 static void substituteAttributes(XPathExprState exprState, XMLCompNodeHdr element);
-static void substitutePaths(XPathExprState exprState, XPathExpression expression, XMLCompNodeHdr element,
+static void substitutePaths(XPathExpression expression, XPathExprState exprState, XMLCompNodeHdr element,
 				xmldoc document, XPathHeader xpHdr);
-static void substituteFunctions(XPathExpression expression, XMLScan xscan);
+static void substituteFunctions(XPathExpression expression, XPathExprState exprState, XMLScan xscan);
 
 static void compareNumValues(XPathExprState exprState, XPathExprOperandValue valueLeft,
 				 XPathExprOperandValue valueRight, XPathExprOperator operator, XPathExprOperandValue result);
@@ -536,7 +536,7 @@ prepareXPathExpression(XPathExpression exprOrig, XMLCompNodeHdr ctxElem,
 	if (expr->npaths > 0)
 	{
 		/* Replace paths with matching node-sets. */
-		substitutePaths(state, expr, ctxElem, document, xpHdr);
+		substitutePaths(expr, state, ctxElem, document, xpHdr);
 	}
 
 	if (expr->nfuncs)
@@ -545,7 +545,7 @@ prepareXPathExpression(XPathExpression exprOrig, XMLCompNodeHdr ctxElem,
 		 * Functions having no arguments can also be replaced by value before
 		 * evaluation starts.
 		 */
-		substituteFunctions(expr, xscan);
+		substituteFunctions(expr, state, xscan);
 	}
 	return state;
 }
@@ -1434,7 +1434,7 @@ substituteAttributes(XPathExprState exprState, XMLCompNodeHdr element)
  * element - context node (XML element that we'll test using 'expression' when the substitution is complete)
  */
 static void
-substitutePaths(XPathExprState exprState, XPathExpression expression, XMLCompNodeHdr element, xmldoc document,
+substitutePaths(XPathExpression expression, XPathExprState exprState, XMLCompNodeHdr element, xmldoc document,
 				XPathHeader xpHdr)
 {
 	unsigned short i,
@@ -1544,7 +1544,7 @@ substitutePaths(XPathExprState exprState, XPathExpression expression, XMLCompNod
  * are considered a special type of sub-expression.
  */
 static void
-substituteFunctions(XPathExpression expression, XMLScan xscan)
+substituteFunctions(XPathExpression expression, XPathExprState exprState, XMLScan xscan)
 {
 	unsigned short i,
 				processed;
@@ -1570,7 +1570,7 @@ substituteFunctions(XPathExpression expression, XMLScan xscan)
 			Assert(func->nargs == 0);
 
 			funcImpl = func->impl.noargs;
-			funcImpl(xscan, &opnd->value);
+			funcImpl(xscan, exprState, &opnd->value);
 
 			opnd->substituted = true;
 			processed++;

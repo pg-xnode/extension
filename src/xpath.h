@@ -235,11 +235,13 @@ typedef enum XPathFunctionId
 	XPATH_FUNC_FALSE,
 	XPATH_FUNC_POSITION,
 	XPATH_FUNC_LAST,
+	XPATH_FUNC_NAME_NOARG,
 	XPATH_FUNC_CONTAINS,
 
 	XPATH_FUNC_BOOLEAN,
 	XPATH_FUNC_NUMBER,
 	XPATH_FUNC_STRING,
+	XPATH_FUNC_NAME,
 	XPATH_FUNC_STARTS_WITH,
 
 	XPATH_FUNC_COUNT,
@@ -652,7 +654,7 @@ extern void *getXPathOperandValue(XPathExprState exprState, unsigned short id, X
 
 typedef void (*XpathFuncImpl) (XPathExprState exprState, unsigned short nargs, XPathExprOperandValue args,
 										   XPathExprOperandValue result);
-typedef void (*XpathFuncImplNoArgs) (XMLScan scan, XPathExprOperandValue result);
+typedef void (*XpathFuncImplNoArgs) (XMLScan scan, XPathExprState exprState, XPathExprOperandValue result);
 
 typedef struct XPathFunctionData
 {
@@ -683,17 +685,18 @@ typedef struct XPathFunctionData
 typedef struct XPathFunctionData *XPathFunction;
 
 /* Total number of XPath functions the parser can recognize. */
-#define XPATH_FUNCTIONS			11
+#define XPATH_FUNCTIONS			13
 
 XPathFunctionData xpathFunctions[XPATH_FUNCTIONS];
 
 /*
  * First, functions with no arguments.
  */
-extern void xpathTrue(XMLScan xscan, XPathExprOperandValue result);
-extern void xpathFalse(XMLScan xscan, XPathExprOperandValue result);
-extern void xpathPosition(XMLScan xscan, XPathExprOperandValue result);
-extern void xpathLast(XMLScan xscan, XPathExprOperandValue result);
+extern void xpathTrue(XMLScan xscan, XPathExprState exprState, XPathExprOperandValue result);
+extern void xpathFalse(XMLScan xscan, XPathExprState exprState, XPathExprOperandValue result);
+extern void xpathPosition(XMLScan xscan, XPathExprState exprState, XPathExprOperandValue result);
+extern void xpathLast(XMLScan xscan, XPathExprState exprState, XPathExprOperandValue result);
+extern void xpathNameNoArgs(XMLScan xscan, XPathExprState exprState, XPathExprOperandValue result);
 
 
 /*
@@ -705,6 +708,8 @@ extern void xpathNumber(XPathExprState exprState, unsigned short nargs, XPathExp
 			XPathExprOperandValue result);
 extern void xpathString(XPathExprState exprState, unsigned short nargs, XPathExprOperandValue args,
 			XPathExprOperandValue result);
+extern void xpathName(XPathExprState exprState, unsigned short nargs, XPathExprOperandValue args,
+		  XPathExprOperandValue result);
 extern void xpathStartsWith(XPathExprState exprState, unsigned short nargs, XPathExprOperandValue args,
 				XPathExprOperandValue result);
 

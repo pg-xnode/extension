@@ -2637,6 +2637,78 @@ select xml.path('/root[concat("a", /root, "c")="axcx"]', '<root>x</root>');
  
 (1 row)
 
+select xml.path('name(/)', '<a/>');
+ path 
+------
+ 
+(1 row)
+
+select xml.path('name(/a/b)', '<a i="1"><b/><b/></a>');
+ path 
+------
+ b
+(1 row)
+
+select xml.path('name(/a/@i)', '<a i="1"><b/><b/></a>');
+ path 
+------
+ i
+(1 row)
+
+select xml.path('name(/a/node())', '<a i="1"><b/><b/></a>');
+ path 
+------
+ b
+(1 row)
+
+select xml.path('/a[name()="a"]', '<a/>');
+ path 
+------
+ <a/>
+(1 row)
+
+select xml.path('/a[name()!="a"]', '<a/>');
+ path 
+------
+ 
+(1 row)
+
+select xml.path('/a[name()="b"]', '<a/>');
+ path 
+------
+ 
+(1 row)
+
+select xml.path('/a[name(/)="b"]', '<a/>');
+ path 
+------
+ 
+(1 row)
+
+select xml.path('/a[name(/)!="b"]', '<a/>');
+ path 
+------
+ <a/>
+(1 row)
+
+select xml.path('/a[name()!="b"]', '<a/>');
+ path 
+------
+ <a/>
+(1 row)
+
+select xml.path('/a[name()=""]', '<a/>');
+ path 
+------
+ 
+(1 row)
+
+select xml.path('/a[name()!=""]', '<a/>');
+ path 
+------
+ <a/>
+(1 row)
+
 select xml.path('concat(count(/root/a), /root)', '<root><b>50</b></root>');
  path 
 ------

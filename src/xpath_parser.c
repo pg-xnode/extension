@@ -1123,24 +1123,41 @@ readExpressionOperand(XPathExpression exprTop, XPathParserState state, unsigned 
 					if (*c == XNODE_CHAR_LBRKT_RND)
 					{
 						c++;
-						/* Stop right after '(' */
-						while (state->c < c)
-						{
-							nextChar(state, false);
-						}
 
 						if (func->nargs == 0)
 						{
 							op->type = XPATH_OPERAND_FUNC_NOARG;
 							op->value.v.funcId = func->id;
 							op->value.type = func->resType;
+
 							while (XNODE_WHITESPACE(c))
 							{
 								c++;
 							}
 							if (*c != XNODE_CHAR_RBRKT_RND)
 							{
-								elog(ERROR, "no arguments expected for function %s()", func->name);
+								bool		found = false;
+
+								/*
+								 * The same function may exist having non-zero
+								 * argument count.
+								 */
+								id++;
+								for (; id < XPATH_FUNCTIONS; id++)
+								{
+									func = &xpathFunctions[id];
+									len = strlen(func->name);
+
+									if (strncmp(state->c, func->name, len) == 0)
+									{
+										found = true;
+										break;
+									}
+								}
+								if (!found)
+								{
+									elog(ERROR, "no arguments expected for function %s()", func->name);
+								}
 							}
 							else
 							{
@@ -1153,10 +1170,27 @@ readExpressionOperand(XPathExpression exprTop, XPathParserState state, unsigned 
 								}
 							}
 						}
-						else
+
+						if (func->nargs > 0)
 						{
 							long int	diff = sizeof(XPathExpressionData) - sizeof(XPathExprOperandData);
 							XPathExpression argList = (XPathExpression) op;
+
+							/*
+							 * If this is the 2nd attempt to find the function
+							 * (i.e. after having failed for 'argumentless'
+							 * version), then 'c' is at the first
+							 * non-whitespace after '('.
+							 *
+							 * If there was no 'argumentless' function having
+							 * the same name before, we're at the first
+							 * character after '(' (whether it's white space
+							 * or not).
+							 */
+							while (state->c < c)
+							{
+								nextChar(state, false);
+							}
 
 							if (diff > 0)
 							{
