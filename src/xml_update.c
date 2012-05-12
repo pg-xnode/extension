@@ -21,7 +21,7 @@ xmlnode_add(PG_FUNCTION_ARGS)
 	xmldoc		doc = (xmldoc) PG_GETARG_VARLENA_P(0);
 	xpath		xpathPtr = (xpath) PG_GETARG_POINTER(1);
 	XPathExpression exprBase = (XPathExpression) VARDATA(xpathPtr);
-	XPathHeader xpHdr = (XPathHeader) ((char *) exprBase + exprBase->size);
+	XPathHeader xpHdr = (XPathHeader) ((char *) exprBase + exprBase->common.size);
 	XPath xpath = getSingleXPath(exprBase, xpHdr);
 	xmlnode		newNdVar = (xmlnode) PG_GETARG_VARLENA_P(2);
 	BpChar	   *modeVar = PG_GETARG_BPCHAR_PP(3);
@@ -59,7 +59,7 @@ xmlnode_remove(PG_FUNCTION_ARGS)
 	xmldoc		doc = (xmldoc) PG_GETARG_VARLENA_P(0);
 	xpath		xpathPtr = (xpath) PG_GETARG_POINTER(1);
 	XPathExpression exprBase = (XPathExpression) VARDATA(xpathPtr);
-	XPathHeader xpHdr = (XPathHeader) ((char *) exprBase + exprBase->size);
+	XPathHeader xpHdr = (XPathHeader) ((char *) exprBase + exprBase->common.size);
 	XPath xpath = getSingleXPath(exprBase, xpHdr);
 	xmldoc		result;
 	XMLScanData xscan;

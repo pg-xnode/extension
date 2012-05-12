@@ -320,21 +320,34 @@ typedef struct XPathExprOperandValueData *XPathExprOperandValue;
  */
 #define XPATH_STRING_LITERAL(value) (((char *) (value)) + sizeof(XPathExprOperandValueData))
 
-typedef struct XPathExprOperandData
+/*
+ * 'XPathExpressionData' is actually a special kind of 'XPathExprOperandData',
+ * but we're not always interested in that. That's why it's useful to have
+ * a special type to access subset of attributes regardless the actual kind.
+ */
+typedef struct XPathExprOperandCommonData
 {
 	uint8		type;
+
+	/*
+	 * When used in XPathExprOperandData: if the XPathExprOperandData
+	 * structure is followed by a string (literal or attribute name), its
+	 * length (including terminating NULL) is included here.
+	 */
+	uint16		size;
+} XPathExprOperandCommonData;
+
+typedef struct XPathExprOperandCommonData *XPathExprOperandCommon;
+
+typedef struct XPathExprOperandData
+{
+	XPathExprOperandCommonData common;
 
 	/*
 	 * substituted - true if attribute name has already been substituted with
 	 * attribute value that we found in the element being tested.
 	 */
 	bool		substituted;
-
-	/*
-	 * If the structure is followed by a string (literal or attribute name),
-	 * its length (including terminating NULL) is includes here.
-	 */
-	uint16		size;
 
 	/* Value must be the last attribute of this structure */
 	XPathExprOperandValueData value;
@@ -407,9 +420,9 @@ XPathExprOperatorTextData xpathOperators[XPATH_EXPR_OPERATOR_KINDS];
  */
 typedef struct XPathExpressionData
 {
-	uint8		type;
+	XPathExprOperandCommonData common;
+
 	uint8		flags;
-	uint16		size;
 
 	bool		negative;
 

@@ -35,6 +35,8 @@ XPathElement
 XPathExpression
 XPathExprGenericValue
 XPathExprOperand
+XPathExprOperandCommon
+XPathExprOperandCommonData
 XPathExprOperandValue
 XPathExprOperandValueData
 XPathExprOperator

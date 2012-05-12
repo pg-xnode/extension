@@ -180,7 +180,7 @@ XPathExprOperatorIdStore *firstOpIdPtr, char *output, unsigned short *outPos,
 
 	if (!isSubExpr)
 	{
-		exprCurrent->type = XPATH_OPERAND_EXPR_TOP;
+		exprCurrent->common.type = XPATH_OPERAND_EXPR_TOP;
 		exprCurrent->variables = 0;
 		exprCurrent->negative = false;
 
@@ -195,18 +195,18 @@ XPathExprOperatorIdStore *firstOpIdPtr, char *output, unsigned short *outPos,
 		nextChar(state, false);
 		skipWhiteSpace(state, false);
 		operand = readExpressionOperand(exprTop, state, termFlags, output, outPos, paths, pathCnt, mainExpr);
-		Assert(operand->type != XPATH_OPERAND_EXPR_TOP);
+		Assert(operand->common.type != XPATH_OPERAND_EXPR_TOP);
 
 		/*
 		 * In case the expression only has 1 member, its value type will be
 		 * equal to that of the member.
 		 */
 
-		if (operand->type == XPATH_OPERAND_FUNC || operand->type == XPATH_OPERAND_FUNC_NOARG)
+		if (operand->common.type == XPATH_OPERAND_FUNC || operand->common.type == XPATH_OPERAND_FUNC_NOARG)
 		{
 			exprCurrent->valType = getFunctionResultType(operand);
 		}
-		else if (operand->type == XPATH_OPERAND_EXPR_SUB)
+		else if (operand->common.type == XPATH_OPERAND_EXPR_SUB)
 		{
 			XPathExpression operandExpr = (XPathExpression) operand;
 
@@ -346,7 +346,7 @@ XPathExprOperatorIdStore *firstOpIdPtr, char *output, unsigned short *outPos,
 				 * The last operator we've read doesn't belong to the
 				 * (implicit) subexpression
 				 */
-				exprCurrent->size = *outPos - firstMembOff + shift - sizeof(XPathExprOperatorIdStore);
+				exprCurrent->common.size = *outPos - firstMembOff + shift - sizeof(XPathExprOperatorIdStore);
 				return opIdPtr;
 			}
 			else
@@ -368,7 +368,7 @@ XPathExprOperatorIdStore *firstOpIdPtr, char *output, unsigned short *outPos,
 							  *outPos - firstMembOff, false, output, outPos);
 				operator = XPATH_EXPR_OPERATOR(opIdPtr);
 				subExpr->members = exprCurrent->members;
-				subExpr->size = subExprSzNew;
+				subExpr->common.size = subExprSzNew;
 				subExpr->valType = exprCurrent->valType;
 				exprCurrent->valType = operator->resType;
 				operand = readExpressionOperand(exprTop, state, termFlags, output, outPos, paths, pathCnt, mainExpr);
@@ -416,10 +416,10 @@ XPathExprOperatorIdStore *firstOpIdPtr, char *output, unsigned short *outPos,
 		}
 	}
 
-	exprCurrent->size = *outPos - firstMembOff + sizeof(XPathExpressionData);
+	exprCurrent->common.size = *outPos - firstMembOff + sizeof(XPathExpressionData);
 	if (!isSubExpr)
 	{
-		exprCurrent->size += XPATH_EXPR_VAR_MAX * sizeof(XPathOffset);
+		exprCurrent->common.size += XPATH_EXPR_VAR_MAX * sizeof(XPathOffset);
 	}
 
 	/*
@@ -875,9 +875,9 @@ parseLocationPath(XPath *paths, bool isSubPath, unsigned short *pathCount, char 
 
 			if (xpel->hasPredicate)
 			{
-				char	   *target = ensureSpace(expr->size, &state);
+				char	   *target = ensureSpace(expr->common.size, &state);
 
-				memcpy(target, exprOutput, expr->size);
+				memcpy(target, exprOutput, expr->common.size);
 				pfree(exprOutput);
 			}
 			if (xpel->descendant)
@@ -969,7 +969,7 @@ insertSubexpression(XPathExprOperand operand, XPathExprOperatorIdStore **opIdPtr
 			varOffPtr++;
 		}
 	}
-	subExpr->type = XPATH_OPERAND_EXPR_SUB;
+	subExpr->common.type = XPATH_OPERAND_EXPR_SUB;
 	subExpr->flags = 0;
 	subExpr->negative = false;
 	*outPos += subExprSz;
@@ -1040,7 +1040,7 @@ readExpressionOperand(XPathExpression exprTop, XPathParserState state, unsigned 
 		parseXPathExpression(subExpr, state, XPATH_TERM_RBRKT_RND, NULL, output, outPos, true, false, paths,
 							 pathCnt, mainExpr);
 
-		subExpr->type = XPATH_OPERAND_EXPR_SUB;
+		subExpr->common.type = XPATH_OPERAND_EXPR_SUB;
 		subExpr->flags = XPATH_SUBEXPRESSION_EXPLICIT;
 		subExpr->negative = negative;
 		nextChar(state, true);
@@ -1067,7 +1067,7 @@ readExpressionOperand(XPathExpression exprTop, XPathParserState state, unsigned 
 
 		if (*state->c == XNODE_CHAR_AT)
 		{
-			op->type = XPATH_OPERAND_ATTRIBUTE;
+			op->common.type = XPATH_OPERAND_ATTRIBUTE;
 
 			/*
 			 * Set the type even if 'substituteAttributes()' function does it
@@ -1126,7 +1126,7 @@ readExpressionOperand(XPathExpression exprTop, XPathParserState state, unsigned 
 
 						if (func->nargs == 0)
 						{
-							op->type = XPATH_OPERAND_FUNC_NOARG;
+							op->common.type = XPATH_OPERAND_FUNC_NOARG;
 							op->value.v.funcId = func->id;
 							op->value.type = func->resType;
 
@@ -1200,7 +1200,7 @@ readExpressionOperand(XPathExpression exprTop, XPathParserState state, unsigned 
 
 							argList->members = parseFunctionArgList(state, func, output, outPos, paths, pathCnt,
 																	mainExpr);
-							argList->type = XPATH_OPERAND_FUNC;
+							argList->common.type = XPATH_OPERAND_FUNC;
 							argList->negative = negative;
 							argList->funcId = func->id;
 							argList->valType = func->resType;
@@ -1218,20 +1218,20 @@ readExpressionOperand(XPathExpression exprTop, XPathParserState state, unsigned 
 			}
 			if (!found)
 			{
-				op->type = XPATH_OPERAND_PATH;
+				op->common.type = XPATH_OPERAND_PATH;
 				op->value.type = XPATH_VAL_NODESET;
 			}
 		}
 
-		if (op->type != XPATH_OPERAND_FUNC)
+		if (op->common.type != XPATH_OPERAND_FUNC)
 		{
 			op->value.isNull = true;
 			op->value.negative = negative;
 			op->substituted = false;
 		}
 
-		if (op->type == XPATH_OPERAND_ATTRIBUTE || op->type == XPATH_OPERAND_FUNC_NOARG ||
-			op->type == XPATH_OPERAND_PATH)
+		if (op->common.type == XPATH_OPERAND_ATTRIBUTE || op->common.type == XPATH_OPERAND_FUNC_NOARG ||
+			op->common.type == XPATH_OPERAND_PATH)
 		{
 			XPathOffset varOff = (XPathOffset) ((char *) op - (char *) exprTop);
 			XPathOffset *varOffPtr = variables + exprTop->variables;
@@ -1239,7 +1239,7 @@ readExpressionOperand(XPathExpression exprTop, XPathParserState state, unsigned 
 			*varOffPtr = varOff;
 			exprTop->variables++;
 		}
-		if (op->type == XPATH_OPERAND_ATTRIBUTE)
+		if (op->common.type == XPATH_OPERAND_ATTRIBUTE)
 		{
 			/* Finish reading of the attribute name. */
 			char	   *valueStorage = output + *outPos;
@@ -1252,7 +1252,7 @@ readExpressionOperand(XPathExpression exprTop, XPathParserState state, unsigned 
 			valueStorage[ind] = '\0';
 			*outPos += ind + 1;
 		}
-		else if (op->type == XPATH_OPERAND_PATH)
+		else if (op->common.type == XPATH_OPERAND_PATH)
 		{
 			parseLocationPath(paths, true, pathCnt, &(state->c), &(state->pos));
 			op->value.v.path = *pathCnt;
@@ -1264,7 +1264,7 @@ readExpressionOperand(XPathExpression exprTop, XPathParserState state, unsigned 
 		char		qMark = *state->c;
 		char	   *valueStorage = output + *outPos;
 
-		op->type = XPATH_OPERAND_LITERAL;
+		op->common.type = XPATH_OPERAND_LITERAL;
 		op->value.type = XPATH_VAL_STRING;
 		op->value.negative = negative;
 		op->value.isNull = false;
@@ -1284,7 +1284,7 @@ readExpressionOperand(XPathExpression exprTop, XPathParserState state, unsigned 
 	{
 		char	   *numEnd;
 
-		op->type = XPATH_OPERAND_LITERAL;
+		op->common.type = XPATH_OPERAND_LITERAL;
 		op->value.type = XPATH_VAL_NUMBER;
 		op->value.negative = negative;
 		op->value.castToNumber = true;
@@ -1309,21 +1309,11 @@ readExpressionOperand(XPathExpression exprTop, XPathParserState state, unsigned 
 	{
 		elog(ERROR, "expression or function operand expected at position %u of xpath expression.", state->pos);
 	}
+
 	if (setSize)
 	{
-		unsigned int opSize = *outPos - outPosInit;
-
-		Assert(op->type != XPATH_OPERAND_EXPR_SUB && op->type != XPATH_OPERAND_EXPR_TOP);
-		if (op->type == XPATH_OPERAND_FUNC)
-		{
-			XPathExpression argList = (XPathExpression) op;
-
-			argList->size = opSize;
-		}
-		else
-		{
-			op->size = *outPos - outPosInit;
-		}
+		Assert(op->common.type != XPATH_OPERAND_EXPR_SUB && op->common.type != XPATH_OPERAND_EXPR_TOP);
+		op->common.size = *outPos - outPosInit;
 	}
 	return op;
 }
@@ -1352,18 +1342,18 @@ nextOperandChar(char *value, XPathParserState state, unsigned short *ind,
 static void
 checkExprOperand(XPathExpression exprTop, XPathExprOperand operand, bool mainExpr)
 {
-	if (operand->type == XPATH_OPERAND_PATH)
+	if (operand->common.type == XPATH_OPERAND_PATH)
 	{
 		exprTop->npaths++;
 	}
-	else if (operand->type == XPATH_OPERAND_FUNC_NOARG || operand->type == XPATH_OPERAND_FUNC)
+	else if (operand->common.type == XPATH_OPERAND_FUNC_NOARG || operand->common.type == XPATH_OPERAND_FUNC)
 	{
 		if (mainExpr)
 		{
 			XPathFunctionId fid;
 			XPathFunction func;
 
-			if (operand->type == XPATH_OPERAND_FUNC_NOARG)
+			if (operand->common.type == XPATH_OPERAND_FUNC_NOARG)
 			{
 				fid = operand->value.v.funcId;
 			}
@@ -1381,7 +1371,7 @@ checkExprOperand(XPathExpression exprTop, XPathExprOperand operand, bool mainExp
 		}
 		exprTop->nfuncs++;
 	}
-	else if (operand->type == XPATH_OPERAND_LITERAL)
+	else if (operand->common.type == XPATH_OPERAND_LITERAL)
 	{
 		exprTop->nlits++;
 	}
@@ -1394,7 +1384,7 @@ checkOperandValueType(XPathExprOperand operand, XPathValueType valType)
 
 	if (valType == XPATH_VAL_NODESET)
 	{
-		switch (operand->type)
+		switch (operand->common.type)
 		{
 			case XPATH_OPERAND_ATTRIBUTE:
 			case XPATH_OPERAND_PATH:
@@ -1433,11 +1423,11 @@ getFunctionResultType(XPathExprOperand funcOperand)
 	XPathFunctionId fid = 0;
 	XPathFunction func;
 
-	if (funcOperand->type == XPATH_OPERAND_FUNC_NOARG)
+	if (funcOperand->common.type == XPATH_OPERAND_FUNC_NOARG)
 	{
 		fid = funcOperand->value.v.funcId;
 	}
-	else if (funcOperand->type == XPATH_OPERAND_FUNC)
+	else if (funcOperand->common.type == XPATH_OPERAND_FUNC)
 	{
 		XPathExpression argList = (XPathExpression) funcOperand;
 
@@ -1445,7 +1435,7 @@ getFunctionResultType(XPathExprOperand funcOperand)
 	}
 	else
 	{
-		elog(ERROR, "function expected, received operand type %u instead", funcOperand->type);
+		elog(ERROR, "function expected, received operand type %u instead", funcOperand->common.type);
 	}
 	func = &xpathFunctions[fid];
 	return func->resType;
@@ -1620,18 +1610,18 @@ checkFunctionArgTypes(XPathExpression argList, XPathFunction function)
 			typeRequired = typesRequired[function->nargs - 1];
 		}
 
-		if (opnd->type == XPATH_OPERAND_EXPR_TOP || opnd->type == XPATH_OPERAND_EXPR_SUB ||
-			opnd->type == XPATH_OPERAND_FUNC)
+		if (opnd->common.type == XPATH_OPERAND_EXPR_TOP || opnd->common.type == XPATH_OPERAND_EXPR_SUB ||
+			opnd->common.type == XPATH_OPERAND_FUNC)
 		{
 			XPathExpression subExpr = (XPathExpression) opnd;
 
 			argType = subExpr->valType;
-			c += subExpr->size;
+			c += subExpr->common.size;
 		}
 		else
 		{
 			argType = opnd->value.type;
-			c += opnd->size;
+			c += opnd->common.size;
 		}
 
 		if (argType != typeRequired)
@@ -1739,7 +1729,7 @@ utilizeSpaceForVars(char *output, unsigned short *outPos)
 
 		varOffPtr++;
 	}
-	expr->size -= shift;
+	expr->common.size -= shift;
 }
 
 
@@ -1774,7 +1764,7 @@ dumpXPathExpression(XPathExpression expr, XPathHeader xpathHdr, StringInfo outpu
 		{
 			XPathExprOperand opnd = (XPathExprOperand) ((char *) expr + *varOffPtr);
 
-			switch (opnd->type)
+			switch (opnd->common.type)
 			{
 				case XPATH_OPERAND_ATTRIBUTE:
 					appendStringInfo(output, "\n    attribute: %s", XPATH_STRING_LITERAL(&opnd->value));
@@ -1789,7 +1779,7 @@ dumpXPathExpression(XPathExpression expr, XPathHeader xpathHdr, StringInfo outpu
 					break;
 
 				default:
-					elog(ERROR, "unknown type of variable: %u", opnd->type);
+					elog(ERROR, "unknown type of variable: %u", opnd->common.type);
 					break;
 			}
 			varOffPtr++;
@@ -1986,7 +1976,8 @@ dumpXPathExprOperand(char **input, XPathHeader xpathHdr, StringInfo output, unsi
 	XPathExprOperand operand = (XPathExprOperand) *input;
 	XPathExpression subExpr;
 	XPathFunction func;
-	unsigned short size;
+
+	/* unsigned short size; */
 
 	if (debug)
 	{
@@ -1994,7 +1985,7 @@ dumpXPathExprOperand(char **input, XPathHeader xpathHdr, StringInfo output, unsi
 		appendStringInfoSpaces(output, 2 * (level + 2));
 	}
 
-	switch (operand->type)
+	switch (operand->common.type)
 	{
 		case XPATH_OPERAND_LITERAL:
 		case XPATH_OPERAND_ATTRIBUTE:
@@ -2023,7 +2014,7 @@ dumpXPathExprOperand(char **input, XPathHeader xpathHdr, StringInfo output, unsi
 			break;
 	}
 
-	switch (operand->type)
+	switch (operand->common.type)
 	{
 		case XPATH_OPERAND_LITERAL:
 			if (operand->value.type == XPATH_VAL_STRING)
@@ -2041,13 +2032,12 @@ dumpXPathExprOperand(char **input, XPathHeader xpathHdr, StringInfo output, unsi
 			{
 				elog(ERROR, "invalid literal");
 			}
-			*input += operand->size;
+			*input += operand->common.size;
 			break;
 
 		case XPATH_OPERAND_ATTRIBUTE:
-			size = operand->size;
 			appendStringInfo(output, "%c%s", XNODE_CHAR_AT, XPATH_STRING_LITERAL(&operand->value));
-			*input += size;
+			*input += operand->common.size;
 			break;
 
 		case XPATH_OPERAND_PATH:
@@ -2060,8 +2050,7 @@ dumpXPathExprOperand(char **input, XPathHeader xpathHdr, StringInfo output, unsi
 			{
 				dumpLocationPath(xpathHdr, output, debug, shortValue);
 			}
-			size = operand->size;
-			*input += size;
+			*input += operand->common.size;
 			break;
 
 		case XPATH_OPERAND_EXPR_SUB:
@@ -2123,12 +2112,11 @@ dumpXPathExprOperand(char **input, XPathHeader xpathHdr, StringInfo output, unsi
 		case XPATH_OPERAND_FUNC_NOARG:
 			func = &xpathFunctions[operand->value.v.funcId];
 			appendStringInfo(output, "%s()", func->name);
-			size = operand->size;
-			*input += size;
+			*input += operand->common.size;
 			break;
 
 		default:
-			elog(ERROR, "unknown xpath expression operand type: %u", operand->type);
+			elog(ERROR, "unknown xpath expression operand type: %u", operand->common.type);
 			break;
 	}
 }

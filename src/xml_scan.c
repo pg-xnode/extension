@@ -520,10 +520,10 @@ XPathExprState
 prepareXPathExpression(XPathExpression exprOrig, XMLCompNodeHdr ctxElem,
 					   xmldoc document, XPathHeader xpHdr, XMLScan xscan)
 {
-	XPathExpression expr = (XPathExpression) palloc(exprOrig->size);
+	XPathExpression expr = (XPathExpression) palloc(exprOrig->common.size);
 	XPathExprState state = (XPathExprState) palloc(sizeof(XPathExprStateData));
 
-	memcpy(expr, exprOrig, exprOrig->size);
+	memcpy(expr, exprOrig, exprOrig->common.size);
 	state->expr = expr;
 
 	allocXPathExpressionVarCache(state, XPATH_VAR_STRING, true);
@@ -815,20 +815,20 @@ evaluateXPathOperand(XPathExprState exprState, XPathExprOperand operand, XMLScan
 	unsigned int resSize;
 	XPathExpression expr = (XPathExpression) operand;
 
-	if (operand->type == XPATH_OPERAND_EXPR_SUB)
+	if (operand->common.type == XPATH_OPERAND_EXPR_SUB)
 	{
 		evaluateXPathExpression(exprState, expr, scan, element, recursionLevel + 1, result);
-		resSize = expr->size;
+		resSize = expr->common.size;
 	}
-	else if (operand->type == XPATH_OPERAND_FUNC)
+	else if (operand->common.type == XPATH_OPERAND_FUNC)
 	{
 		evaluateXPathFunction(exprState, expr, scan, element, recursionLevel + 1, result);
-		resSize = expr->size;
+		resSize = expr->common.size;
 	}
 	else
 	{
 		memcpy(result, &operand->value, sizeof(XPathExprOperandValueData));
-		resSize = operand->size;
+		resSize = operand->common.size;
 	}
 	return resSize;
 }
@@ -859,14 +859,13 @@ evaluateXPathFunction(XPathExprState exprState, XPathExpression funcExpr, XMLSca
 	for (i = 0; i < funcExpr->members; i++)
 	{
 		XPathExprOperand opnd = (XPathExprOperand) c;
-		unsigned int opndSize;
 
-		if (opnd->type == XPATH_OPERAND_EXPR_TOP || opnd->type == XPATH_OPERAND_EXPR_SUB ||
-			opnd->type == XPATH_OPERAND_FUNC)
+		if (opnd->common.type == XPATH_OPERAND_EXPR_TOP || opnd->common.type == XPATH_OPERAND_EXPR_SUB ||
+			opnd->common.type == XPATH_OPERAND_FUNC)
 		{
 			XPathExpression subExpr = (XPathExpression) opnd;
 
-			if (opnd->type == XPATH_OPERAND_FUNC)
+			if (opnd->common.type == XPATH_OPERAND_FUNC)
 			{
 				/* In this case, 'subExpr' means 'argument list'. */
 				evaluateXPathFunction(exprState, subExpr, scan, element, recursionLevel, argsTmp);
@@ -875,20 +874,18 @@ evaluateXPathFunction(XPathExprState exprState, XPathExpression funcExpr, XMLSca
 			{
 				evaluateXPathExpression(exprState, subExpr, scan, element, recursionLevel, argsTmp);
 			}
-			opndSize = subExpr->size;
 		}
 		else
 		{
 			memcpy(argsTmp, &opnd->value, sizeof(XPathExprOperandValueData));
 
-			if (opnd->type == XPATH_OPERAND_LITERAL && opnd->value.type == XPATH_VAL_STRING)
+			if (opnd->common.type == XPATH_OPERAND_LITERAL && opnd->value.type == XPATH_VAL_STRING)
 			{
 				argsTmp->v.stringId = getXPathOperandId(exprState, XPATH_STRING_LITERAL(&opnd->value),
 														XPATH_VAR_STRING);
 			}
-			opndSize = opnd->size;
 		}
-		c += opndSize;
+		c += opnd->common.size;
 		argsTmp++;
 	}
 
@@ -906,7 +903,7 @@ evaluateXPathFunction(XPathExprState exprState, XPathExpression funcExpr, XMLSca
 static void
 prepareLiteral(XPathExprState exprState, XPathExprOperand operand)
 {
-	if (operand->type == XPATH_OPERAND_LITERAL && operand->value.type == XPATH_VAL_STRING)
+	if (operand->common.type == XPATH_OPERAND_LITERAL && operand->value.type == XPATH_VAL_STRING)
 	{
 		operand->value.v.stringId = getXPathOperandId(exprState, XPATH_STRING_LITERAL(&operand->value),
 													  XPATH_VAR_STRING);
@@ -1301,7 +1298,7 @@ substituteAttributes(XPathExprState exprState, XMLCompNodeHdr element)
 					continue;
 				}
 
-				if (opnd->type == XPATH_OPERAND_ATTRIBUTE)
+				if (opnd->common.type == XPATH_OPERAND_ATTRIBUTE)
 				{
 					XPathNodeSet nodeSet = &opnd->value.v.nodeSet;
 					unsigned int nodeNr = exprState->count[XPATH_VAR_NODE_SINGLE] + attrNr;
@@ -1446,7 +1443,7 @@ substitutePaths(XPathExpression expression, XPathExprState exprState, XMLCompNod
 	{
 		XPathExprOperand opnd = (XPathExprOperand) ((char *) expression + *varOffPtr);
 
-		if (opnd->type == XPATH_OPERAND_PATH)
+		if (opnd->common.type == XPATH_OPERAND_PATH)
 		{
 			XMLScanData xscanSub;
 			XPath		subPath = XPATH_HDR_GET_PATH(xpHdr, opnd->value.v.path);
@@ -1555,7 +1552,7 @@ substituteFunctions(XPathExpression expression, XPathExprState exprState, XMLSca
 	{
 		XPathExprOperand opnd = (XPathExprOperand) ((char *) expression + *varOffPtr);
 
-		if (opnd->type == XPATH_OPERAND_FUNC_NOARG)
+		if (opnd->common.type == XPATH_OPERAND_FUNC_NOARG)
 		{
 			XPathFunctionId funcId = opnd->value.v.funcId;
 			XPathFunction func;

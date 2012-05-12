@@ -76,7 +76,7 @@ xpath_in(PG_FUNCTION_ARGS)
 	{
 		XPathExprOperand opnd = (XPathExprOperand) ((char *) expr + *varOffPtr);
 
-		if (opnd->type == XPATH_OPERAND_PATH)
+		if (opnd->common.type == XPATH_OPERAND_PATH)
 		{
 			XPath		path = paths[opnd->value.v.path];
 
@@ -86,7 +86,7 @@ xpath_in(PG_FUNCTION_ARGS)
 				break;
 			}
 		}
-		else if (opnd->type == XPATH_OPERAND_ATTRIBUTE)
+		else if (opnd->common.type == XPATH_OPERAND_ATTRIBUTE)
 		{
 			expr->mainExprAbs = false;
 			break;
@@ -94,7 +94,7 @@ xpath_in(PG_FUNCTION_ARGS)
 		varOffPtr++;
 	}
 
-	resSize = VARHDRSZ + expr->size;
+	resSize = VARHDRSZ + expr->common.size;
 	if (pathCount > 0)
 	{
 		unsigned short i;
@@ -122,7 +122,7 @@ xpath_in(PG_FUNCTION_ARGS)
 	}
 	result = (char *) palloc(resSize);
 	outPos = VARHDRSZ;
-	memcpy(result + outPos, expr, expr->size);
+	memcpy(result + outPos, expr, expr->common.size);
 
 	if (pathCount > 0)
 	{
@@ -130,7 +130,7 @@ xpath_in(PG_FUNCTION_ARGS)
 		unsigned short i;
 		XPathOffset hdrOff;
 
-		outPos += expr->size;
+		outPos += expr->common.size;
 		hdrOff = outPos;
 		xpathHdr = (XPathHeader) (result + hdrOff);
 		xpathHdr->pathCount = pathCount;
@@ -167,7 +167,7 @@ xpath_out(PG_FUNCTION_ARGS)
 	 * At this moment we don't know whether the xpath header is there. If
 	 * there's none, the 'dump...()' functions simply don't try to access it.
 	 */
-	XPathHeader xpHdr = (XPathHeader) ((char *) expr + expr->size);
+	XPathHeader xpHdr = (XPathHeader) ((char *) expr + expr->common.size);
 	StringInfoData output;
 
 	initStringInfo(&output);
@@ -186,7 +186,7 @@ xpath_debug_print(PG_FUNCTION_ARGS)
 	 * At this moment we don't know whether the xpath header is there. If
 	 * there's none, the 'dump...()' functions simply don't try to access it.
 	 */
-	XPathHeader xpHdr = (XPathHeader) ((char *) expr + expr->size);
+	XPathHeader xpHdr = (XPathHeader) ((char *) expr + expr->common.size);
 	StringInfoData output;
 
 	initStringInfo(&output);
@@ -223,13 +223,14 @@ getSingleXPath(XPathExpression expr, XPathHeader xpHdr)
 	 */
 	operand = (XPathExprOperand) ((char *) expr + sizeof(XPathExpressionData) +
 								  expr->variables * sizeof(XPathOffset));
-	while (operand->type == XPATH_OPERAND_EXPR_SUB)
+
+	while (operand->common.type == XPATH_OPERAND_EXPR_SUB)
 	{
 		expr = (XPathExpression) operand;
 		operand = (XPathExprOperand) ((char *) expr + sizeof(XPathExpressionData));
 	}
 
-	if (operand->type != XPATH_OPERAND_PATH || expr->members != 1)
+	if (operand->common.type != XPATH_OPERAND_PATH || expr->members != 1)
 	{
 		elog(ERROR, "xpath expression can't be used as a base path");
 	}
@@ -251,7 +252,7 @@ xpath_single(PG_FUNCTION_ARGS)
 	xpath		xpathIn = (xpath) PG_GETARG_POINTER(0);
 	XPathExpression expr = (XPathExpression) VARDATA(xpathIn);
 	XPathExprState exprState;
-	XPathHeader xpHdr = (XPathHeader) ((char *) expr + expr->size);
+	XPathHeader xpHdr = (XPathHeader) ((char *) expr + expr->common.size);
 	xmldoc		doc = (xmldoc) PG_GETARG_VARLENA_P(1);
 	bool		notNull;
 	xpathval	result;
@@ -301,7 +302,7 @@ xpath_array(PG_FUNCTION_ARGS)
 		xpath		xpathBasePtr = (xpath) PG_GETARG_POINTER(0);
 		XPath		xpathBase;
 		XPathExpression exprBase = (XPathExpression) VARDATA(xpathBasePtr);
-		XPathHeader xpHdrBase = (XPathHeader) ((char *) exprBase + exprBase->size);
+		XPathHeader xpHdrBase = (XPathHeader) ((char *) exprBase + exprBase->common.size);
 
 		ArrayType  *pathsColArr = PG_GETARG_ARRAYTYPE_P(1);
 		xmldoc		doc = (xmldoc) PG_GETARG_VARLENA_P(2);
@@ -838,7 +839,7 @@ getResultArray(XMLScanContext ctx, XMLNodeOffset baseNodeOff)
 		xmldoc		doc = ctx->baseScan->document;
 		xpath		xpathPtr = ctx->colPaths[i];
 		XPathExpression expr = (XPathExpression) VARDATA(xpathPtr);
-		XPathHeader xpHdr = (XPathHeader) ((char *) expr + expr->size);
+		XPathHeader xpHdr = (XPathHeader) ((char *) expr + expr->common.size);
 		bool		colNotNull = false;
 		XMLCompNodeHdr baseNode = (XMLCompNodeHdr) ((char *) VARDATA(doc) + baseNodeOff);
 		XPathExprState exprState = prepareXPathExpression(expr, baseNode, doc, xpHdr, ctx->baseScan);
