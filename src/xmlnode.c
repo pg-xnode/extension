@@ -77,7 +77,6 @@ initXNodeTypeInfo(Oid fnOid, int argNr, TypeInfo *ti)
 	get_typlenbyvalalign(ti->oid, &ti->elmlen, &ti->elmbyval, &ti->elmalign);
 }
 
-
 PG_MODULE_MAGIC;
 
 PG_FUNCTION_INFO_V1(xmlnode_in);
@@ -94,7 +93,7 @@ xmlnode_in(PG_FUNCTION_ARGS)
 		elog(ERROR, "zero length input string");
 	}
 	dbEnc = GetDatabaseEncoding();
-	initXMLParserState(&parserState, input, false);
+	initXMLParserState(&parserState, input, XMLNODE_NODE);
 	xmlnodeParseNode(&parserState);
 	finalizeXMLParserState(&parserState);
 	PG_RETURN_POINTER(parserState.result);
@@ -158,7 +157,7 @@ xmldoc_in(PG_FUNCTION_ARGS)
 	{
 		elog(ERROR, "The current version of xmlnode requires both database encoding to be UTF-8.");
 	}
-	initXMLParserState(&parserState, input, false);
+	initXMLParserState(&parserState, input, XMLNODE_DOC);
 	xmlnodeParseDoc(&parserState);
 	finalizeXMLParserState(&parserState);
 	PG_RETURN_POINTER(parserState.result);
@@ -215,6 +214,23 @@ xmlnode_to_xmldoc(PG_FUNCTION_ARGS)
 	char		bwidth = getXMLNodeOffsetByteWidth(dist);
 
 	rootNode = (XMLCompNodeHdr) (nodeData + rootOffsetOrig);
+
+	if (rootNode->common.kind == XMLNODE_ELEMENT || rootNode->common.kind == XMLNODE_DOC)
+	{
+		unsigned int unresolvedNmspcCount;
+		char	  **unresolvedNamespaces = getUnresolvedXMLNamespaces((XMLNodeHdr) rootNode, &unresolvedNmspcCount);
+
+		if (unresolvedNmspcCount > 0)
+		{
+			/*
+			 * Only the first unresolved namespace is printed out. This may be
+			 * changed if users appear to prefer complete list.
+			 */
+			elog(ERROR, "xml element uses unbound namespace '%s' so it can't be converted to xml document",
+				 unresolvedNamespaces[0]);
+		}
+	}
+
 	if (rootNode->common.kind == XMLNODE_ELEMENT)
 	{
 		/*
@@ -447,14 +463,12 @@ xmlelement(PG_FUNCTION_ARGS)
 	unsigned int nameLen,
 				resSizeMax;
 	unsigned int childSize = 0;
-	char	   *c,
-			   *result,
+	char	   *result,
 			   *resData,
 			   *resCursor,
 			   *nameDst;
 	XMLCompNodeHdr element;
 	XMLNodeOffset *rootOffPtr;
-	bool		nameFirstChar = true;
 	char	  **attrNames = NULL;
 	char	  **attrValues = NULL;
 	char	   *attrValFlags = NULL;
@@ -465,6 +479,8 @@ xmlelement(PG_FUNCTION_ARGS)
 	unsigned int attrCount = 0;
 	unsigned int attrsSizeTotal = 0;
 	unsigned short childCount = 0;
+	XMLNodeParserStateData namePState;
+	unsigned int firstColPos = 0;
 
 	if (PG_ARGISNULL(0))
 	{
@@ -529,29 +545,31 @@ xmlelement(PG_FUNCTION_ARGS)
 				elog(ERROR, "attribute name must not be null");
 			}
 			nameStr = text_to_cstring(DatumGetTextP(elDatum));
-			if (strlen(nameStr) == 0)
-			{
-				elog(ERROR, "attribute name must be a string of non-zero length");
-			}
-			else
-			{					/* Check validity of characters. */
-				char	   *c = nameStr;
-				int			cWidth = pg_utf_mblen((unsigned char *) c);
 
-				if (!XNODE_VALID_NAME_START(c))
-				{
-					elog(ERROR, "attribute name starts with invalid character");
-				}
-				do
-				{
-					c += cWidth;
-					cWidth = pg_utf_mblen((unsigned char *) c);
-				} while (XNODE_VALID_NAME_CHAR(c));
-				if (*c != '\0')
-				{
-					elog(ERROR, "invalid character in attribute name");
+			initXMLParserState(&namePState, nameStr, XMLNODE_ELEMENT);
+			readXMLName(&namePState, false, true, true, &firstColPos);
+
+			/*
+			 * No need to finalize the state when XMLNODE_ELEMENT is the
+			 * target type.
+			 */
+
+			if (*namePState.c != '\0')
+			{
+				elog(ERROR, "unexpected char in attribute name: '%c'", *namePState.c);
+			}
+			if (firstColPos == 0)
+			{
+				if (*nameStr == XNODE_CHAR_COLON && strlen(nameStr) > 1)
+				{				/* Igonre the leading colon. */
+					char	   *tmp = nameStr;
+
+					nameStr = (char *) palloc(strlen(nameStr));
+					strcpy(nameStr, tmp + 1);
+					pfree(tmp);
 				}
 			}
+
 
 			/* Check uniqueness of the attribute name. */
 			if (i > 1)
@@ -582,7 +600,7 @@ xmlelement(PG_FUNCTION_ARGS)
 				char	   *valueStrOrig = valueStr;
 
 				/* Parse the value and check validity. */
-				initXMLParserState(&state, valueStr, true);
+				initXMLParserState(&state, valueStr, XMLNODE_ATTRIBUTE);
 				valueStr = readXMLAttValue(&state, true, &valueHasRefs);
 
 				/*
@@ -623,20 +641,26 @@ xmlelement(PG_FUNCTION_ARGS)
 		}
 	}
 
-	/* Make sure the element name is valid. */
-	c = elName;
-	while (*c != '\0')
+	/*
+	 * Make sure the element name is valid.
+	 *
+	 * If initialized for XMLNODE_ELEMENT, the parser state has no memory
+	 * allocated so we don't have to call finalizeXMLParserState().
+	 */
+	initXMLParserState(&namePState, elName, XMLNODE_ELEMENT);
+	readXMLName(&namePState, false, true, true, &firstColPos);
+
+	if (*namePState.c != '\0')
 	{
-		if ((nameFirstChar && !XNODE_VALID_NAME_START(c)) || (!nameFirstChar && !XNODE_VALID_NAME_CHAR(c)))
+		elog(ERROR, "unexpected char in element name: '%c'", *namePState.c);
+	}
+	if (firstColPos == 0)
+	{
+		if (*elName == XNODE_CHAR_COLON && strlen(elName) > 1)
 		{
-			elog(ERROR, "unrecognized character '%c' in element name", *c);
+			elName++;
 		}
-		if (nameFirstChar)
-		{
-			nameFirstChar = false;
-		}
-		c += pg_utf_mblen((unsigned char *) c);
-	};
+	}
 
 	if (child != NULL)
 	{
@@ -802,4 +826,80 @@ xmlelement(PG_FUNCTION_ARGS)
 	rootOffPtr = XNODE_ROOT_OFFSET_PTR(result);
 	*rootOffPtr = (char *) element - resData;
 	PG_RETURN_POINTER(result);
+}
+
+/*
+ * Collect namespace declarations that the node contains.
+ *
+ * If 'declsOnly' is true, then only declarations are collected. Otherwise 'attrsPrefixed'
+ * receives array containing all prefixed attributes of 'currentNode' (except for the
+ * declarations) and 'attrsPrefixedCount' receives number of such attributes.
+ */
+void
+collectXMLNamespaceDeclarations(XMLCompNodeHdr currentNode, unsigned int *attrCount, unsigned int *nmspDeclCount,
+								XMLNodeContainer declarations, bool declsOnly, XMLNodeHdr **attrsPrefixed, unsigned int *attrsPrefixedCount)
+{
+
+	unsigned int defNmspLen = strlen(XNODE_NAMESPACE_DEF_PREFIX);
+	unsigned int i;
+	char	   *childOffPtr = XNODE_FIRST_REF(currentNode);
+	char		bwidth = XNODE_GET_REF_BWIDTH(currentNode);
+
+	if (!declsOnly)
+	{
+		*attrCount = 0;
+		*attrsPrefixedCount = 0;
+	}
+
+	for (i = 0; i < currentNode->children; i++)
+	{
+		XMLNodeOffset childOff = readXMLNodeOffset(&childOffPtr, bwidth, true);
+		XMLNodeHdr	childNode = (XMLNodeHdr) ((char *) currentNode - childOff);
+
+		if (childNode->kind != XMLNODE_ATTRIBUTE)
+		{
+			break;
+		}
+
+		/*
+		 * The sizes might be exaggerated sometimes but the exact number of
+		 * attribute names is not at hand now.
+		 */
+		if (!declsOnly && *attrCount == 0)
+		{
+			*attrsPrefixed = (XMLNodeHdr *) palloc(currentNode->children * sizeof(XMLNodeHdr));
+		}
+
+		if (!declsOnly)
+		{
+			(*attrCount)++;
+		}
+
+		if (childNode->flags & XNODE_NMSP_PREFIX)
+		{
+			char	   *attrName = XNODE_CONTENT(childNode);
+
+			if ((strncmp(attrName, XNODE_NAMESPACE_DEF_PREFIX, defNmspLen) == 0) &&
+				attrName[defNmspLen] == XNODE_CHAR_COLON)
+			{
+
+				/* Namespace declaration. */
+				char	   *nmspName = attrName + defNmspLen + 1;
+
+				xmlnodePushSinglePtr(declarations, (void *) nmspName);
+				if (nmspDeclCount != NULL)
+				{
+					(*nmspDeclCount)++;
+				}
+			}
+			else
+			{
+				/* Namespace usage. */
+				if (!declsOnly)
+				{
+					(*attrsPrefixed)[(*attrsPrefixedCount)++] = childNode;
+				}
+			}
+		}
+	}
 }

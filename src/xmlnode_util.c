@@ -8,6 +8,10 @@
 
 static void xmlTreeWalker(XMLTreeWalkerContext *context);
 
+static void checkNodeNamespaces(XMLNodeHdr *stack, unsigned int depth, void *userData);
+static char *getNamespaceName(char *name, char *colon);
+static void addUniqueNamespace(XMLNodeContainer result, char *nmspName);
+
 struct XMLNodeDumpInfo
 {
 	StringInfo	output;
@@ -38,14 +42,22 @@ xmlnodeContainerFree(XMLNodeContainer cont)
 }
 
 void
-xmlnodePushSingle(XMLNodeContainer cont, XMLNodeOffset singleNode)
+xmlnodePushSingleNode(XMLNodeContainer cont, XMLNodeOffset singleNode)
 {
 	XNodeListItem itemNew;
 
-	itemNew.kind = XNODE_LIST_ITEM_SINGLE;
-	itemNew.valid = true;
-	itemNew.value.single = singleNode;
+	itemNew.kind = XNODE_LIST_ITEM_SINGLE_OFF;
+	itemNew.value.singleOff = singleNode;
+	xmlnodeAddListItem(cont, &itemNew);
+}
 
+void
+xmlnodePushSinglePtr(XMLNodeContainer cont, void *item)
+{
+	XNodeListItem itemNew;
+
+	itemNew.kind = XNODE_LIST_ITEM_SINGLE_PTR;
+	itemNew.value.singlePtr = item;
 	xmlnodeAddListItem(cont, &itemNew);
 }
 
@@ -55,6 +67,7 @@ xmlnodeAddListItem(XMLNodeContainer cont, XNodeListItem *itemNew)
 	unsigned int pos = cont->position;
 	XNodeListItem *item = cont->content + pos;
 
+	itemNew->valid = true;
 	memcpy(item, itemNew, sizeof(XNodeListItem));
 
 	cont->position++;
@@ -67,8 +80,12 @@ xmlnodeAddListItem(XMLNodeContainer cont, XNodeListItem *itemNew)
 	}
 }
 
+/*
+ * Sometimes it's relied on that this function is non-destructive, i.e. the position
+ * can be reset in order to retrieve the values multiple times.
+ */
 XMLNodeOffset
-xmlnodePop(XMLNodeContainer cont)
+xmlnodePopOffset(XMLNodeContainer cont)
 {
 
 	if (cont->position == 0)
@@ -76,7 +93,7 @@ xmlnodePop(XMLNodeContainer cont)
 		elog(ERROR, "Stack is empty.");
 	}
 	cont->position--;
-	return cont->content[cont->position].value.single;
+	return cont->content[cont->position].value.singleOff;
 }
 
 /*
@@ -642,13 +659,14 @@ getNonElementNodeStr(XMLNodeHdr node)
 }
 
 void
-walkThroughXMLTree(XMLNodeHdr rootNode, VisitXMLNode visitor, void *userData)
+walkThroughXMLTree(XMLNodeHdr rootNode, VisitXMLNode visitor, bool attributes, void *userData)
 {
 	XMLTreeWalkerContext context;
 
 	context.stack = (XMLNodeHdr *) palloc(XMLTREE_STACK_CHUNK * sizeof(XMLNodeHdr));
 	context.stackSize = XMLTREE_STACK_CHUNK;
 	context.depth = 0;
+	context.attributes = attributes;
 	context.stack[context.depth] = rootNode;
 	context.userData = userData;
 	context.visitor = visitor;
@@ -664,7 +682,7 @@ dumpXMLNodeDebug(StringInfo output, char *data, XMLNodeOffset off)
 
 	userData.output = output;
 	userData.start = data;
-	walkThroughXMLTree(root, visitXMLNodeForDump, (void *) &userData);
+	walkThroughXMLTree(root, visitXMLNodeForDump, true, (void *) &userData);
 }
 
 /*
@@ -750,15 +768,21 @@ xmlTreeWalker(XMLTreeWalkerContext *context)
 		{
 			elog(ERROR, "maximum tree depth %u reached while walking through the document tree", XMLTREE_WALKER_MAX_DEPTH);
 		}
+
 		if (context->depth == context->stackSize)
 		{
 			context->stackSize += XMLTREE_STACK_CHUNK;
 			context->stack = (XMLNodeHdr *) repalloc(context->stack, context->stackSize);
 		}
+
 		for (i = 0; i < compNode->children; i++)
 		{
 			XMLNodeHdr	child = (XMLNodeHdr) ((char *) compNode - readXMLNodeOffset(&refPtr, bwidth, true));
 
+			if (child->kind == XMLNODE_ATTRIBUTE && !context->attributes)
+			{
+				continue;
+			}
 			context->stack[context->depth] = child;
 			xmlTreeWalker(context);
 		}
@@ -863,5 +887,285 @@ dumpXScanDebug(StringInfo output, XMLScan scan, char *docData, XMLNodeOffset doc
 		level++;
 	}
 }
-
 #endif
+
+
+/*
+ * Returns vector of (unique) namespaces used by 'node' and its descendants but not declared
+ * at the appropriate level or above.
+ *
+ * 'count' receives length of the array.
+ */
+char	  **
+getUnresolvedXMLNamespaces(XMLNodeHdr node, unsigned int *count)
+{
+	XMLCompNodeHdr element;
+	XMLNamespaceCheckState stateData;
+	char	  **result = NULL;
+	unsigned int resultSize;
+	unsigned int i;
+	XNodeListItem *item;
+
+	*count = 0;
+
+	if (node->kind == XMLNODE_ATTRIBUTE && (node->flags & XNODE_NMSP_PREFIX))
+	{
+		char	   *attrName = XNODE_CONTENT(node);
+		unsigned int nmspPrefLen = strlen(XNODE_NAMESPACE_DEF_PREFIX);
+
+		if ((strncmp(attrName, XNODE_NAMESPACE_DEF_PREFIX, nmspPrefLen) == 0) &&
+			attrName[nmspPrefLen] == XNODE_CHAR_COLON)
+		{
+			/* 'xmlns:...' does not depend on any namespace declaration. */
+			return NULL;
+		}
+
+		/*
+		 * If the prefix is not 'xmlns' that it represents a unbound
+		 * namespace.
+		 *
+		 * This is a special case when we're for example adding (prefixed)
+		 * attribute to element. Attributes already pertaining to an element
+		 * are checked elsewhere (i.e. while checking the owning element
+		 * itself).
+		 */
+		result = (char **) palloc(sizeof(char *));
+		result[0] = strtok(attrName, ":");
+		return result;
+	}
+
+	element = (XMLCompNodeHdr) node;
+	if (element->common.kind != XMLNODE_DOC && element->common.kind != XMLNODE_ELEMENT)
+	{
+		return NULL;
+	}
+
+	xmlnodeContainerInit(&stateData.declarations);
+	xmlnodeContainerInit(&stateData.result);
+	walkThroughXMLTree((XMLNodeHdr) node, checkNodeNamespaces, false, (void *) &stateData);
+	resultSize = stateData.result.position;
+	xmlnodeContainerFree(&stateData.declarations);
+
+	result = (char **) palloc(resultSize * sizeof(char *));
+	item = stateData.result.content;
+	for (i = 0; i < resultSize; i++)
+	{
+		char	   *nmspName;
+
+		Assert(item->kind == XNODE_LIST_ITEM_SINGLE_PTR);
+		nmspName = (char *) item->value.singlePtr;
+		result[i] = nmspName;
+		item++;
+	}
+	xmlnodeContainerFree(&stateData.result);
+	*count = resultSize;
+	return result;
+}
+
+void
+resolveNamespaces(XMLNodeContainer declarations, unsigned int declsActive, char *elNmspName,
+				  bool *elNmspNameResolved, XMLNodeHdr *attrsPrefixed, unsigned int attrsPrefixedCount, bool *attrFlags,
+				  unsigned short *attrsUnresolved)
+{
+
+	unsigned int i;
+	XNodeListItem *decls = declarations->content;
+
+	/*
+	 * Search the stack bottom-up for the first appropriate declaration.
+	 */
+	for (i = declsActive; i > 0; i--)
+	{
+		char	   *nmspName;
+		XNodeListItem *item = decls + i - 1;
+		unsigned int nmspLength;
+
+		Assert(item->kind == XNODE_LIST_ITEM_SINGLE_PTR);
+		nmspName = (char *) item->value.singlePtr;
+		nmspLength = strlen(nmspName);
+
+		if (!(*elNmspNameResolved))
+		{
+			if (strncmp(elNmspName, nmspName, nmspLength) == 0 &&
+				elNmspName[nmspLength] == XNODE_CHAR_COLON)
+			{
+				*elNmspNameResolved = true;
+			}
+		}
+
+		if (*attrsUnresolved > 0)
+		{
+			unsigned int j;
+
+			/*
+			 * Try to match any unresolved (prefixed) attribute to the current
+			 * namespace declaration.
+			 */
+			for (j = 0; j < attrsPrefixedCount; j++)
+			{
+				if (!attrFlags[j])
+				{
+					XMLNodeHdr	attrNode = attrsPrefixed[j];
+					char	   *attrNmspName = XNODE_CONTENT(attrNode);
+
+					Assert(attrNode->flags & XNODE_NMSP_PREFIX);
+
+					if (strncmp(attrNmspName, nmspName, nmspLength) == 0 &&
+						attrNmspName[nmspLength] == XNODE_CHAR_COLON)
+					{
+						attrFlags[j] = true;
+						(*attrsUnresolved)--;
+					}
+				}
+			}
+		}
+
+		if (*elNmspNameResolved && *attrsUnresolved == 0)
+		{
+			break;
+		}
+	}
+}
+
+
+/*
+ * Collect names of all namespaces used in the current node (element) and find out which
+ * are have no declaration neither in this node nor above it.
+ */
+static void
+checkNodeNamespaces(XMLNodeHdr *stack, unsigned int depth, void *userData)
+{
+	XMLNamespaceCheckState *state;
+	XMLCompNodeHdr currentNode = (XMLCompNodeHdr) stack[depth];
+	char	   *elNmspName = XNODE_ELEMENT_NAME(currentNode);
+	char	   *elNmspColon;
+	bool		elNmspNameResolved = true;
+	XMLNodeHdr *attrsPrefixed = NULL;
+	bool	   *attrFlags = NULL;
+	unsigned short attrsUnresolved = 0;
+	unsigned int attrsPrefixedCount = 0;
+	unsigned int attrCount = 0;
+	unsigned int nmspDeclCount = 0;
+
+	/*
+	 * The tree walker is invoked with 'attributes=false' so it does not
+	 * descend to attributes.
+	 */
+	Assert(currentNode->common.kind != XMLNODE_ATTRIBUTE);
+
+	if (currentNode->common.kind != XMLNODE_ELEMENT && currentNode->common.kind != XMLNODE_DOC_FRAGMENT)
+	{
+		return;
+	}
+
+	state = (XMLNamespaceCheckState *) userData;
+
+	if (currentNode->children > 0)
+	{
+		collectXMLNamespaceDeclarations(currentNode, &attrCount, &nmspDeclCount, &state->declarations, false,
+										&attrsPrefixed, &attrsPrefixedCount);
+		attrsUnresolved = attrsPrefixedCount;
+	}
+
+	if (attrCount > 0)
+	{
+		unsigned int flagsSize = currentNode->children * sizeof(bool);
+
+		attrFlags = (bool *) palloc(flagsSize);
+		memset(attrFlags, false, flagsSize);
+	}
+
+	/*
+	 * 'nmspStack->counts[depth]' says how many declarations (counting from
+	 * position 0 in the stack) are valid for the current xml element.
+	 */
+	state->counts[depth] = nmspDeclCount;;
+	if (depth > 0)
+	{
+		state->counts[depth] += state->counts[depth - 1];
+	}
+
+	/* And now finally check prefixes used in the current element. */
+
+	Assert(elNmspName[0] != XNODE_CHAR_COLON);
+	elNmspColon = strchr(elNmspName, XNODE_CHAR_COLON);
+	if (elNmspColon != NULL)
+	{
+		elNmspNameResolved = false;
+	}
+
+	if (!elNmspNameResolved || attrsUnresolved > 0)
+	{
+		resolveNamespaces(&state->declarations, state->counts[depth], elNmspName, &elNmspNameResolved, attrsPrefixed,
+						  attrsPrefixedCount, attrFlags, &attrsUnresolved);
+	}
+
+	if (!elNmspNameResolved)
+	{
+		addUniqueNamespace(&state->result, getNamespaceName(elNmspName, elNmspColon));
+	}
+
+	if (attrsUnresolved > 0)
+	{
+		unsigned int j;
+
+		for (j = 0; j < attrsPrefixedCount; j++)
+		{
+			if (!attrFlags[j])
+			{
+				XMLNodeHdr	attrNode = attrsPrefixed[j];
+				char	   *attrName = XNODE_CONTENT(attrNode);
+				char	   *attrNmspColon;
+
+				Assert(attrName[0] != XNODE_CHAR_COLON);
+				attrNmspColon = strchr(attrName, XNODE_CHAR_COLON);
+				Assert(attrNmspColon != NULL);
+				addUniqueNamespace(&state->result, getNamespaceName(attrName, attrNmspColon));
+			}
+		}
+	}
+
+	if (attrCount > 0)
+	{
+		pfree(attrsPrefixed);
+		pfree(attrFlags);
+	}
+}
+
+/*
+ * Turn namespace prefix into NULL-terminated string.
+ */
+static char *
+getNamespaceName(char *name, char *colon)
+{
+	unsigned int elNmspLen = colon - name;
+	char	   *nmspNameCp;
+
+	Assert(elNmspLen > 0);
+	nmspNameCp = (char *) palloc(elNmspLen + 1);
+	memcpy(nmspNameCp, name, elNmspLen);
+	nmspNameCp[elNmspLen] = '\0';
+	return nmspNameCp;
+}
+
+static void
+addUniqueNamespace(XMLNodeContainer result, char *nmspName)
+{
+	XNodeListItem *item = result->content;
+	unsigned int i;
+
+	for (i = 0; i < result->position; i++)
+	{
+		char	   *nameStored;
+
+		Assert(item->kind == XNODE_LIST_ITEM_SINGLE_PTR);
+		nameStored = (char *) item->value.singlePtr;
+		if (strcmp(nameStored, nmspName) == 0)
+		{
+			return;
+		}
+	}
+
+	/* Not in the container yet, so add it. */
+	xmlnodePushSinglePtr(result, (void *) nmspName);
+}

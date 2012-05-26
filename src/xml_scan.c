@@ -1244,7 +1244,7 @@ addNodeToIgnoreList(XMLNodeHdr node, XMLScan scan)
 {
 	if (scan->ignoreList != NULL)
 	{
-		xmlnodePushSingle(scan->ignoreList, XNODE_OFFSET(node, scan->document));
+		xmlnodePushSingleNode(scan->ignoreList, XNODE_OFFSET(node, scan->document));
 	}
 }
 
@@ -2112,9 +2112,9 @@ isOnIgnoreList(XMLNodeHdr node, XMLScan scan)
 				continue;
 			}
 
-			if (item->kind == XNODE_LIST_ITEM_SINGLE)
+			if (item->kind == XNODE_LIST_ITEM_SINGLE_OFF)
 			{
-				if (item->value.single == nodeOff)
+				if (item->value.singleOff == nodeOff)
 				{
 					return true;
 				}

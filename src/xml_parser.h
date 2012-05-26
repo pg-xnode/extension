@@ -86,13 +86,13 @@ typedef enum XNodeXDeclAttNames
 typedef struct XMLParserStateData
 {
 	/*
-	 * Besides document parsing, the code is sometimes used to check attribute
-	 * value in a different context (e.g. when 'element constructor receives
-	 * the attributes in array)
+	 * Besides document/node parsing, the parser is sometimes used to check
+	 * attribute value in a different context (e.g. when 'element constructor
+	 * receives the attributes in array)
 	 *
 	 * 'attrValue' must be set to 'true' in such special cases.
 	 */
-	bool		attrValue;
+	XMLNodeKind targetKind;
 
 	char	   *inputText;
 	unsigned int sizeIn;
@@ -116,6 +116,18 @@ typedef struct XMLParserStateData
 	bool		saveHeader;
 	XMLNodeContainerData stack;
 	XMLDecl		decl;
+
+	/*
+	 * List of (non-defalut) namespace declarations, from the context (i.e.
+	 * currently being parsed) node) node up to the document root.
+	 */
+	XMLNodeContainerData nmspDecl;
+
+	/*
+	 * Set to true if at least one descendant (element or attribute) of the
+	 * root node uses namespace prefix.
+	 */
+	bool		nmspPrefix;
 } XMLNodeParserStateData;
 
 typedef struct XMLParserStateData *XMLParserState;
@@ -125,11 +137,12 @@ typedef struct XMLParserStateData *XMLParserState;
 #define UNEXPECTED_CHARACTER elog(ERROR, "Unexpected character at row %u, column %u.",\
 	state->srcRow, state->srcCol)
 
-extern void initXMLParserState(XMLParserState state, char *inputText, bool attrValue);
+extern void initXMLParserState(XMLParserState state, char *inputText, XMLNodeKind targetKind);
 extern void finalizeXMLParserState(XMLParserState state);
 
 extern void xmlnodeParseDoc(XMLParserState state);
 extern void xmlnodeParseNode(XMLParserState state);
+extern void readXMLName(XMLParserState state, bool whitespace, bool checkColons, bool separate, unsigned int *firstColPos);
 extern char *readXMLAttValue(XMLParserState state, bool output, bool *refs);
 extern bool xmlAttrValueIsNumber(char *value);
 

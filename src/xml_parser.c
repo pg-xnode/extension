@@ -104,17 +104,24 @@ typedef struct XMLNodeInternalData
 
 	bool		entPredef;
 	bool		headerSaved;
+
 	XMLNodeToken tokenType;
+
+	/*
+	 * Greater than zero if the node name has namespace prefix. Only important
+	 * for TOKEN_STAG or TOKEN_EMPTY_ELEMENT
+	 */
+	unsigned int nmspLength;
 } XMLNodeInternalData;
 
 typedef struct XMLNodeInternalData *XMLNodeInternal;
 
 static void processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowed);
+static void forgetNamespaceDeclarations(unsigned int count, XMLNodeContainer stack);
 static XMLNodeToken processTag(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowed,
-		   XMLNodeHdr *declAttrs, unsigned short *declAttrNum);
+		   XMLNodeHdr *declAttrs, unsigned short *declAttrNum, unsigned int *nmspDecls, unsigned int *attrsPrefixed);
 static void checkXMLDeclaration(XMLNodeHdr *declAttrs, unsigned int attCount, XMLDecl decl);
 static char *getEncodingSimplified(const char *original);
-static void readName(XMLParserState state, bool whitespace);
 static unsigned int readComment(XMLParserState state);
 static unsigned int readPI(XMLParserState state);
 static inline void readWhitespace(XMLParserState state, bool optional);
@@ -140,6 +147,9 @@ static void saveReferences(XMLParserState state, XMLNodeInternal nodeInfo, XMLCo
 			   unsigned short int children);
 static char *getContentToLog(char *input, unsigned int offset, unsigned int length, unsigned int maxLen);
 static void saveRootNodeHeader(XMLParserState state, XMLNodeKind kind);
+
+static void checkNamespaces(XMLParserState state, XMLNodeInternal nodeInfo, unsigned int attrsPrefixedCount);
+
 static unsigned int dumpAttributes(XMLCompNodeHdr element, char *input,
 			   char **output, unsigned int *pos);
 static void dumpContentEscaped(XMLNodeKind kind, char **output, char *input, unsigned int inputLen,
@@ -202,7 +212,7 @@ xmlnodeParseDoc(XMLParserState state)
 				 | TOKEN_STAG);
 	if (nodeInfo.tokenType != TOKEN_WHITESPACE && nodeInfo.tokenType != TOKEN_XMLDECL)
 	{
-		xmlnodePushSingle(&(state->stack), nodeInfo.nodeOut);
+		xmlnodePushSingleNode(&(state->stack), nodeInfo.nodeOut);
 	}
 	if ((nodeInfo.tokenType == TOKEN_XMLDECL) || ((nodeInfo.tokenType
 												   & TOKEN_MISC) != 0))
@@ -215,7 +225,7 @@ xmlnodeParseDoc(XMLParserState state)
 			processToken(state, &nodeInfo, TOKEN_MISC | TOKEN_DTD | TOKEN_STAG);
 			if (nodeInfo.tokenType != TOKEN_WHITESPACE)
 			{
-				xmlnodePushSingle(&(state->stack), nodeInfo.nodeOut);
+				xmlnodePushSingleNode(&(state->stack), nodeInfo.nodeOut);
 			}
 		} while ((nodeInfo.tokenType & TOKEN_MISC) != 0);
 	}
@@ -229,7 +239,7 @@ xmlnodeParseDoc(XMLParserState state)
 			processToken(state, &nodeInfo, TOKEN_MISC | TOKEN_DTD | TOKEN_STAG);
 			if (nodeInfo.tokenType != TOKEN_WHITESPACE)
 			{
-				xmlnodePushSingle(&(state->stack), nodeInfo.nodeOut);
+				xmlnodePushSingleNode(&(state->stack), nodeInfo.nodeOut);
 			}
 		} while ((nodeInfo.tokenType & TOKEN_MISC) != 0);
 	}
@@ -270,7 +280,7 @@ xmlnodeParseDoc(XMLParserState state)
 		}
 		if (nodeInfo.tokenType != TOKEN_WHITESPACE)
 		{
-			xmlnodePushSingle(&(state->stack), nodeInfo.nodeOut);
+			xmlnodePushSingleNode(&(state->stack), nodeInfo.nodeOut);
 		}
 		nextChar(state, true);
 	} while (!XNODE_INPUT_END(state));
@@ -288,7 +298,7 @@ xmlnodeParseNode(XMLParserState state)
 
 	nodeInfo.entPredef = false;
 	processToken(state, &nodeInfo, maskAll);
-	xmlnodePushSingle(&state->stack, nodeInfo.nodeOut);
+	xmlnodePushSingleNode(&state->stack, nodeInfo.nodeOut);
 	nextChar(state, true);
 
 	while (!XNODE_INPUT_END(state))
@@ -338,7 +348,7 @@ xmlnodeParseNode(XMLParserState state)
 			 */
 			if (!(nodeInfo.tokenType & (TOKEN_TEXT | TOKEN_REFERENCE)))
 			{
-				xmlnodePushSingle(&state->stack, nodeInfo.nodeOut);
+				xmlnodePushSingleNode(&state->stack, nodeInfo.nodeOut);
 			}
 			if (!XNODE_INPUT_END(state))
 			{
@@ -358,7 +368,7 @@ xmlnodeParseNode(XMLParserState state)
 			 * Process any other node type.
 			 */
 			processToken(state, &nodeInfo, maskAll);
-			xmlnodePushSingle(&state->stack, nodeInfo.nodeOut);
+			xmlnodePushSingleNode(&state->stack, nodeInfo.nodeOut);
 			nextChar(state, true);
 
 			/*
@@ -390,7 +400,7 @@ xmlnodeParseNode(XMLParserState state)
 
 		ensureSpace(sizeof(XMLNodeOffset), state);
 		rootOffPtr = (XMLNodeOffset *) (state->tree + state->dstPos);
-		*rootOffPtr = xmlnodePop(&state->stack);
+		*rootOffPtr = xmlnodePopOffset(&state->stack);
 		state->dstPos += sizeof(XMLNodeOffset);
 		SET_VARSIZE(state->result, state->dstPos + VARHDRSZ);
 	}
@@ -401,11 +411,11 @@ xmlnodeParseNode(XMLParserState state)
 }
 
 void
-initXMLParserState(XMLParserState state, char *inputText, bool attrValue)
+initXMLParserState(XMLParserState state, char *inputText, XMLNodeKind targetKind)
 {
-	unsigned int hdrSize = attrValue ? 0 : VARHDRSZ;
+	unsigned int hdrSize = (targetKind == XMLNODE_ATTRIBUTE || targetKind == XMLNODE_ELEMENT) ? 0 : VARHDRSZ;
 
-	state->attrValue = attrValue;
+	state->targetKind = targetKind;
 	state->srcPos = 0;
 	state->srcRow = 1;
 	state->srcCol = 1;
@@ -428,7 +438,7 @@ initXMLParserState(XMLParserState state, char *inputText, bool attrValue)
 	state->nestLevel = 0;
 	state->saveHeader = true;
 
-	if (state->attrValue)
+	if (state->targetKind == XMLNODE_ATTRIBUTE || state->targetKind == XMLNODE_ELEMENT)
 	{
 		state->sizeOut = 32;
 	}
@@ -440,22 +450,35 @@ initXMLParserState(XMLParserState state, char *inputText, bool attrValue)
 		elog(DEBUG1, "source xml size: %u, binary xml size (initial estimate): %u", state->sizeIn,
 			 state->sizeOut);
 	}
-	state->result = (char *) palloc(state->sizeOut + hdrSize);
-	state->tree = state->result + hdrSize;
 
-	if (!state->attrValue)
+	/*
+	 * Output storage is never needed if we're only checking element name
+	 * passed as an argument to xml.element() function.
+	 */
+	if (state->targetKind != XMLNODE_ELEMENT)
+	{
+		state->result = (char *) palloc(state->sizeOut + hdrSize);
+		state->tree = state->result + hdrSize;
+	}
+
+	if (state->targetKind != XMLNODE_ATTRIBUTE && state->targetKind != XMLNODE_ELEMENT)
 	{
 		xmlnodeContainerInit(&state->stack);
+		xmlnodeContainerInit(&state->nmspDecl);
 	}
 	state->decl = NULL;
+	state->nmspPrefix = false;
 }
 
 void
 finalizeXMLParserState(XMLParserState state)
 {
-	if (!state->attrValue)
+	if (state->targetKind != XMLNODE_ATTRIBUTE && state->targetKind != XMLNODE_ELEMENT)
 	{
 		xmlnodeContainerFree(&state->stack);
+
+		Assert(state->nmspDecl.position == 0);
+		xmlnodeContainerFree(&state->nmspDecl);
 	}
 	if (state->decl != NULL)
 	{
@@ -463,6 +486,89 @@ finalizeXMLParserState(XMLParserState state)
 		state->decl = NULL;
 	}
 }
+
+/*
+ * http://www.w3.org/TR/2008/REC-xml-20081126/#NT-Name
+ *
+ * 'whitespace' indicates whether a whitespace is expected right after the name.
+ *
+ * '*firstColPos' receives position of the first colon (relative to the first character of the name).
+ * If there's no colon in the name or if the colon is the first character, 0 is returned.
+ */
+void
+readXMLName(XMLParserState state, bool whitespace, bool checkColons, bool separate, unsigned int *firstColPos)
+{
+	unsigned int colons = 0;
+	unsigned int posInit = state->srcPos;
+	char	   *firstChar = state->c;
+
+	if (*state->c == '\0')
+	{
+		elog(ERROR, "expected xml name, found end of string.");
+	}
+	if (!XNODE_VALID_NAME_START(state->c))
+	{
+		elog(ERROR, "unrecognized leading character or xml name: '%c'", *state->c);
+	}
+
+	if (checkColons)
+	{
+		if (firstColPos != NULL)
+		{
+			*firstColPos = 0;
+		}
+		if (*firstChar == XNODE_CHAR_COLON)
+		{
+			colons = 1;
+		}
+	}
+
+	do
+	{
+		nextChar(state, separate);
+		if (checkColons && *state->c == XNODE_CHAR_COLON)
+		{
+			/*
+			 * If this is the first colon, set output argument 'firstColPos'
+			 * to its position.
+			 */
+			if (checkColons && colons == 0 && firstColPos != NULL)
+			{
+				*firstColPos = state->srcPos - posInit;
+			}
+
+			if (*(state->c - 1) == XNODE_CHAR_COLON)
+			{
+				elog(ERROR, "2 consecutive colons not allowed in xml name");
+			}
+			colons++;
+		}
+	} while (XNODE_VALID_NAME_CHAR(state->c));
+
+	if (colons >= 2)
+	{
+		elog(ERROR, "incorrect usage of namespace prefix (too many colons)");
+	}
+
+	/* Colon is valid leading character but alone would mean empty name. */
+	if ((state->c - firstChar) == 1 && *firstChar == XNODE_CHAR_COLON)
+	{
+		elog(ERROR, "colon is not allowed as a name");
+	}
+
+	if (whitespace)
+	{
+		if (!XNODE_WHITESPACE(state->c))
+		{
+			elog(ERROR, "whitespace expected at row %u, column %u.", state->srcRow, state->srcCol);
+		}
+		else
+		{
+			nextChar(state, separate);
+		}
+	}
+}
+
 
 /*
  * http://www.w3.org/TR/2008/REC-xml-20081126/#NT-AttValue
@@ -483,7 +589,7 @@ readXMLAttValue(XMLParserState state, bool output, bool *refs)
 
 	*refs = false;
 
-	if (!state->attrValue)
+	if (state->targetKind != XMLNODE_ATTRIBUTE)
 	{
 		if (*state->c != XNODE_CHAR_APOSTR && *state->c != XNODE_CHAR_QUOTMARK)
 		{
@@ -502,7 +608,7 @@ readXMLAttValue(XMLParserState state, bool output, bool *refs)
 	{
 		if (!XNODE_VALID_CHAR(state->c))
 		{
-			if (state->attrValue)
+			if (state->targetKind == XMLNODE_ATTRIBUTE)
 			{
 				elog(ERROR, "invalid XML character in attribute value");
 			}
@@ -515,7 +621,7 @@ readXMLAttValue(XMLParserState state, bool output, bool *refs)
 
 		if (*state->c == XNODE_CHAR_LARROW)
 		{
-			if (state->attrValue)
+			if (state->targetKind == XMLNODE_ATTRIBUTE)
 			{
 				elog(ERROR, "invalid XML character in attribute value");
 			}
@@ -538,7 +644,7 @@ readXMLAttValue(XMLParserState state, bool output, bool *refs)
 				unicode_to_utf8(value, (unsigned char *) utf8char);
 				if (!XNODE_VALID_CHAR(utf8char))
 				{
-					if (state->attrValue)
+					if (state->targetKind == XMLNODE_ATTRIBUTE)
 					{
 						elog(ERROR, "invalid XML character reference in attribute value");
 					}
@@ -581,7 +687,8 @@ readXMLAttValue(XMLParserState state, bool output, bool *refs)
 			 * need to decide whether the value is delimited by quotation mark
 			 * or by apostrophe.
 			 */
-			if (state->attrValue && (*state->c == XNODE_CHAR_APOSTR || *state->c == XNODE_CHAR_QUOTMARK))
+			if ((state->targetKind == XMLNODE_ATTRIBUTE) &&
+				(*state->c == XNODE_CHAR_APOSTR || *state->c == XNODE_CHAR_QUOTMARK))
 			{
 				if (delimFirst == '\0')
 				{
@@ -601,7 +708,7 @@ readXMLAttValue(XMLParserState state, bool output, bool *refs)
 			}
 		}
 
-		nextChar(state, state->attrValue);
+		nextChar(state, state->targetKind == XMLNODE_ATTRIBUTE);
 	}
 
 	if (output)
@@ -610,7 +717,7 @@ readXMLAttValue(XMLParserState state, bool output, bool *refs)
 		*(state->tree + state->dstPos) = '\0';
 		state->dstPos++;
 	}
-	return state->attrValue ? state->result : state->tree + pos;
+	return (state->targetKind == XMLNODE_ATTRIBUTE) ? state->result : state->tree + pos;
 }
 
 bool
@@ -625,6 +732,8 @@ xmlAttrValueIsNumber(char *value)
 	}
 	return (*end == '\0');
 }
+
+
 
 /*
  * Returns the last token processed. In case we start at STag, ETag is
@@ -788,7 +897,7 @@ processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowe
 			{
 				elog(ERROR, "XML declaration not allowed at row %u, column %u", tagRow, tagCol);
 			}
-			processTag(state, nodeInfo, TOKEN_XMLDECL, declAttrs, &declAttNum);
+			processTag(state, nodeInfo, TOKEN_XMLDECL, declAttrs, &declAttNum, NULL, NULL);
 			nodeInfo->tokenType = TOKEN_XMLDECL;
 			state->decl = palloc(sizeof(XMLDeclData));
 			checkXMLDeclaration(declAttrs, declAttNum, state->decl);
@@ -951,7 +1060,7 @@ processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowe
 		 * If a valid ETag name starts here, we need to record the starting
 		 * position.
 		 */
-		processTag(state, nodeInfo, TOKEN_ETAG, NULL, NULL);
+		processTag(state, nodeInfo, TOKEN_ETAG, NULL, NULL, NULL, NULL);
 		(state->nestLevel)--;
 		nodeInfo->tokenType = TOKEN_ETAG;
 		return;
@@ -965,6 +1074,8 @@ processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowe
 		unsigned int stackPosOrig = state->stack.position;
 		unsigned short int children,
 					attributes;
+		unsigned int nmspDecls = 0;
+		unsigned int attrsPrefixedCount = 0;
 
 		if (!(allowed & TOKEN_STAG))
 		{
@@ -974,7 +1085,23 @@ processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowe
 		{
 			elog(ERROR, "Invalid tag name at row %u, column %u.", tagRow, tagCol);
 		}
-		tagType = processTag(state, nodeInfo, TOKEN_STAG | TOKEN_EMPTY_ELEMENT, NULL, NULL);
+
+		tagType = processTag(state, nodeInfo, TOKEN_STAG | TOKEN_EMPTY_ELEMENT, NULL, NULL, &nmspDecls,
+							 &attrsPrefixedCount);
+
+		if ((nodeInfo->nmspLength > 0 || attrsPrefixedCount > 0) && !state->nmspPrefix)
+		{
+			state->nmspPrefix = true;
+		}
+
+		/*
+		 * Check if all namespaces are bound. This is only necessary for
+		 * document. Node will be checked if/when it gets added to a document.
+		 */
+		if (state->targetKind == XMLNODE_DOC && (nodeInfo->nmspLength > 0 || attrsPrefixedCount > 0))
+		{
+			checkNamespaces(state, nodeInfo, attrsPrefixedCount);
+		}
 
 		/*
 		 * The initial number of children equals to number of attributes
@@ -996,6 +1123,12 @@ processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowe
 			element->children = children;
 			saveReferences(state, nodeInfo, element, children);
 			saveContent(state, nodeInfo);
+
+			/*
+			 * The most recent namespace declarations might only be relevant
+			 * for one element.
+			 */
+			forgetNamespaceDeclarations(nmspDecls, &state->nmspDecl);
 			return;
 		}
 		else
@@ -1044,6 +1177,14 @@ processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowe
 					 * ETag has just been processed and thus the nesting level
 					 * was decreased
 					 */
+					Assert(childTag.tokenType == TOKEN_ETAG);
+
+					/*
+					 * Namespaces declared in the current STag are no longer
+					 * applicable.
+					 */
+					forgetNamespaceDeclarations(nmspDecls, &state->nmspDecl);
+
 					childrenProcessed = true;
 				}
 				if (!childrenProcessed)
@@ -1056,7 +1197,7 @@ processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowe
 					}
 					if (childTag.headerSaved)
 					{
-						xmlnodePushSingle(&state->stack, childTag.nodeOut);
+						xmlnodePushSingleNode(&state->stack, childTag.nodeOut);
 						children++;
 					}
 				}
@@ -1119,35 +1260,131 @@ processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowe
 	elog(ERROR, "Unrecognized tag at row %u, column %u.", tagRow, tagCol);
 }
 
+static void
+forgetNamespaceDeclarations(unsigned int count, XMLNodeContainer stack)
+{
+	if (count > 0)
+	{
+		unsigned short i;
+
+		for (i = 0; i < count; i++)
+		{
+			xmlnodePopOffset(stack);
+		}
+	}
+}
+
 /*
- * http://www.w3.org/TR/2008/REC-xml-20081126/#NT-Name
- *
- * 'whitespace' indicates whether a whitespace is expected right after the name.
+ * Check for the element being parsed whether its name as well as attribute names don't use
+ * unbound namespace prefixes.
  */
 static void
-readName(XMLParserState state, bool whitespace)
+checkNamespaces(XMLParserState state, XMLNodeInternal nodeInfo, unsigned int attrsPrefixedCount)
 {
-	if (!XNODE_VALID_NAME_START(state->c))
+	/*
+	 * The element name must be taken from the source text because the element
+	 * is not saved yet.
+	 */
+	char	   *elNmspName = state->inputText + nodeInfo->cntSrc;
+	bool		elNmspNameResolved = (nodeInfo->nmspLength == 0);
+	unsigned short attrsUnresolved;
+	XMLNodeHdr *attrsPrefixed = NULL;
+	bool	   *attrFlags = NULL;
+
+	if (attrsPrefixedCount > 0)
 	{
-		elog(ERROR, "name can't start with '%c'", *state->c);
+		unsigned int i = 0;
+		unsigned int posOrig;
+		unsigned int flagsSize = attrsPrefixedCount * sizeof(bool);
+		unsigned int nmspPrefLen = strlen(XNODE_NAMESPACE_DEF_PREFIX);
+
+		attrFlags = (bool *) palloc(flagsSize);
+		/* Set all to 'false' to indicate that none is resolved yet. */
+		memset(attrFlags, false, flagsSize);
+
+		/* Remember all the attributes that need to be checked. */
+		attrsPrefixed = (XMLNodeHdr *) palloc(attrsPrefixedCount * sizeof(XMLNodeHdr));
+
+		posOrig = state->stack.position;
+
+		/*
+		 * The total number of attributes that the current element has is not
+		 * easily available from the node itself. Therefore pick the most
+		 * recent prefixed attributes one after another, until the count
+		 * reaches 'attrsPrefixedCount'.
+		 */
+		while (i < attrsPrefixedCount)
+		{
+			XMLNodeOffset attrOff = xmlnodePopOffset(&state->stack);
+			XMLNodeHdr	attrNode = (XMLNodeHdr) (state->tree + attrOff);
+			char	   *attrName = XNODE_CONTENT(attrNode);
+
+			/*
+			 * Record prefixed attributes but omit namespace declarations
+			 * ('xmlns:...')
+			 */
+			if ((attrNode->flags & XNODE_NMSP_PREFIX) &&
+			  !(strncmp(attrName, XNODE_NAMESPACE_DEF_PREFIX, nmspPrefLen) &&
+				attrName[nmspPrefLen] == XNODE_CHAR_COLON))
+			{
+				attrsPrefixed[i] = attrNode;
+				i++;
+			}
+		}
+		/* Reset the original position of the stack. */
+		state->stack.position = posOrig;
+
+		attrsUnresolved = attrsPrefixedCount;
+	}
+	else
+	{
+		attrsUnresolved = 0;
 	}
 
-	do
+	if (!elNmspNameResolved || attrsUnresolved > 0)
 	{
-		nextChar(state, false);
-	} while (XNODE_VALID_NAME_CHAR(state->c));
-
-	if (whitespace)
-	{
-		if (!XNODE_WHITESPACE(state->c))
-		{
-			elog(ERROR, "whitespace expected at row %u, column %u.", state->srcRow, state->srcCol);
-		}
-		else
-		{
-			nextChar(state, false);
-		}
+		resolveNamespaces(&state->nmspDecl, state->nmspDecl.position, elNmspName, &elNmspNameResolved, attrsPrefixed,
+						  attrsPrefixedCount, attrFlags, &attrsUnresolved);
 	}
+
+	if (!elNmspNameResolved)
+	{
+		elog(ERROR, "element '%s' references unbound namespace",
+			 getContentToLog(state->inputText, nodeInfo->cntSrc, nodeInfo->cntLength, 16));
+	}
+
+	if (attrsUnresolved > 0)
+	{
+		unsigned int i;
+		XMLNodeHdr	attr;
+
+		/*
+		 * Multiple unresolved attributes may be found. Exactly one is
+		 * reported each time.
+		 */
+		for (i = 0; i < attrsPrefixedCount; i++)
+		{
+			if (!attrFlags[i])
+			{
+				break;
+			}
+		}
+		Assert(i < attrsPrefixedCount);
+		attr = attrsPrefixed[i];
+		elog(ERROR, " attribute '%s' of element '%s' references unbound namespace",
+			 XNODE_CONTENT(attr),
+			 getContentToLog(state->inputText, nodeInfo->cntSrc, nodeInfo->cntLength, 16));
+	}
+
+	if (attrFlags != NULL)
+	{
+		pfree(attrFlags);
+	}
+	if (attrsPrefixed != NULL)
+	{
+		pfree(attrsPrefixed);
+	}
+
 }
 
 /*
@@ -1158,27 +1395,64 @@ readName(XMLParserState state, bool whitespace)
  * 'allowed'	(STag | EmptyElement) or XML declaration. In this case,
  * exactly 1 bit can be set in 'allowed'.
  *
+ * '*nmspDecls' - namespaces declared in the tag (other than the default namespace).
+ *
+ * '*attrsPrefixed' - number of attributes having namespace prefix. Declarations
+ * (e.g. xmlns:me="...") are not counted here.
+ *
  * Both 'declAttrs' and 'declAttrNum' must be not-NULL if XML declaration is
  * to be parsed
  */
 
 static XMLNodeToken
 processTag(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowed,
-		   XMLNodeHdr *declAttrs, unsigned short *declAttrNum)
+		   XMLNodeHdr *declAttrs, unsigned short *declAttrNum, unsigned int *nmspDecls, unsigned int *attrsPrefixed)
 {
 
 	bool		mustEnd = false;
 	unsigned short attributes = 0;
 	unsigned int stackInit = state->stack.position;
-
+	unsigned int firstColPos = 0;
+	char	   *elNameSrc = state->c;
 	unsigned int declAttrFirst = 0;
+	bool		defNamespaceDeclared = false;
+	unsigned int nmspDefPrefixLen = strlen(XNODE_NAMESPACE_DEF_PREFIX);
+	unsigned int elNameLen;
+
+	if (nmspDecls != NULL)
+	{
+		*nmspDecls = 0;
+	}
+	if (attrsPrefixed != NULL)
+	{
+		*attrsPrefixed = 0;
+	}
 
 	/*
 	 * We're at the first character of the name.
 	 */
 	nodeInfo->cntSrc = state->srcPos;
-	readName(state, false);
-	nodeInfo->cntLength = state->srcPos - nodeInfo->cntSrc;
+	readXMLName(state, false, true, false, &firstColPos);
+	nodeInfo->nmspLength = firstColPos;
+
+	if (firstColPos > 0)
+	{
+		if (firstColPos == nmspDefPrefixLen &&
+			strncmp(elNameSrc, XNODE_NAMESPACE_DEF_PREFIX, firstColPos) == 0)
+		{
+			elog(ERROR, "tag name must not have '%s' as a prefix", XNODE_NAMESPACE_DEF_PREFIX);
+		}
+	}
+	else
+	{
+		/* If colon is the first character, ignore it. */
+		if (*elNameSrc == XNODE_CHAR_COLON)
+		{
+			nodeInfo->cntSrc++;
+		}
+	}
+
+	nodeInfo->cntLength = elNameLen = state->srcPos - nodeInfo->cntSrc;
 
 	while (true)
 	{
@@ -1235,7 +1509,7 @@ processTag(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowed,
 
 						for (i = attributes; i > 0; i--)
 						{
-							declAttrs[i - 1] = (XMLNodeHdr) (state->tree + xmlnodePop(&state->stack));
+							declAttrs[i - 1] = (XMLNodeHdr) (state->tree + xmlnodePopOffset(&state->stack));
 						}
 						*declAttrNum = attributes;
 					}
@@ -1251,6 +1525,7 @@ processTag(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowed,
 		{
 			elog(ERROR, "Attribute or tag end expected at row %u, column %u.", state->srcRow, state->srcCol);
 		}
+
 		if (!XNODE_WHITESPACE(state->c))
 		{
 			UNEXPECTED_CHARACTER;
@@ -1267,14 +1542,16 @@ processTag(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowed,
 			 */
 			if (XNODE_VALID_NAME_START(state->c))
 			{
-				unsigned int nameStart,
+				unsigned int nameStartPos,
 							nameLength;
 				XMLNodeHdr	attrNode;
 				XNodeListItem *stackItems;
 				unsigned short int i;
 				char	   *attrName,
 						   *attrValue;
+				char	   *attrNameSrc = state->c;
 				bool		refsInValue;
+				bool		emptyAllowed = true;
 
 				if (allowed == TOKEN_ETAG)
 				{
@@ -1287,9 +1564,37 @@ processTag(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowed,
 						 XMLNODE_MAX_CHILDREN, getContentToLog(state->inputText, nodeInfo->cntSrc, nodeInfo->cntLength,
 															   16));
 				}
-				nameStart = state->srcPos;
-				readName(state, false);
-				nameLength = state->srcPos - nameStart;
+				nameStartPos = state->srcPos;
+
+				readXMLName(state, false, true, false, &firstColPos);
+
+				if (firstColPos > 0)
+				{
+					if (firstColPos == nmspDefPrefixLen &&
+						strncmp(attrNameSrc, XNODE_NAMESPACE_DEF_PREFIX, firstColPos) == 0)
+					{
+						/* (non-default) namespace declaration. */
+						emptyAllowed = false;
+					}
+					else
+					{
+						/* namespace use */
+						if (attrsPrefixed != NULL)
+						{
+							(*attrsPrefixed)++;
+						}
+					}
+				}
+				else
+				{
+					/* If colon is the first character, ignore it. */
+					if (*attrNameSrc == XNODE_CHAR_COLON)
+					{
+						nameStartPos++;
+					}
+				}
+
+				nameLength = state->srcPos - nameStartPos;
 
 				if (XNODE_WHITESPACE(state->c))
 				{
@@ -1318,7 +1623,7 @@ processTag(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowed,
 				 *
 				 */
 
-				xmlnodePushSingle(&state->stack, state->dstPos);
+				xmlnodePushSingleNode(&state->stack, state->dstPos);
 				if (allowed == TOKEN_XMLDECL)
 				{
 					if (attributes == 0)
@@ -1334,9 +1639,14 @@ processTag(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowed,
 				attrNode = (XMLNodeHdr) (state->tree + state->dstPos);
 				attrNode->kind = XMLNODE_ATTRIBUTE;
 				attrNode->flags = 0;
+
+				if (firstColPos > 0)
+				{
+					attrNode->flags |= XNODE_NMSP_PREFIX;
+				}
 				state->dstPos += sizeof(XMLNodeHdrData);
 				attrName = state->tree + state->dstPos;
-				memcpy(attrName, state->inputText + nameStart, nameLength);
+				memcpy(attrName, state->inputText + nameStartPos, nameLength);
 				*(state->tree + state->dstPos + nameLength) = '\0';
 				state->dstPos += nameLength + 1;
 
@@ -1347,20 +1657,66 @@ processTag(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowed,
 				for (i = 0; i < attributes; i++)
 				{
 					char	   *nameOld;
-					XMLNodeHdr	attrOld = (XMLNodeHdr) (state->tree + stackItems->value.single);
+					XMLNodeHdr	attrOld = (XMLNodeHdr) (state->tree + stackItems->value.singleOff);
 
 					nameOld = (char *) attrOld + sizeof(XMLNodeHdrData);
 					stackItems++;
 					if (strcmp(attrName, nameOld) == 0)
 					{
 						elog(ERROR, "Attribute '%s' of node '%s' is not unique.",
-							 getContentToLog(state->inputText, nameStart, nameLength, 16),
+							 getContentToLog(state->inputText, nameStartPos, nameLength, 16),
 							 getContentToLog(state->inputText, nodeInfo->cntSrc, nodeInfo->cntLength, 16));
+					}
+				}
+
+				if (strncmp(attrName, XNODE_NAMESPACE_DEF_PREFIX, nmspDefPrefixLen) == 0)
+				{
+					/*
+					 * Both xmlns="..." and xmlns:="..." are valid
+					 * declarations of the default namespace.
+					 */
+					if (nameLength == nmspDefPrefixLen ||
+						(nameLength == (nmspDefPrefixLen + 1) && attrName[nmspDefPrefixLen] == XNODE_CHAR_COLON))
+					{
+
+						if (defNamespaceDeclared)
+						{
+							elog(ERROR, "default name space is already declared for element '%s'",
+								 getContentToLog(state->inputText, nodeInfo->cntSrc, nodeInfo->cntLength, 16));
+						}
+						else
+						{
+							defNamespaceDeclared = true;
+						}
+					}
+					else if (attrName[nmspDefPrefixLen] == XNODE_CHAR_COLON)
+					{
+						/*
+						 * Declaration of non-default namespace, e.g.
+						 * xmlns:a="..."
+						 */
+						char	   *nmspName;
+
+						/* readName() does not allow for 2 or more colons. */
+						Assert(attrName[nameLength - 1] != XNODE_CHAR_COLON);
+
+						nmspName = attrName + nmspDefPrefixLen + 1;
+						xmlnodePushSinglePtr(&state->nmspDecl, (void *) nmspName);
+						if (nmspDecls != NULL)
+						{
+							(*nmspDecls)++;
+						}
 					}
 				}
 
 				quotMark = *state->c;
 				attrValue = readXMLAttValue(state, true, &refsInValue);
+
+				if (strlen(attrValue) == 0 && !emptyAllowed)
+				{
+					elog(ERROR, "attribute '%s' is not allowed to have empty value", attrName);
+				}
+
 				if (refsInValue)
 				{
 					attrNode->flags |= XNODE_ATTR_CONTAINS_REF;
@@ -1383,8 +1739,9 @@ processTag(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowed,
 			}
 		}
 	}
-	/* keep the compiler silent */
-	return 0;
+
+	return 0;					/* Keep the compiler silent - control should
+								 * never get here. */
 }
 
 /*
@@ -1634,7 +1991,7 @@ readDTD_CP(XMLParserState state)
 {
 	if (XNODE_VALID_NAME_START(state->c))
 	{
-		readName(state, false);
+		readXMLName(state, false, false, false, NULL);
 	}
 	else
 	{
@@ -1749,7 +2106,7 @@ readDTDEntityValue(XMLParserState state)
 			 * http://www.w3.org/TR/2008/REC-xml-20081126/#NT-PERef erence
 			 */
 			nextChar(state, false);
-			readName(state, false);
+			readXMLName(state, false, false, false, NULL);
 			if (*state->c != XNODE_CHAR_SEMICOLON)
 			{
 				UNEXPECTED_CHARACTER;
@@ -1803,7 +2160,7 @@ readReference(XMLParserState state, pg_wchar *value)
 		}
 		if (digits == 0)
 		{
-			if (state->attrValue)
+			if (state->targetKind == XMLNODE_ATTRIBUTE)
 			{
 				elog(ERROR, "decimal or hexadecimal value expected in reference");
 			}
@@ -1827,12 +2184,12 @@ readReference(XMLParserState state, pg_wchar *value)
 		/*
 		 * http://www.w3.org/TR/2008/REC-xml-20081126/#NT-EntityRef
 		 */
-		readName(state, false);
+		readXMLName(state, false, false, false, NULL);
 	}
 
 	if (*state->c != XNODE_CHAR_SEMICOLON)
 	{
-		if (state->attrValue)
+		if (state->targetKind == XMLNODE_ATTRIBUTE)
 		{
 			elog(ERROR, "'%c' expected in reference", XNODE_CHAR_SEMICOLON);
 		}
@@ -1961,7 +2318,7 @@ processDTDNode(XMLParserState state)
 		else if (readSpecialString(specStringsDTD, XNODE_STR_DTD_ELEMENT, state))
 		{
 			readWhitespace(state, false);
-			readName(state, false);
+			readXMLName(state, false, false, false, NULL);
 			nextChar(state, false);
 			if (!readSpecialString(specStringsDTD, XNODE_STR_DTD_EMPTY, state) &&
 				!readSpecialString(specStringsDTD, XNODE_STR_DTD_ANY, state))
@@ -1984,7 +2341,7 @@ processDTDNode(XMLParserState state)
 						{
 							readWhitespace(state, true);
 							nextChar(state, false);
-							readName(state, false);
+							readXMLName(state, false, false, false, NULL);
 							names++;
 							readWhitespace(state, true);
 						}
@@ -2041,7 +2398,7 @@ processDTDNode(XMLParserState state)
 				UNEXPECTED_CHARACTER;
 			}
 			readWhitespace(state, false);
-			readName(state, false);
+			readXMLName(state, false, false, false, NULL);
 			while (XNODE_WHITESPACE(state->c))
 			{
 				nextChar(state, false);
@@ -2056,7 +2413,7 @@ processDTDNode(XMLParserState state)
 					char	   *type;
 					bool		found = false;
 
-					readName(state, true);
+					readXMLName(state, true, false, false, NULL);
 					for (i = 0; i < XNODE_DTD_ATTR_TYPES; i++)
 					{
 						type = dtdAttTypes[i];
@@ -2086,7 +2443,7 @@ processDTDNode(XMLParserState state)
 							}
 							nextChar(state, false);
 							readWhitespace(state, true);
-							readName(state, false);
+							readXMLName(state, false, false, false, NULL);
 							readWhitespace(state, true);
 							while (*state->c != XNODE_CHAR_RBRKT_RND)
 							{
@@ -2096,7 +2453,7 @@ processDTDNode(XMLParserState state)
 								}
 								nextChar(state, false);
 								readWhitespace(state, true);
-								readName(state, false);
+								readXMLName(state, false, false, false, NULL);
 								readWhitespace(state, true);
 							}
 							nextChar(state, false);
@@ -2172,7 +2529,7 @@ processDTDNode(XMLParserState state)
 				 */
 				nextChar(state, false);
 				readWhitespace(state, false);
-				readName(state, true);
+				readXMLName(state, true, false, false, NULL);
 				if (*state->c == XNODE_CHAR_QUOTMARK || *state->c == XNODE_CHAR_APOSTR)
 				{
 					readDTDEntityValue(state);
@@ -2191,7 +2548,7 @@ processDTDNode(XMLParserState state)
 			}
 			else
 			{
-				readName(state, true);
+				readXMLName(state, true, false, false, NULL);
 
 				/*
 				 * http://www.w3.org/TR/2008/REC-xml-20081126/# NT-EntityDef
@@ -2216,7 +2573,7 @@ processDTDNode(XMLParserState state)
 						if (readSpecialString(specStringsDTD, XNODE_STR_DTD_NDATA, state))
 						{
 							readWhitespace(state, false);
-							readName(state, false);
+							readXMLName(state, false, false, false, NULL);
 						}
 					}
 				}
@@ -2231,7 +2588,7 @@ processDTDNode(XMLParserState state)
 		{
 			readWhitespace(state, false);
 			nextChar(state, false);
-			readName(state, true);
+			readXMLName(state, true, false, false, NULL);
 			if (readSpecialString(specStringsDTD, XNODE_STR_DTD_PUBLIC, state))
 			{
 				readWhitespace(state, false);
@@ -2428,7 +2785,7 @@ ensureSpace(unsigned int size, XMLParserState state)
 
 	while (state->dstPos + size > state->sizeOut)
 	{
-		if (!state->attrValue)
+		if (state->targetKind != XMLNODE_ATTRIBUTE)
 		{
 			state->sizeOut += state->sizeOut >> XNODE_OUT_OVERHEAD_BITS;
 		}
@@ -2441,7 +2798,7 @@ ensureSpace(unsigned int size, XMLParserState state)
 
 	if (chunks > 0)
 	{
-		unsigned int hdrSize = state->attrValue ? 0 : VARHDRSZ;
+		unsigned int hdrSize = (state->targetKind == XMLNODE_ATTRIBUTE) ? 0 : VARHDRSZ;
 
 		state->result = (char *) repalloc(state->result, state->sizeOut
 										  + hdrSize);
@@ -2502,6 +2859,12 @@ saveNodeHeader(XMLParserState state, XMLNodeInternal nodeInfo, char flags)
 			elog(ERROR, "saveNodeHeader(): unrecognized token type: %u", nodeInfo->tokenType);
 			break;
 	}
+
+	if (node->kind == XMLNODE_ELEMENT && nodeInfo->nmspLength > 0)
+	{
+		node->flags |= XNODE_NMSP_PREFIX;
+	}
+
 	state->dstPos += hdrSize;
 	nodeInfo->headerSaved = true;
 }
@@ -2534,7 +2897,7 @@ saveReferences(XMLParserState state, XMLNodeInternal nodeInfo,
 	 * Find out the range of reference values and the corresponding storage.
 	 */
 	XMLNodeOffset dist = nodeInfo->nodeOut -
-	state->stack.content[state->stack.position - children].value.single;
+	state->stack.content[state->stack.position - children].value.singleOff;
 	char		bwidth = getXMLNodeOffsetByteWidth(dist);
 	unsigned int refsTotal = children * bwidth;
 	char	   *childOffTarg;
@@ -2547,7 +2910,7 @@ saveReferences(XMLParserState state, XMLNodeInternal nodeInfo,
 	childOffTarg = XNODE_LAST_REF(compNode);
 	for (i = 0; i < children; i++)
 	{
-		XMLNodeOffset childOffset = xmlnodePop(&state->stack);
+		XMLNodeOffset childOffset = xmlnodePopOffset(&state->stack);
 
 		/*
 		 * Distance between parent and child
@@ -2641,7 +3004,7 @@ saveRootNodeHeader(XMLParserState state, XMLNodeKind kind)
 	Assert(state->stack.position >= 1);
 	childCount = state->stack.position;
 	rootOffSrc = state->stack.content;
-	bwidth = getXMLNodeOffsetByteWidth(rootNodeOff - rootOffSrc->value.single);
+	bwidth = getXMLNodeOffsetByteWidth(rootNodeOff - rootOffSrc->value.singleOff);
 	refsTotal = childCount * bwidth;
 	ensureSpace(rootHdrSz + refsTotal, state);
 	state->dstPos += rootHdrSz;
@@ -2658,7 +3021,7 @@ saveRootNodeHeader(XMLParserState state, XMLNodeKind kind)
 	rootOffTarg = XNODE_FIRST_REF(rootNode);
 	for (i = 0; i < childCount; i++)
 	{
-		XMLNodeOffset dist = rootNodeOff - rootOffSrc->value.single;
+		XMLNodeOffset dist = rootNodeOff - rootOffSrc->value.singleOff;
 
 		writeXMLNodeOffset(dist, &rootOffTarg, bwidth, true);
 		rootOffSrc++;

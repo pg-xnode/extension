@@ -102,7 +102,86 @@ updateXMLDocument(XMLScan xscan, xmldoc doc, XMLNodeAction action, XMLNodeHdr ne
 
 			if (action == XMLNODE_ACTION_ADD)
 			{
+				unsigned int unresolvedNmspCount;
+				char	  **unresolvedNamespaces = getUnresolvedXMLNamespaces(newNode, &unresolvedNmspCount);
+
+				if (unresolvedNmspCount > 0)
+				{
+					XMLScanOneLevel scanLevel;
+					XMLNodeContainerData declarations;
+					unsigned int i,
+								j;
+
+					/*
+					 * Zero-depth target path is not allowed, so the state
+					 * should always exist.
+					 */
+					Assert(xscan->state != NULL);
+
+					xmlnodeContainerInit(&declarations);
+
+					/*
+					 * Collect namespace declarations throughout the stack up
+					 * to the document root.
+					 */
+					scanLevel = XMLSCAN_CURRENT_LEVEL(xscan);
+					do
+					{
+						XMLCompNodeHdr parentNode = scanLevel->parent;
+
+						if (parentNode->common.kind == XMLNODE_ELEMENT)
+						{		/* Otherwise it must be XMLNODE_DOC. */
+							collectXMLNamespaceDeclarations(parentNode, NULL, NULL, &declarations, true,
+															NULL, NULL);
+						}
+						scanLevel = scanLevel->up;
+					} while (scanLevel != NULL);
+
+					/*
+					 * If we're adding node *into* the target element, then
+					 * it's namespace declarations are important too. (If
+					 * trying to insert into non-element, no need to check:
+					 * error will be raised later.)
+					 */
+					if (addMode == XMLADD_INTO && targNode->kind == XMLNODE_ELEMENT)
+					{
+						collectXMLNamespaceDeclarations((XMLCompNodeHdr) targNode, NULL, NULL, &declarations, true,
+														NULL, NULL);
+					}
+
+					/* Examine each unresolved namespace. */
+					for (i = 0; i < unresolvedNmspCount; i++)
+					{
+						char	   *namespace = unresolvedNamespaces[i];
+						XNodeListItem *declItem = declarations.content;
+						bool		found = false;
+
+						for (j = 0; j < declarations.position; j++)
+						{
+							char	   *decl;
+
+							Assert(declItem->kind == XNODE_LIST_ITEM_SINGLE_PTR);
+
+							decl = (char *) declItem->value.singlePtr;
+							if (strcmp(namespace, decl) == 0)
+							{
+								found = true;
+								break;
+							}
+							declItem++;
+						}
+
+						if (!found)
+						{
+							elog(ERROR, "can't add node to a document, the resulting document would use unbound namespace '%s'",
+								 namespace);
+						}
+					}
+					xmlnodeContainerFree(&declarations);
+				}
+
 				result = xmlnodeAdd(result, xscan, targNode, newNode, addMode, freeSrc, &ignore);
+
 				if (xscan->ignoreList)
 				{
 					xmlnodeAddListItem(xscan->ignoreList, &ignore);
@@ -375,7 +454,7 @@ xmlnodeAdd(xmldoc doc, XMLScan xscan, XMLNodeHdr targNode, XMLNodeHdr newNode,
 					 * new, possibly smaller subtree, as opposed to the
 					 * original one).
 					 */
-					if (item->kind == XNODE_LIST_ITEM_SINGLE && item->value.single == targNdOff)
+					if (item->kind == XNODE_LIST_ITEM_SINGLE_OFF && item->value.singleOff == targNdOff)
 					{
 						item->valid = false;
 					}
@@ -1156,11 +1235,11 @@ adjustIgnoreList(XMLScan scan, XMLNodeOffset minimum, int shift)
 	{
 		XNodeListItem *item = cont->content + i;
 
-		if (item->kind == XNODE_LIST_ITEM_SINGLE)
+		if (item->kind == XNODE_LIST_ITEM_SINGLE_OFF)
 		{
-			if (item->value.single >= minimum)
+			if (item->value.singleOff >= minimum)
 			{
-				item->value.single += shift;
+				item->value.singleOff += shift;
 			}
 		}
 		else

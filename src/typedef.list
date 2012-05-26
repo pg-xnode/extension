@@ -5,6 +5,7 @@ XMLCompNodeHdrData
 XMLDecl
 xmldoc
 xmldoctype
+XMLNamespaceCheckState
 xmlnode
 XMLNodeAction
 XMLNodeCommonData

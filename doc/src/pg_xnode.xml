@@ -159,6 +159,11 @@ FROM nodes;
     </footnote>
    </para>
    <para>
+    If namespace prefixes are used, each must be bound, i.e. each namespace used must be declared
+    at the appropriate level of the document tree. This restriction does not apply to
+    <literal>xml.node</literal> type.
+   </para>
+   <para>
     Example:
     <programlisting>
 CREATE TABLE ecosystems (

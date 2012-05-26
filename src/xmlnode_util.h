@@ -13,9 +13,10 @@
 
 extern void xmlnodeContainerInit(XMLNodeContainer cont);
 extern void xmlnodeContainerFree(XMLNodeContainer cont);
-extern void xmlnodePushSingle(XMLNodeContainer stack, XMLNodeOffset value);
+extern void xmlnodePushSingleNode(XMLNodeContainer stack, XMLNodeOffset valu);
+extern void xmlnodePushSinglePtr(XMLNodeContainer cont, void *item);
 extern void xmlnodeAddListItem(XMLNodeContainer cont, XNodeListItem *itemNew);
-extern XMLNodeOffset xmlnodePop(XMLNodeContainer stack);
+extern XMLNodeOffset xmlnodePopOffset(XMLNodeContainer stack);
 
 extern unsigned int getXMLNodeSize(XMLNodeHdr node, bool subtree);
 extern char *getXMLNodeKindStr(XMLNodeKind k);
@@ -29,7 +30,7 @@ extern XMLNodeHdr getNextXMLNode(XMLScan xscan, bool removed);
 extern void checkXMLWellFormedness(XMLCompNodeHdr root);
 extern int	utf8cmp(char *c1, char *c2);
 
-extern double xnodeGetNumValue(char *str, bool raiseError, bool * isNumber);
+extern double xnodeGetNumValue(char *str, bool raiseError, bool *isNumber);
 extern char *getElementNodeStr(XMLCompNodeHdr element);
 extern char *getNonElementNodeStr(XMLNodeHdr node);
 
@@ -50,11 +51,12 @@ typedef struct
 	XMLNodeHdr *stack;
 	unsigned short stackSize;
 	unsigned short depth;
+	bool		attributes;
 	void	   *userData;
 	VisitXMLNode visitor;
 } XMLTreeWalkerContext;
 
-extern void walkThroughXMLTree(XMLNodeHdr rootNode, VisitXMLNode visitor, void *userData);
+extern void walkThroughXMLTree(XMLNodeHdr rootNode, VisitXMLNode visitor, bool attributes, void *userData);
 
 extern void dumpXMLNodeDebug(StringInfo output, char *data, XMLNodeOffset rootOff);
 
@@ -62,6 +64,32 @@ extern bool xmlStringIsNumber(char *str, double *numValue, char **end, bool skip
 
 extern bool checkFragmentForAttributes(XMLCompNodeHdr fragment);
 
+extern char **getUnresolvedXMLNamespaces(XMLNodeHdr node, unsigned int *count);
+extern void resolveNamespaces(XMLNodeContainer declarations, unsigned int declsActive, char *elNmspName,
+				  bool *elNmspNameResolved, XMLNodeHdr *attrsPrefixed, unsigned int attrsPrefixedCount, bool *attrFlags,
+				  unsigned short *attrsUnresolved);
+extern void collectXMLNamespaceDeclarations(XMLCompNodeHdr currentNode, unsigned int *attrCount,
+								unsigned int *nmspDeclCount, XMLNodeContainer declarations, bool declsOnly, XMLNodeHdr **attrsPrefixed,
+								unsigned int *attrsPrefixedCount);
 
+typedef struct XMLNamespaceCheckState
+{
+	XMLNodeContainerData declarations;
+
+	/* How many (non-unique) declarations each level of the stack adds. */
+	unsigned int counts[XMLTREE_WALKER_MAX_DEPTH];
+
+	/*
+	 * Array of unbound namespaces (without 'xmlns:' prefix). Each element of
+	 * this array is 'unique'.
+	 */
+
+	/*
+	 * TODO Enhance the container so that value can be added at any position.
+	 * Then keep 'result' sorted and use binary search when checking for
+	 * duplicate values.
+	 */
+	XMLNodeContainerData result;
+} XMLNamespaceCheckState;
 
 #endif   /* XMLNODE_UTIL_H_ */

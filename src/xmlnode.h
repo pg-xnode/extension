@@ -37,6 +37,8 @@
 #define XNODE_CHAR_UNDERSCORE	0x5f
 #define XNODE_CHAR_PIPE			0x7c
 
+#define XNODE_NAMESPACE_DEF_PREFIX		"xmlns"
+
 typedef enum XMLNodeKind
 {
 	XMLNODE_DOC = 0,
@@ -186,7 +188,8 @@ extern void writeXMLNodeOffset(XMLNodeOffset ref, char **output, unsigned char b
 
 typedef enum XNodeListItemKind
 {
-	XNODE_LIST_ITEM_SINGLE,
+	XNODE_LIST_ITEM_SINGLE_OFF,
+	XNODE_LIST_ITEM_SINGLE_PTR,
 	XNODE_LIST_ITEM_RANGE
 } XNodeListItemKind;
 
@@ -204,7 +207,8 @@ typedef struct XNodeListItem
 
 	union
 	{
-		XMLNodeOffset single;
+		XMLNodeOffset singleOff;
+		void	   *singlePtr;
 		XNodeOffsetRange range;
 	}			value;
 } XNodeListItem;
@@ -220,6 +224,7 @@ typedef struct XMLNodeContainerData
 	unsigned int position;
 	XNodeListItem *content;
 } XMLNodeContainerData;
+
 typedef struct XMLNodeContainerData *XMLNodeContainer;
 
 
@@ -238,7 +243,9 @@ extern bool isXMLCharInInterval(char *c, UTF8Interval *intervals, unsigned short
 
 
 /*
- * Flags that are supposed to be generic must be at the highest positions.
+ * Flags that are supposed to be generic (i.e. used for 2 or more nodes)
+ * must be at the highest positions.
+ *
  * Kind-specific flags are expected at the lowest positions.
  */
 
@@ -247,6 +254,8 @@ extern bool isXMLCharInInterval(char *c, UTF8Interval *intervals, unsigned short
  * ...). For CDATA node set if it contains	'<', '>' or '&'
  */
 #define XNODE_TEXT_SPEC_CHARS		(1 << 7)
+/* Namespace declaration or use. */
+#define XNODE_NMSP_PREFIX			(1 << 6)
 
 /* Bits 0 and 1 indicate maximum byte width of the distance between parent and child */
 #define XNODE_REF_BWIDTH				0x03
@@ -254,6 +263,7 @@ extern bool isXMLCharInInterval(char *c, UTF8Interval *intervals, unsigned short
 #define XNODE_DOC_XMLDECL				(1 << 3)
 
 #define XNODE_ATTR_APOSTROPHE			(1 << 0)
+
 /* Set if apostrophe is used as value delimiter. */
 #define XNODE_ATTR_CONTAINS_REF			(1 << 1)
 /*
@@ -302,5 +312,6 @@ typedef enum XMLNodeAction
  */
 extern Datum xmlnode_children(PG_FUNCTION_ARGS);
 extern Datum xmlelement(PG_FUNCTION_ARGS);
+
 
 #endif   /* XMLNODE_H */
