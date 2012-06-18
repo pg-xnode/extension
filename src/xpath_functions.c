@@ -6,7 +6,7 @@
 
 #include "xpath.h"
 
-static char *getEmptyString();
+static char *getEmptyString(void);
 
 /*
  * IMPORTANT
@@ -424,7 +424,7 @@ xpathConcat(XPathExprState exprState, unsigned short nargs, XPathExprOperandValu
 }
 
 static char *
-getEmptyString()
+getEmptyString(void)
 {
 	char	   *result = (char *) palloc(sizeof(char));
 

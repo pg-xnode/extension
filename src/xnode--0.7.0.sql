@@ -226,4 +226,29 @@ CREATE FUNCTION remove(doc, @extschema@.path)
 	STRICT;
 
 
+CREATE FUNCTION template_in(cstring) RETURNS template
+	as 'MODULE_PATHNAME', 'xnode_template_in'
+	LANGUAGE C
+	IMMUTABLE
+	STRICT;
 
+CREATE FUNCTION template_out(template) RETURNS cstring
+	as 'MODULE_PATHNAME', 'xnode_template_out'
+	LANGUAGE C
+	IMMUTABLE
+	STRICT;
+
+CREATE TYPE template (
+	internallength = variable,
+	input = template_in,
+	output = template_out,
+	alignment = int,
+	storage = extended
+);
+
+CREATE FUNCTION node(template, text[], record) 
+	RETURNS node
+	as 'MODULE_PATHNAME', 'xnode_from_template'
+	LANGUAGE C
+	IMMUTABLE
+	STRICT;

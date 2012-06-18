@@ -520,18 +520,18 @@ XPathExprState
 prepareXPathExpression(XPathExpression exprOrig, XMLCompNodeHdr ctxElem,
 					   xmldoc document, XPathHeader xpHdr, XMLScan xscan)
 {
-	XPathExpression expr = (XPathExpression) palloc(exprOrig->common.size);
-	XPathExprState state = (XPathExprState) palloc(sizeof(XPathExprStateData));
+	XPathExpression expr;
+	XPathExprState state = createXPathVarCache(XPATH_VAR_CACHE_DEF_SIZE);
 
+	expr = (XPathExpression) palloc(exprOrig->common.size);
 	memcpy(expr, exprOrig, exprOrig->common.size);
 	state->expr = expr;
 
-	allocXPathExpressionVarCache(state, XPATH_VAR_STRING, true);
-	allocXPathExpressionVarCache(state, XPATH_VAR_NODE_SINGLE, true);
-	allocXPathExpressionVarCache(state, XPATH_VAR_NODE_ARRAY, true);
-
 	/* Replace attribute names with the values found in the current node.  */
-	substituteAttributes(state, ctxElem);
+	if (ctxElem != NULL)
+	{
+		substituteAttributes(state, ctxElem);
+	}
 
 	if (expr->npaths > 0)
 	{
@@ -555,13 +555,19 @@ prepareXPathExpression(XPathExpression exprOrig, XMLCompNodeHdr ctxElem,
  * Size is estimated for the initial allocation so that reallocation may not be needed.
  */
 void
-allocXPathExpressionVarCache(XPathExprState state, XPathExprVar varKind, bool init)
+allocXPathExpressionVarCache(XPathExprState state, XPathExprVar varKind, unsigned int increment, bool init)
 {
-	unsigned short increment = 0;
 	unsigned short unitSize;
-	unsigned int maxOrig;
-	void	   *chunkOrig = NULL;
-	XPathExpression expr = state->expr;
+	unsigned int maxOrig,
+				sizeOrig,
+				size;
+	void	   *chunkNew,
+			   *chunkOrig = NULL;
+
+	if (increment == 0)
+	{
+		elog(ERROR, "increment of variable cache size must be greater than zero");
+	}
 
 	if (init)
 	{
@@ -578,22 +584,6 @@ allocXPathExpressionVarCache(XPathExprState state, XPathExprVar varKind, bool in
 			}
 			chunkOrig = state->strings;
 			unitSize = sizeof(char *);
-
-			/*
-			 * TODO Reorganize the counters. Currently, a function having
-			 * arguments is not considered a variable. Thus 'nfuncs'(number of
-			 * all functions) has to be used here and consequently 'countMax'
-			 * becomes oversized.
-			 *
-			 *
-			 * It seems that both function kinds should be treated as
-			 * variables. If that gets implemented, it has to be reflected in
-			 * dumpXPathExpression's verbose mode.
-			 *
-			 * Also attributes are no longer treated as strings: node makes
-			 * more sense.
-			 */
-			increment = expr->variables + expr->nlits + expr->nfuncs;
 			break;
 
 		case XPATH_VAR_NODE_SINGLE:
@@ -603,20 +593,6 @@ allocXPathExpressionVarCache(XPathExprState state, XPathExprVar varKind, bool in
 			}
 			chunkOrig = state->nodes;
 			unitSize = sizeof(XMLNodeHdr);
-
-			/*
-			 * At the moment we don't know whether all paths will become node
-			 * sets, single nodes or combination of both. Therefore 'npaths +
-			 * nattrs' should used for both XPATH_VAR_NODE_SINGLE and
-			 * XPATH_VAR_NODE_ARRAY. However there's no 'nattrs' counter, so
-			 * we use 'variables' in both cases.
-			 */
-
-			/*
-			 * TODO This is also subject to the reorganization of the
-			 * counters.
-			 */
-			increment = expr->variables;
 			break;
 
 		case XPATH_VAR_NODE_ARRAY:
@@ -626,8 +602,6 @@ allocXPathExpressionVarCache(XPathExprState state, XPathExprVar varKind, bool in
 			}
 			chunkOrig = state->nodeSets;
 			unitSize = sizeof(XMLNodeHdr *);
-
-			increment = expr->variables;
 			break;
 
 		default:
@@ -635,54 +609,55 @@ allocXPathExpressionVarCache(XPathExprState state, XPathExprVar varKind, bool in
 			break;
 	}
 
-	/*
-	 * Sometimes the estimate may be 0 but storage for is yet needed. For
-	 * example, the expression only contains a location path, but the result
-	 * is cast to string at some point.
-	 *
-	 * Non-zero increment must be enforced in such a case.
-	 */
-	increment = (increment == 0 && !init) ? 4 : increment;
 
 	maxOrig = state->countMax[varKind];
 	state->countMax[varKind] += increment;
 
-	if (increment > 0)
+
+	size = state->countMax[varKind] * unitSize;
+	sizeOrig = maxOrig * unitSize;
+
+	if (chunkOrig == NULL)
 	{
-		unsigned int size = state->countMax[varKind] * unitSize;
-		unsigned int sizeOrig = maxOrig * unitSize;
-		void	   *chunkNew;
-
-		if (chunkOrig == NULL)
-		{
-			chunkNew = palloc(size);
-			memset(chunkNew, 0, size);
-		}
-		else
-		{
-			chunkNew = repalloc(chunkOrig, size);
-			memset((char *) chunkNew + sizeOrig, 0, size - sizeOrig);
-		}
-
-		switch (varKind)
-		{
-			case XPATH_VAR_STRING:
-				state->strings = (char **) chunkNew;
-				break;
-
-			case XPATH_VAR_NODE_SINGLE:
-				state->nodes = (XMLNodeHdr *) chunkNew;
-				break;
-
-			case XPATH_VAR_NODE_ARRAY:
-				state->nodeSets = (XMLNodeHdr **) chunkNew;
-				break;
-
-			default:
-				elog(ERROR, "unrecognized variable type %u", varKind);
-				break;
-		}
+		chunkNew = palloc(size);
+		memset(chunkNew, 0, size);
 	}
+	else
+	{
+		chunkNew = repalloc(chunkOrig, size);
+		memset((char *) chunkNew + sizeOrig, 0, size - sizeOrig);
+	}
+
+	switch (varKind)
+	{
+		case XPATH_VAR_STRING:
+			state->strings = (char **) chunkNew;
+			break;
+
+		case XPATH_VAR_NODE_SINGLE:
+			state->nodes = (XMLNodeHdr *) chunkNew;
+			break;
+
+		case XPATH_VAR_NODE_ARRAY:
+			state->nodeSets = (XMLNodeHdr **) chunkNew;
+			break;
+
+		default:
+			elog(ERROR, "unrecognized variable type %u", varKind);
+			break;
+	}
+}
+
+XPathExprState
+createXPathVarCache(unsigned int size)
+{
+	XPathExprState state = (XPathExprState) palloc(sizeof(XPathExprStateData));
+
+	allocXPathExpressionVarCache(state, XPATH_VAR_STRING, size, true);
+	allocXPathExpressionVarCache(state, XPATH_VAR_NODE_SINGLE, size, true);
+	allocXPathExpressionVarCache(state, XPATH_VAR_NODE_ARRAY, size, true);
+	state->expr = NULL;
+	return state;
 }
 
 /*
@@ -1375,7 +1350,7 @@ substituteAttributes(XPathExprState exprState, XMLCompNodeHdr element)
 						Assert(nodeNr <= exprState->countMax[XPATH_VAR_NODE_SINGLE]);
 						if (nodeNr == exprState->countMax[XPATH_VAR_NODE_SINGLE])
 						{
-							allocXPathExpressionVarCache(exprState, XPATH_VAR_NODE_SINGLE, false);
+							allocXPathExpressionVarCache(exprState, XPATH_VAR_NODE_SINGLE, XPATH_VAR_CACHE_DEF_SIZE, false);
 						}
 
 						/*

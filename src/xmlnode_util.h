@@ -13,6 +13,8 @@
 
 extern void xmlnodeContainerInit(XMLNodeContainer cont);
 extern void xmlnodeContainerFree(XMLNodeContainer cont);
+
+extern void xmlnodePushBoolean(XMLNodeContainer cont, bool boolean);
 extern void xmlnodePushSingleNode(XMLNodeContainer stack, XMLNodeOffset valu);
 extern void xmlnodePushSinglePtr(XMLNodeContainer cont, void *item);
 extern void xmlnodeAddListItem(XMLNodeContainer cont, XNodeListItem *itemNew);
@@ -67,7 +69,7 @@ extern bool checkFragmentForAttributes(XMLCompNodeHdr fragment);
 extern char **getUnresolvedXMLNamespaces(XMLNodeHdr node, unsigned int *count);
 extern void resolveNamespaces(XMLNodeContainer declarations, unsigned int declsActive, char *elNmspName,
 				  bool *elNmspNameResolved, XMLNodeHdr *attrsPrefixed, unsigned int attrsPrefixedCount, bool *attrFlags,
-				  unsigned short *attrsUnresolved);
+				  unsigned short *attrsUnresolved, char *specNmspName, char *specNmspValue, bool *elNmspIsSpecial);
 extern void collectXMLNamespaceDeclarations(XMLCompNodeHdr currentNode, unsigned int *attrCount,
 								unsigned int *nmspDeclCount, XMLNodeContainer declarations, bool declsOnly, XMLNodeHdr **attrsPrefixed,
 								unsigned int *attrsPrefixedCount);

@@ -26,10 +26,18 @@ XMLScanContext
 XMLScanData
 XMLScanOneLevel
 XMLTreeWalkerContext
+XNodeInternalData
+XNodeInternalData
 XNodeListItem
 XNodeListItemKind
 XNodeOffsetRange
 XNodeSpecString
+xnt
+XNTAttrNames
+XNTHeaderData
+XNTHeaderData
+XNTParamNameSorted
+xnttype
 xpath
 XPath
 XPathElement
@@ -59,6 +67,7 @@ XPathNodeSetData
 XPathOffset
 XPathParserState
 XPathParserStateData
+XPathStorageHeader
 xpathtype
 xpathval
 xpathvaltype

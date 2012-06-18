@@ -14,6 +14,7 @@
 #define XNODE_CHAR_EXCLMARK		0x21
 #define XNODE_CHAR_QUOTMARK		0x22
 #define XNODE_CHAR_HASH			0x23
+#define XNODE_CHAR_DOLLAR		0x24
 #define XNODE_CHAR_PCT			0x25
 #define XNODE_CHAR_AMPERSAND	0x26
 #define XNODE_CHAR_APOSTR		0x27
@@ -35,7 +36,9 @@
 #define XNODE_CHAR_LBRACKET		0x5b
 #define XNODE_CHAR_RBRACKET		0x5d
 #define XNODE_CHAR_UNDERSCORE	0x5f
+#define XNODE_CHAR_LBRKT_CUR	0x7b
 #define XNODE_CHAR_PIPE			0x7c
+#define XNODE_CHAR_RBRKT_CUR	0x7d
 
 #define XNODE_NAMESPACE_DEF_PREFIX		"xmlns"
 
@@ -50,10 +53,19 @@ typedef enum XMLNodeKind
 	XMLNODE_PI,
 	XMLNODE_TEXT,
 	XMLNODE_DOC_FRAGMENT,
-	XMLNODE_NODE
+	XMLNODE_NODE,
+
+	XNTNODE_ROOT,
+	XNTNODE_TEMPLATE,
+	XNTNODE_COPY_OF
 } XMLNodeKind;
 
 typedef uint32 XMLNodeOffset;
+
+/*
+ * Zero is only invalid if interpreted as *relative* offset.
+ */
+#define XMLNodeOffsetInvalid	0
 
 typedef struct XMLNodeCommonData
 {
@@ -98,6 +110,7 @@ typedef struct XMLCompNodeHdrData
 } XMLCompNodeHdrData;
 
 typedef XMLCompNodeHdrData *XMLCompNodeHdr;
+
 
 typedef struct XMLDeclData
 {
@@ -188,6 +201,7 @@ extern void writeXMLNodeOffset(XMLNodeOffset ref, char **output, unsigned char b
 
 typedef enum XNodeListItemKind
 {
+	XNODE_LIST_ITEM_BOOLEAN,
 	XNODE_LIST_ITEM_SINGLE_OFF,
 	XNODE_LIST_ITEM_SINGLE_PTR,
 	XNODE_LIST_ITEM_RANGE
@@ -207,6 +221,7 @@ typedef struct XNodeListItem
 
 	union
 	{
+		bool		boolean;
 		XMLNodeOffset singleOff;
 		void	   *singlePtr;
 		XNodeOffsetRange range;
@@ -262,15 +277,28 @@ extern bool isXMLCharInInterval(char *c, UTF8Interval *intervals, unsigned short
 #define XNODE_EMPTY						(1 << 2)
 #define XNODE_DOC_XMLDECL				(1 << 3)
 
+/*
+ * Set if the compound element contains something else than (NULL-terminated) name.
+ * Some attributes of such special (sometimes called reserved) nodes also usually
+ * differ from the name-value pair of NULL-terminated strings.
+ */
+#define XNODE_EL_SPECIAL				(1 << 4)
+
 #define XNODE_ATTR_APOSTROPHE			(1 << 0)
 
 /* Set if apostrophe is used as value delimiter. */
 #define XNODE_ATTR_CONTAINS_REF			(1 << 1)
+
 /*
  * This flag is set when value is stored as a text, but in fact represents a
  * number
  */
 #define XNODE_ATTR_NUMBER				(1 << 2)
+
+/* Set if attribute value is not a simple NULL-terminated string. */
+#define XNODE_ATTR_VALUE_BINARY			(1 << 3)
+
+
 
 #define XNODE_PI_HAS_VALUE			(1 << 0)
 

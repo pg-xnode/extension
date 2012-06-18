@@ -19,10 +19,13 @@ Datum
 xmlnode_add(PG_FUNCTION_ARGS)
 {
 	xmldoc		doc = (xmldoc) PG_GETARG_VARLENA_P(0);
+
 	xpath		xpathPtr = (xpath) PG_GETARG_POINTER(1);
-	XPathExpression exprBase = (XPathExpression) VARDATA(xpathPtr);
-	XPathHeader xpHdr = (XPathHeader) ((char *) exprBase + exprBase->common.size);
-	XPath xpath = getSingleXPath(exprBase, xpHdr);
+	XPathStorageHeader *storageHdr = (XPathStorageHeader *) VARDATA(xpathPtr);
+	XPathExpression exprBase;
+	XPathHeader xpHdr;
+	XPath xpath;
+
 	xmlnode		newNdVar = (xmlnode) PG_GETARG_VARLENA_P(2);
 	BpChar	   *modeVar = PG_GETARG_BPCHAR_PP(3);
 	char		mode = *(VARDATA_ANY(modeVar));
@@ -30,6 +33,15 @@ xmlnode_add(PG_FUNCTION_ARGS)
 	xmldoc		result;
 	XMLScanData xscan;
 	XMLCompNodeHdr docRoot;
+
+	if (storageHdr->paramCount > 0)
+	{
+		elog(ERROR, "this function does not accept parameterized xpath expression");
+	}
+
+	exprBase = (XPathExpression) ((char *) storageHdr + sizeof(XPathStorageHeader));
+	xpHdr = (XPathHeader) ((char *) exprBase + exprBase->common.size);
+	xpath = getSingleXPath(exprBase, xpHdr);
 
 	if (xpath->relative)
 	{
@@ -57,13 +69,25 @@ extern Datum
 xmlnode_remove(PG_FUNCTION_ARGS)
 {
 	xmldoc		doc = (xmldoc) PG_GETARG_VARLENA_P(0);
+
 	xpath		xpathPtr = (xpath) PG_GETARG_POINTER(1);
-	XPathExpression exprBase = (XPathExpression) VARDATA(xpathPtr);
-	XPathHeader xpHdr = (XPathHeader) ((char *) exprBase + exprBase->common.size);
-	XPath xpath = getSingleXPath(exprBase, xpHdr);
+	XPathStorageHeader *storageHdr = (XPathStorageHeader *) VARDATA(xpathPtr);
+	XPathExpression exprBase;
+	XPathHeader xpHdr;
+	XPath xpath;
+
 	xmldoc		result;
 	XMLScanData xscan;
 	XMLCompNodeHdr docRoot;
+
+	if (storageHdr->paramCount > 0)
+	{
+		elog(ERROR, "this function does not accept parameterized xpath expression");
+	}
+
+	exprBase = (XPathExpression) ((char *) storageHdr + sizeof(XPathStorageHeader));
+	xpHdr = (XPathHeader) ((char *) exprBase + exprBase->common.size);
+	xpath = getSingleXPath(exprBase, xpHdr);
 
 	if (xpath->relative)
 	{
@@ -158,11 +182,13 @@ updateXMLDocument(XMLScan xscan, xmldoc doc, XMLNodeAction action, XMLNodeHdr ne
 
 						for (j = 0; j < declarations.position; j++)
 						{
+							XMLNodeHdr	declNode;
 							char	   *decl;
 
 							Assert(declItem->kind == XNODE_LIST_ITEM_SINGLE_PTR);
 
-							decl = (char *) declItem->value.singlePtr;
+							declNode = (XMLNodeHdr) declItem->value.singlePtr;
+							decl = (char *) XNODE_CONTENT(declNode) + strlen(XNODE_NAMESPACE_DEF_PREFIX) + 1;
 							if (strcmp(namespace, decl) == 0)
 							{
 								found = true;
@@ -1134,7 +1160,7 @@ xmlnodeRemove(xmldoc doc, XMLScan xscan, XMLNodeHdr targNode, bool freeSrc)
 		 * No children left
 		 */
 		hdrSizeIncr = -bwidthSrc;
-		bwidthTarg = 0;
+		bwidthTarg = 1;
 		srcCursor += bwidthSrc;
 	}
 

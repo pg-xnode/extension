@@ -15,6 +15,7 @@
 #include "xmlnode.h"
 #include "xmlnode_util.h"
 #include "xml_parser.h"
+#include "xnt.h"
 
 /*
  * TODO error handling: use 'ereport()' and define numeric error codes.
@@ -93,7 +94,7 @@ xmlnode_in(PG_FUNCTION_ARGS)
 		elog(ERROR, "zero length input string");
 	}
 	dbEnc = GetDatabaseEncoding();
-	initXMLParserState(&parserState, input, XMLNODE_NODE);
+	initXMLParserState(&parserState, input, XMLNODE_NODE, NULL);
 	xmlnodeParseNode(&parserState);
 	finalizeXMLParserState(&parserState);
 	PG_RETURN_POINTER(parserState.result);
@@ -157,7 +158,7 @@ xmldoc_in(PG_FUNCTION_ARGS)
 	{
 		elog(ERROR, "The current version of xmlnode requires both database encoding to be UTF-8.");
 	}
-	initXMLParserState(&parserState, input, XMLNODE_DOC);
+	initXMLParserState(&parserState, input, XMLNODE_DOC, NULL);
 	xmlnodeParseDoc(&parserState);
 	finalizeXMLParserState(&parserState);
 	PG_RETURN_POINTER(parserState.result);
@@ -336,9 +337,8 @@ dumpXMLNode(char *data, XMLNodeOffset rootNdOff)
 	XMLNodeHdr	root = (XMLNodeHdr) (data + rootNdOff);
 	char	   *declStr = NULL;
 	unsigned short declSize = 0;
-
-	resultTmp = NULL;
-	resultPos = 0;
+	char	   *srcCursor = NULL;
+	char	  **paramNames = NULL;
 
 	if (root->kind == XMLNODE_DOC_FRAGMENT)
 	{
@@ -350,7 +350,6 @@ dumpXMLNode(char *data, XMLNodeOffset rootNdOff)
 		}
 	}
 
-	xmlnodeDumpNode(data, rootNdOff, &resultTmp, &resultPos);
 	if (root->kind == XMLNODE_DOC && (root->flags & XNODE_DOC_XMLDECL))
 	{
 		XMLCompNodeHdr doc = (XMLCompNodeHdr) root;
@@ -358,7 +357,32 @@ dumpXMLNode(char *data, XMLNodeOffset rootNdOff)
 
 		declStr = dumpXMLDecl(decl);
 		declSize = strlen(declStr);
+		srcCursor = (char *) decl + sizeof(XMLDeclData);
 	}
+
+	if (root->kind == XNTNODE_ROOT)
+	{
+		XNTHeader	xntHdr;
+
+		if (srcCursor == NULL)
+		{
+			XMLCompNodeHdr template = (XMLCompNodeHdr) root;
+
+			srcCursor = XNODE_ELEMENT_NAME(template);
+		}
+		xntHdr = (XNTHeader) srcCursor;
+
+		if (xntHdr->paramCount > 0)
+		{
+			srcCursor += sizeof(XNTHeaderData);
+			paramNames = getXPathParameterArray(&srcCursor, xntHdr->paramCount);
+		}
+	}
+
+	resultTmp = NULL;
+	resultPos = 0;
+	xmlnodeDumpNode(data, rootNdOff, &resultTmp, &resultPos, paramNames);
+
 	result = (char *) palloc(declSize + resultPos + 1);
 	if (declSize > 0)
 	{
@@ -367,7 +391,11 @@ dumpXMLNode(char *data, XMLNodeOffset rootNdOff)
 	}
 	resultPos = declSize;
 	resultTmp = result + resultPos;
-	xmlnodeDumpNode(data, rootNdOff, &resultTmp, &resultPos);
+	xmlnodeDumpNode(data, rootNdOff, &resultTmp, &resultPos, paramNames);
+	if (paramNames != NULL)
+	{
+		pfree(paramNames);
+	}
 	result[resultPos] = '\0';
 	return result;
 }
@@ -523,8 +551,8 @@ xmlelement(PG_FUNCTION_ARGS)
 
 		elType = attrs->elemtype;
 		arrType = get_array_type(elType);
-		arrLen = get_typlen(arrType);
 		Assert(arrType != InvalidOid);
+		arrLen = get_typlen(arrType);
 		get_typlenbyvalalign(elType, &elLen, &elByVal, &elAlign);
 		attrNames = (char **) palloc(attrCount * sizeof(char *));
 		attrValues = (char **) palloc(attrCount * sizeof(char *));
@@ -546,7 +574,7 @@ xmlelement(PG_FUNCTION_ARGS)
 			}
 			nameStr = text_to_cstring(DatumGetTextP(elDatum));
 
-			initXMLParserState(&namePState, nameStr, XMLNODE_ELEMENT);
+			initXMLParserState(&namePState, nameStr, XMLNODE_ELEMENT, NULL);
 			readXMLName(&namePState, false, true, true, &firstColPos);
 
 			/*
@@ -600,7 +628,7 @@ xmlelement(PG_FUNCTION_ARGS)
 				char	   *valueStrOrig = valueStr;
 
 				/* Parse the value and check validity. */
-				initXMLParserState(&state, valueStr, XMLNODE_ATTRIBUTE);
+				initXMLParserState(&state, valueStr, XMLNODE_ATTRIBUTE, NULL);
 				valueStr = readXMLAttValue(&state, true, &valueHasRefs);
 
 				/*
@@ -647,7 +675,7 @@ xmlelement(PG_FUNCTION_ARGS)
 	 * If initialized for XMLNODE_ELEMENT, the parser state has no memory
 	 * allocated so we don't have to call finalizeXMLParserState().
 	 */
-	initXMLParserState(&namePState, elName, XMLNODE_ELEMENT);
+	initXMLParserState(&namePState, elName, XMLNODE_ELEMENT, NULL);
 	readXMLName(&namePState, false, true, true, &firstColPos);
 
 	if (*namePState.c != '\0')
@@ -884,9 +912,8 @@ collectXMLNamespaceDeclarations(XMLCompNodeHdr currentNode, unsigned int *attrCo
 			{
 
 				/* Namespace declaration. */
-				char	   *nmspName = attrName + defNmspLen + 1;
 
-				xmlnodePushSinglePtr(declarations, (void *) nmspName);
+				xmlnodePushSinglePtr(declarations, (void *) childNode);
 				if (nmspDeclCount != NULL)
 				{
 					(*nmspDeclCount)++;

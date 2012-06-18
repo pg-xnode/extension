@@ -82,6 +82,7 @@ typedef enum XNodeXDeclAttNames
  */
 #define XNODE_SPEC_TEXT_END(i)	((state->srcPos + 2 < state->sizeIn) && strncmp(state->c, specStrings[i],	strlen(specStrings[i])) == 0)
 
+typedef XMLNodeKind (*GetSpecialXNodeKindFunc) (char *name);
 
 typedef struct XMLParserStateData
 {
@@ -118,8 +119,8 @@ typedef struct XMLParserStateData
 	XMLDecl		decl;
 
 	/*
-	 * List of (non-defalut) namespace declarations, from the context (i.e.
-	 * currently being parsed) node) node up to the document root.
+	 * List of (non-default) namespace declarations, from the context (i.e.
+	 * currently being parsed node) node up to the document root.
 	 */
 	XMLNodeContainerData nmspDecl;
 
@@ -128,6 +129,25 @@ typedef struct XMLParserStateData
 	 * root node uses namespace prefix.
 	 */
 	bool		nmspPrefix;
+
+	/*
+	 * Special prefix to be considered during the parsing (e.g. 'xsl:',
+	 * 'xsd:', ...)
+	 */
+	char	   *nmspSpecialName;
+	char	   *nmspSpecialValue;
+
+	/* Function to check node if it's not 'ordinary XML node. */
+	GetSpecialXNodeKindFunc getXNodeKindFunc;
+
+	/* If parsing node template, xpath parameter names are stored here. */
+	XMLNodeContainerData paramNames;
+
+	/*
+	 * Incomplete nodes where parameter has to be substituted (to construct as
+	 * attribute value) or the whole node needs to be constructed.
+	 */
+	XMLNodeContainerData substNodes;
 } XMLNodeParserStateData;
 
 typedef struct XMLParserStateData *XMLParserState;
@@ -137,7 +157,8 @@ typedef struct XMLParserStateData *XMLParserState;
 #define UNEXPECTED_CHARACTER elog(ERROR, "Unexpected character at row %u, column %u.",\
 	state->srcRow, state->srcCol)
 
-extern void initXMLParserState(XMLParserState state, char *inputText, XMLNodeKind targetKind);
+extern void initXMLParserState(XMLParserState state, char *inputText, XMLNodeKind targetKind,
+				   GetSpecialXNodeKindFunc checkFunc);
 extern void finalizeXMLParserState(XMLParserState state);
 
 extern void xmlnodeParseDoc(XMLParserState state);
@@ -146,8 +167,7 @@ extern void readXMLName(XMLParserState state, bool whitespace, bool checkColons,
 extern char *readXMLAttValue(XMLParserState state, bool output, bool *refs);
 extern bool xmlAttrValueIsNumber(char *value);
 
-extern void xmlnodeDumpNode(char *input, XMLNodeOffset nodeOff,
-				char **output, unsigned int *pos);
+extern void xmlnodeDumpNode(char *input, XMLNodeOffset nodeOff, char **output, unsigned int *pos, char **paramNames);
 extern char *dumpXMLDecl(XMLDecl decl);
 
 #endif   /* XML_PARSER_H */

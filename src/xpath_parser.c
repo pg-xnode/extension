@@ -13,7 +13,9 @@ static void insertSubexpression(XPathExprOperand operand, XPathExprOperatorIdSto
 		XPathExpression exprTop, unsigned short blockSize, bool varsShiftAll,
 					char *output, unsigned short *outPos);
 static XPathExprOperand readExpressionOperand(XPathExpression exprTop, XPathParserState state, unsigned char termFlags,
-					  char *output, unsigned short *outPos, XPath *paths, unsigned short *pathCnt, bool mainExpr);
+					  char *output, unsigned short *outPos, XPath *paths, unsigned short *pathCnt, bool mainExpr,
+					  XMLNodeContainer paramNames);
+static unsigned short getParameterId(XMLNodeContainer params, char *parNameNew);
 static void nextOperandChar(char *value, XPathParserState state, unsigned short *ind,
 				unsigned short indMax, bool endAllowed);
 static void checkExprOperand(XPathExpression exprTop, XPathExprOperand operand, bool mainExpr);
@@ -22,7 +24,7 @@ static XPathValueType getFunctionResultType(XPathExprOperand funcOperand);
 static XPathExprOperatorIdStore *readExpressionOperator(XPathParserState state, char *output,
 					   unsigned short *outPos);
 static int parseFunctionArgList(XPathParserState state, XPathFunction, char *output, unsigned short *outPos,
-					 XPath *paths, unsigned short *pathCnt, bool mainExpr);
+					 XPath *paths, unsigned short *pathCnt, bool mainExpr, XMLNodeContainer paramNames);
 static void checkFunctionArgTypes(XPathExpression argList, XPathFunction function);
 static void nextChar(XPathParserState state, bool endAllowed);
 static void skipWhiteSpace(XPathParserState state, bool endAllowed);
@@ -31,9 +33,9 @@ static void checkExpressionBuffer(unsigned short maxPos);
 static void utilizeSpaceForVars(char *output, unsigned short *outPos);
 
 static void dumpXPathExpressionInternal(char **input, XPathHeader xpathHdr, StringInfo output, unsigned short level,
-							bool main, bool debug);
+							bool main, char **paramNames, bool debug);
 static void dumpXPathExprOperand(char **input, XPathHeader xpathHdr, StringInfo output, unsigned short level,
-					 bool debug);
+					 char **paramNames, bool debug);
 static void dumpXPathExprOperator(char **input, StringInfo output, unsigned short level,
 					  bool debug);
 
@@ -79,6 +81,10 @@ validXPathTermChar(char c, unsigned char flags)
 
 		case XNODE_CHAR_RBRACKET:
 			flag = XPATH_TERM_RBRKT;
+			break;
+
+		case XNODE_CHAR_RBRKT_CUR:
+			flag = XPATH_TERM_RBRKT_CRL;
 			break;
 
 		case XNODE_CHAR_RBRKT_RND:
@@ -137,6 +143,8 @@ validXPathTermChar(char c, unsigned char flags)
  * 'mainExpr' - functions like xpath() receive 'main expression' as argument. The other
  * type is 'predicate expression', i.e. the one enclosed in [].
  *
+ * 'paramNames' - a container where unique names of parameters are collected.
+ *
  * Returns pointer to the first operator that doesn't pertain to the
  * expression - this typically happens when implicit sub-expression was
  * created to handle higher operator precedence and the next (returned)
@@ -149,7 +157,8 @@ validXPathTermChar(char c, unsigned char flags)
 XPathExprOperatorIdStore *
 parseXPathExpression(XPathExpression exprCurrent, XPathParserState state, unsigned char termFlags,
 XPathExprOperatorIdStore *firstOpIdPtr, char *output, unsigned short *outPos,
-					 bool isSubExpr, bool argList, XPath *paths, unsigned short *pathCnt, bool mainExpr)
+					 bool isSubExpr, bool argList, XPath *paths, unsigned short *pathCnt, bool mainExpr,
+					 XMLNodeContainer paramNames)
 {
 
 	XPathExpression exprTop = (XPathExpression) output;
@@ -194,7 +203,7 @@ XPathExprOperatorIdStore *firstOpIdPtr, char *output, unsigned short *outPos,
 	{
 		nextChar(state, false);
 		skipWhiteSpace(state, false);
-		operand = readExpressionOperand(exprTop, state, termFlags, output, outPos, paths, pathCnt, mainExpr);
+		operand = readExpressionOperand(exprTop, state, termFlags, output, outPos, paths, pathCnt, mainExpr, paramNames);
 		Assert(operand->common.type != XPATH_OPERAND_EXPR_TOP);
 
 		/*
@@ -302,7 +311,7 @@ XPathExprOperatorIdStore *firstOpIdPtr, char *output, unsigned short *outPos,
 								output, outPos);
 			subExpr->members = 1;
 			nextOpIdPtr = parseXPathExpression(subExpr, state, termFlags, opIdPtr, output, outPos, true, false, paths,
-											   pathCnt, mainExpr);
+											   pathCnt, mainExpr, paramNames);
 			operator = XPATH_EXPR_OPERATOR(opIdPtr);
 			nextOperator = XPATH_EXPR_OPERATOR(nextOpIdPtr);
 
@@ -323,7 +332,7 @@ XPathExprOperatorIdStore *firstOpIdPtr, char *output, unsigned short *outPos,
 										false, output, outPos);
 					subExpr->members = 1;
 					nextOpIdPtr = parseXPathExpression(subExpr, state, termFlags, opIdPtr, output, outPos, true, false,
-												   paths, pathCnt, mainExpr);
+									   paths, pathCnt, mainExpr, paramNames);
 					operator = XPATH_EXPR_OPERATOR(opIdPtr);
 					nextOperator = XPATH_EXPR_OPERATOR(nextOpIdPtr);
 
@@ -371,7 +380,8 @@ XPathExprOperatorIdStore *firstOpIdPtr, char *output, unsigned short *outPos,
 				subExpr->common.size = subExprSzNew;
 				subExpr->valType = exprCurrent->valType;
 				exprCurrent->valType = operator->resType;
-				operand = readExpressionOperand(exprTop, state, termFlags, output, outPos, paths, pathCnt, mainExpr);
+				operand = readExpressionOperand(exprTop, state, termFlags, output, outPos, paths, pathCnt, mainExpr,
+												paramNames);
 				if (nodeSetsOnly)
 				{
 					checkOperandValueType(operand, XPATH_VAL_NODESET);
@@ -392,7 +402,8 @@ XPathExprOperatorIdStore *firstOpIdPtr, char *output, unsigned short *outPos,
 			 */
 			Assert((nodeSetsOnly && operator->id == XPATH_EXPR_OPERATOR_UNION) || !nodeSetsOnly);
 
-			operand = readExpressionOperand(exprTop, state, termFlags, output, outPos, paths, pathCnt, mainExpr);
+			operand = readExpressionOperand(exprTop, state, termFlags, output, outPos, paths, pathCnt, mainExpr,
+											paramNames);
 			if (nodeSetsOnly)
 			{
 				checkOperandValueType(operand, XPATH_VAL_NODESET);
@@ -438,6 +449,7 @@ XPathExprOperatorIdStore *firstOpIdPtr, char *output, unsigned short *outPos,
  *
  * paths - the parsed path pointer is stored into this array, at position 'pathCount'.
  * If the location path has predicates containing other paths, these are stored too.
+ * NULL value can be used to indicate that location path is not expected.
  *
  * 'isSubPath' - if true, a sub-path is to be parsed. Otherwise a top-level XPath.
  *
@@ -448,16 +460,23 @@ XPathExprOperatorIdStore *firstOpIdPtr, char *output, unsigned short *outPos,
  *
  * 'pos' - position in the source text where the parsing should continue.
  * Unlike 'xpathSrc', this is increased by one for each character, whether it's single-byte or MB.
+ *
+ * 'paramNames' - container to collect (unique) parameter names.
  */
 void
 parseLocationPath(XPath *paths, bool isSubPath, unsigned short *pathCount, char **xpathSrc,
-				  unsigned short *pos)
+				  unsigned short *pos, XMLNodeContainer paramNames)
 {
 	XPath		locPath;
 	XPathParserStateData state;
 	char	   *xpathStr = *xpathSrc;
 	bool		slashAllowed = true;
 	bool		nonEmpty;
+
+	if (paths == NULL)
+	{
+		elog(ERROR, "location path not expected here");
+	}
 
 	if (*pathCount == XPATH_SET_MAX_PATHS)
 	{
@@ -701,7 +720,7 @@ parseLocationPath(XPath *paths, bool isSubPath, unsigned short *pathCount, char 
 
 							checkExpressionBuffer(outPos);
 							parseXPathExpression(expr, &state, XPATH_TERM_RBRKT, NULL, exprOutput, &outPos,
-									  false, false, paths, pathCount, false);
+												 false, false, paths, pathCount, false, paramNames);
 
 							/*
 							 * Shift the operands/operators left if some
@@ -988,11 +1007,10 @@ insertSubexpression(XPathExprOperand operand, XPathExprOperatorIdStore **opIdPtr
  */
 static XPathExprOperand
 readExpressionOperand(XPathExpression exprTop, XPathParserState state, unsigned char termFlags,
-					  char *output, unsigned short *outPos, XPath *paths, unsigned short *pathCnt, bool mainExpr)
+					  char *output, unsigned short *outPos, XPath *paths, unsigned short *pathCnt, bool mainExpr,
+					  XMLNodeContainer paramNames)
 {
 	XPathExprOperand op = (XPathExprOperand) ((char *) output + *outPos);
-	unsigned short ind = 0;
-	unsigned short indMax;
 	unsigned short outPosInit = *outPos;
 	bool		setSize = true;
 	bool		negative = false;
@@ -1027,8 +1045,6 @@ readExpressionOperand(XPathExpression exprTop, XPathParserState state, unsigned 
 	{
 		*outPos += sizeof(XPathExprOperandData);
 	}
-	/* '-1' stands for terminating '\0' */
-	indMax = XPATH_EXPR_BUFFER_SIZE - *outPos - 1;
 
 	if (*state->c == XNODE_CHAR_LBRKT_RND)
 	{
@@ -1038,7 +1054,7 @@ readExpressionOperand(XPathExpression exprTop, XPathParserState state, unsigned 
 							output, outPos);
 		checkExpressionBuffer(*outPos);
 		parseXPathExpression(subExpr, state, XPATH_TERM_RBRKT_RND, NULL, output, outPos, true, false, paths,
-							 pathCnt, mainExpr);
+							 pathCnt, mainExpr, paramNames);
 
 		subExpr->common.type = XPATH_OPERAND_EXPR_SUB;
 		subExpr->flags = XPATH_SUBEXPRESSION_EXPLICIT;
@@ -1052,7 +1068,8 @@ readExpressionOperand(XPathExpression exprTop, XPathParserState state, unsigned 
 		 */
 		setSize = false;
 	}
-	else if (*state->c == XNODE_CHAR_AT || XNODE_VALID_NAME_START(state->c) || *state->c == XNODE_CHAR_SLASH)
+	else if (*state->c == XNODE_CHAR_AT || XNODE_VALID_NAME_START(state->c) || *state->c == XNODE_CHAR_SLASH ||
+			 *state->c == XNODE_CHAR_DOLLAR)
 	{
 		XPathFunction func = NULL;
 
@@ -1065,26 +1082,36 @@ readExpressionOperand(XPathExpression exprTop, XPathParserState state, unsigned 
 			elog(ERROR, "xpath expression contains too many variables");
 		}
 
-		if (*state->c == XNODE_CHAR_AT)
+		if (*state->c == XNODE_CHAR_AT || *state->c == XNODE_CHAR_DOLLAR)
 		{
-			op->common.type = XPATH_OPERAND_ATTRIBUTE;
+			if (*state->c == XNODE_CHAR_AT)
+			{
+				op->common.type = XPATH_OPERAND_ATTRIBUTE;
 
-			/*
-			 * Set the type even if 'substituteAttributes()' function does it
-			 * too. If there's no appropriate attribute in the current
-			 * element, then no substitution takes place.
-			 *
-			 * In such a case 'evaluateBinaryOperator()' could recognize
-			 * 'isNull' attribute of the operand and consequently ignore the
-			 * value type, but the logic to evaluate operand types and choose
-			 * the correct casts is already complex enough.
-			 */
-			op->value.type = XPATH_VAL_NODESET;
-			op->value.v.nodeSet.count = 0;
-			op->value.v.nodeSet.isDocument = false;
+				/*
+				 * Set the type even if 'substituteAttributes()' function does
+				 * it too. If there's no appropriate attribute in the current
+				 * element, then no substitution takes place.
+				 *
+				 * In such a case 'evaluateBinaryOperator()' could recognize
+				 * 'isNull' attribute of the operand and consequently ignore
+				 * the value type, but the logic to evaluate operand types and
+				 * choose the correct casts is already complex enough.
+				 */
+				op->value.type = XPATH_VAL_NODESET;
+				op->value.v.nodeSet.count = 0;
+				op->value.v.nodeSet.isDocument = false;
+			}
+			else
+			{
+				/* No other information is available at the moment. */
+				op->common.type = XPATH_OPERAND_PARAMETER;
+			}
+
 			nextChar(state, false);
 
-			if (!(XNODE_VALID_NAME_START(state->c) || *state->c == XNODE_CHAR_ASTERISK))
+			if (!(XNODE_VALID_NAME_START(state->c) ||
+				  (op->common.type == XPATH_OPERAND_ATTRIBUTE && *state->c == XNODE_CHAR_ASTERISK)))
 			{
 				if (validXPathTermChar(*state->c, termFlags))
 				{
@@ -1199,7 +1226,7 @@ readExpressionOperand(XPathExpression exprTop, XPathParserState state, unsigned 
 							*outPos += diff;
 
 							argList->members = parseFunctionArgList(state, func, output, outPos, paths, pathCnt,
-																	mainExpr);
+													   mainExpr, paramNames);
 							argList->common.type = XPATH_OPERAND_FUNC;
 							argList->negative = negative;
 							argList->funcId = func->id;
@@ -1231,7 +1258,7 @@ readExpressionOperand(XPathExpression exprTop, XPathParserState state, unsigned 
 		}
 
 		if (op->common.type == XPATH_OPERAND_ATTRIBUTE || op->common.type == XPATH_OPERAND_FUNC_NOARG ||
-			op->common.type == XPATH_OPERAND_PATH)
+			op->common.type == XPATH_OPERAND_PATH || op->common.type == XPATH_OPERAND_PARAMETER)
 		{
 			XPathOffset varOff = (XPathOffset) ((char *) op - (char *) exprTop);
 			XPathOffset *varOffPtr = variables + exprTop->variables;
@@ -1239,22 +1266,47 @@ readExpressionOperand(XPathExpression exprTop, XPathParserState state, unsigned 
 			*varOffPtr = varOff;
 			exprTop->variables++;
 		}
-		if (op->common.type == XPATH_OPERAND_ATTRIBUTE)
+		if (op->common.type == XPATH_OPERAND_ATTRIBUTE || op->common.type == XPATH_OPERAND_PARAMETER)
 		{
-			/* Finish reading of the attribute name. */
-			char	   *valueStorage = output + *outPos;
-			bool		oneCharOnly = (*state->c == XNODE_CHAR_ASTERISK);
+			/* Finish reading of the name. */
+			char	   *valueStorage;
+			bool		oneCharOnly = (op->common.type == XPATH_OPERAND_ATTRIBUTE && *state->c == XNODE_CHAR_ASTERISK);
+			unsigned short ind = 0;
+
+			/* '-1' stands for terminating '\0' */
+			unsigned int indMax;
+
+			if (op->common.type == XPATH_OPERAND_ATTRIBUTE)
+			{
+				valueStorage = output + *outPos;
+				indMax = XPATH_EXPR_BUFFER_SIZE - *outPos - 1;
+			}
+			else
+			{
+				valueStorage = (char *) palloc(XPATH_PARAM_NAME_MAX_LEN + 1);
+				indMax = XPATH_PARAM_NAME_MAX_LEN - 1;
+			}
 
 			do
 			{
 				nextOperandChar(valueStorage, state, &ind, indMax, true);
 			} while (XNODE_VALID_NAME_CHAR(state->c) && !oneCharOnly);
 			valueStorage[ind] = '\0';
-			*outPos += ind + 1;
+
+			if (op->common.type == XPATH_OPERAND_ATTRIBUTE)
+			{
+				*outPos += ind + 1;
+			}
+
+			if (op->common.type == XPATH_OPERAND_PARAMETER)
+			{
+				op->value.v.paramId = getParameterId(paramNames, valueStorage);
+				pfree(valueStorage);
+			}
 		}
 		else if (op->common.type == XPATH_OPERAND_PATH)
 		{
-			parseLocationPath(paths, true, pathCnt, &(state->c), &(state->pos));
+			parseLocationPath(paths, true, pathCnt, &(state->c), &(state->pos), paramNames);
 			op->value.v.path = *pathCnt;
 			(*pathCnt)++;
 		}
@@ -1263,6 +1315,8 @@ readExpressionOperand(XPathExpression exprTop, XPathParserState state, unsigned 
 	{
 		char		qMark = *state->c;
 		char	   *valueStorage = output + *outPos;
+		unsigned short ind = 0;
+		unsigned int indMax = XPATH_EXPR_BUFFER_SIZE - *outPos - 1;
 
 		op->common.type = XPATH_OPERAND_LITERAL;
 		op->value.type = XPATH_VAL_STRING;
@@ -1316,6 +1370,43 @@ readExpressionOperand(XPathExpression exprTop, XPathParserState state, unsigned 
 		op->common.size = *outPos - outPosInit;
 	}
 	return op;
+}
+
+/*
+ * Return id of a parameter name, whether existing or just added.
+ */
+static unsigned short
+getParameterId(XMLNodeContainer params, char *parNameNew)
+{
+	XNodeListItem *item = params->content;
+	unsigned short i;
+
+	for (i = 0; i < params->position; i++)
+	{
+		char	   *parName = item->value.singlePtr;
+
+		if (strcmp(parName, parNameNew) == 0)
+		{
+			return i;
+		}
+		item++;
+	}
+
+	if (i == params->position)
+	{
+		if (i < XPATH_PARAM_MAX_COUNT)
+		{
+			char	   *copy = (char *) palloc(strlen(parNameNew) + 1);
+
+			strcpy(copy, parNameNew);
+			xmlnodePushSinglePtr(params, copy);
+		}
+		else
+		{
+			elog(ERROR, "the maximum number of %u xpath parameters exceeded", XPATH_PARAM_MAX_COUNT);
+		}
+	}
+	return i;
 }
 
 static void
@@ -1388,6 +1479,12 @@ checkOperandValueType(XPathExprOperand operand, XPathValueType valType)
 		{
 			case XPATH_OPERAND_ATTRIBUTE:
 			case XPATH_OPERAND_PATH:
+
+				/*
+				 * Parameter does not cause error but needs to be checked at
+				 * runtime again.
+				 */
+			case XPATH_OPERAND_PARAMETER:
 				match = true;
 				break;
 
@@ -1501,7 +1598,7 @@ readExpressionOperator(XPathParserState state, char *output, unsigned short *out
  */
 static int
 parseFunctionArgList(XPathParserState state, XPathFunction func, char *output, unsigned short *outPos,
-					 XPath *paths, unsigned short *pathCnt, bool mainExpr)
+					 XPath *paths, unsigned short *pathCnt, bool mainExpr, XMLNodeContainer paramNames)
 {
 
 	XPathExpression exprTop = (XPathExpression) output;
@@ -1522,7 +1619,7 @@ parseFunctionArgList(XPathParserState state, XPathFunction func, char *output, u
 		}
 		skipWhiteSpace(state, false);
 		opnd = readExpressionOperand(exprTop, state, XPATH_TERM_NULL, output, outPos,
-									 paths, pathCnt, mainExpr);
+									 paths, pathCnt, mainExpr, paramNames);
 		i++;
 		checkExprOperand(exprTop, opnd, mainExpr);
 		skipWhiteSpace(state, false);
@@ -1542,7 +1639,7 @@ parseFunctionArgList(XPathParserState state, XPathFunction func, char *output, u
 
 				insertSubexpression(opnd, &opIdPtr, exprTop, output + *outPos - (char *) opnd, false, output, outPos);
 				parseXPathExpression(subExpr, state, termFlags, opIdPtr, output, outPos, true, true, paths,
-									 pathCnt, mainExpr);
+									 pathCnt, mainExpr, paramNames);
 				operator = XPATH_EXPR_OPERATOR(opIdPtr);
 				subExpr->valType = operator->resType;
 			}
@@ -1595,6 +1692,12 @@ checkFunctionArgTypes(XPathExpression argList, XPathFunction function)
 		XPathExprOperand opnd = (XPathExprOperand) c;
 		XPathValueType argType;
 		XPathValueType typeRequired;
+
+		if (opnd->common.type == XPATH_OPERAND_PARAMETER)
+		{
+			/* Parameter value type is not known at parse time. */
+			continue;
+		}
 
 		if (i <= function->nargs)
 		{
@@ -1735,7 +1838,7 @@ utilizeSpaceForVars(char *output, unsigned short *outPos)
 
 void
 dumpXPathExpression(XPathExpression expr, XPathHeader xpathHdr, StringInfo output, bool main,
-					bool debug)
+					char **paramNames, bool debug)
 {
 
 	char	   *input = (char *) expr;
@@ -1752,7 +1855,7 @@ dumpXPathExpression(XPathExpression expr, XPathHeader xpathHdr, StringInfo outpu
 		}
 		appendStringInfo(output, " (paths / funcs: %u / %u, val. type: %u)", expr->npaths, expr->nfuncs, expr->valType);
 	}
-	dumpXPathExpressionInternal(&input, xpathHdr, output, 0, main, debug);
+	dumpXPathExpressionInternal(&input, xpathHdr, output, 0, main, paramNames, debug);
 	if (expr->variables > 0 && debug)
 	{
 		XPathOffset *varOffPtr = (XPathOffset *) ((char *) expr + sizeof(XPathExpressionData));
@@ -1778,6 +1881,10 @@ dumpXPathExpression(XPathExpression expr, XPathHeader xpathHdr, StringInfo outpu
 					appendStringInfo(output, "\n    function: %s()", xpathFunctions[opnd->value.v.funcId].name);
 					break;
 
+				case XPATH_OPERAND_PARAMETER:
+					appendStringInfo(output, "\n    parameter: %s", paramNames[opnd->value.v.paramId]);
+					break;
+
 				default:
 					elog(ERROR, "unknown type of variable: %u", opnd->common.type);
 					break;
@@ -1794,7 +1901,8 @@ dumpXPathExpression(XPathExpression expr, XPathHeader xpathHdr, StringInfo outpu
  */
 
 void
-dumpLocationPath(XPathHeader xpathHdr, StringInfo output, bool debug, unsigned short pathNr)
+dumpLocationPath(XPathHeader xpathHdr, unsigned short pathNr, StringInfo output, char **paramNames,
+				 bool debug)
 {
 	unsigned short i,
 				last;
@@ -1855,7 +1963,7 @@ dumpLocationPath(XPathHeader xpathHdr, StringInfo output, bool debug, unsigned s
 			XPathExpression pexpr = (XPathExpression) ((char *) el +
 										 sizeof(XPathElementData) + nameLen);
 
-			dumpXPathExpression(pexpr, xpathHdr, output, false, debug);
+			dumpXPathExpression(pexpr, xpathHdr, output, false, paramNames, debug);
 		}
 		if (!debug && ((i < last) || (locPath->targNdKind != XMLNODE_ELEMENT)))
 		{
@@ -1940,7 +2048,7 @@ dumpLocationPath(XPathHeader xpathHdr, StringInfo output, bool debug, unsigned s
  */
 static void
 dumpXPathExpressionInternal(char **input, XPathHeader xpathHdr, StringInfo output, unsigned short level,
-							bool main, bool debug)
+							bool main, char **paramNames, bool debug)
 {
 
 	unsigned short i;
@@ -1955,11 +2063,12 @@ dumpXPathExpressionInternal(char **input, XPathHeader xpathHdr, StringInfo outpu
 	{
 		appendStringInfoChar(output, XNODE_CHAR_LBRACKET);
 	}
-	dumpXPathExprOperand(input, xpathHdr, output, level, debug);
+	dumpXPathExprOperand(input, xpathHdr, output, level, paramNames, debug);
+
 	for (i = 1; i < expr->members; i++)
 	{
 		dumpXPathExprOperator(input, output, level, debug);
-		dumpXPathExprOperand(input, xpathHdr, output, level, debug);
+		dumpXPathExprOperand(input, xpathHdr, output, level, paramNames, debug);
 	}
 	if (!debug && !main && level == 0)
 	{
@@ -1969,15 +2078,13 @@ dumpXPathExpressionInternal(char **input, XPathHeader xpathHdr, StringInfo outpu
 
 static void
 dumpXPathExprOperand(char **input, XPathHeader xpathHdr, StringInfo output, unsigned short level,
-					 bool debug)
+					 char **paramNames, bool debug)
 {
 
 	unsigned short shortValue;
 	XPathExprOperand operand = (XPathExprOperand) *input;
 	XPathExpression subExpr;
 	XPathFunction func;
-
-	/* unsigned short size; */
 
 	if (debug)
 	{
@@ -1991,6 +2098,7 @@ dumpXPathExprOperand(char **input, XPathHeader xpathHdr, StringInfo output, unsi
 		case XPATH_OPERAND_ATTRIBUTE:
 		case XPATH_OPERAND_PATH:
 		case XPATH_OPERAND_FUNC_NOARG:
+		case XPATH_OPERAND_PARAMETER:
 			if (operand->value.negative)
 			{
 				appendStringInfoChar(output, XNODE_CHAR_DASH);
@@ -2040,6 +2148,11 @@ dumpXPathExprOperand(char **input, XPathHeader xpathHdr, StringInfo output, unsi
 			*input += operand->common.size;
 			break;
 
+		case XPATH_OPERAND_PARAMETER:
+			appendStringInfo(output, "%c%s", XNODE_CHAR_DOLLAR, paramNames[operand->value.v.paramId]);
+			*input += operand->common.size;
+			break;
+
 		case XPATH_OPERAND_PATH:
 			shortValue = operand->value.v.path;
 			if (debug)
@@ -2048,7 +2161,7 @@ dumpXPathExprOperand(char **input, XPathHeader xpathHdr, StringInfo output, unsi
 			}
 			else
 			{
-				dumpLocationPath(xpathHdr, output, debug, shortValue);
+				dumpLocationPath(xpathHdr, shortValue, output, paramNames, debug);
 			}
 			*input += operand->common.size;
 			break;
@@ -2072,7 +2185,7 @@ dumpXPathExprOperand(char **input, XPathHeader xpathHdr, StringInfo output, unsi
 			{
 				appendStringInfoChar(output, XNODE_CHAR_LBRKT_RND);
 			}
-			dumpXPathExpressionInternal(input, xpathHdr, output, level + 1, false, debug);
+			dumpXPathExpressionInternal(input, xpathHdr, output, level + 1, false, paramNames, debug);
 			if (!debug && (subExpr->flags & XPATH_SUBEXPRESSION_EXPLICIT) == 1)
 			{
 				appendStringInfoChar(output, XNODE_CHAR_RBRKT_RND);
@@ -2089,7 +2202,7 @@ dumpXPathExprOperand(char **input, XPathHeader xpathHdr, StringInfo output, unsi
 				*input += sizeof(XPathExpressionData);
 				for (i = 1; i <= subExpr->members; i++)
 				{
-					dumpXPathExprOperand(input, xpathHdr, output, level + 1, debug);
+					dumpXPathExprOperand(input, xpathHdr, output, level + 1, paramNames, debug);
 					if (i < subExpr->members)
 					{
 						if (debug)

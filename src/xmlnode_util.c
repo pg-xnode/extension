@@ -42,6 +42,16 @@ xmlnodeContainerFree(XMLNodeContainer cont)
 }
 
 void
+xmlnodePushBoolean(XMLNodeContainer cont, bool boolean)
+{
+	XNodeListItem itemNew;
+
+	itemNew.kind = XNODE_LIST_ITEM_BOOLEAN;
+	itemNew.value.boolean = boolean;
+	xmlnodeAddListItem(cont, &itemNew);
+}
+
+void
 xmlnodePushSingleNode(XMLNodeContainer cont, XMLNodeOffset singleNode)
 {
 	XNodeListItem itemNew;
@@ -755,7 +765,7 @@ xmlTreeWalker(XMLTreeWalkerContext *context)
 	context->visitor(context->stack, context->depth, context->userData);
 
 	if (node->kind == XMLNODE_DOC || node->kind == XMLNODE_ELEMENT ||
-		node->kind == XMLNODE_DOC_FRAGMENT)
+		node->kind == XMLNODE_DOC_FRAGMENT || node->kind >= XNTNODE_ROOT)
 	{
 
 		XMLCompNodeHdr compNode = (XMLCompNodeHdr) node;
@@ -965,7 +975,7 @@ getUnresolvedXMLNamespaces(XMLNodeHdr node, unsigned int *count)
 void
 resolveNamespaces(XMLNodeContainer declarations, unsigned int declsActive, char *elNmspName,
 				  bool *elNmspNameResolved, XMLNodeHdr *attrsPrefixed, unsigned int attrsPrefixedCount, bool *attrFlags,
-				  unsigned short *attrsUnresolved)
+				  unsigned short *attrsUnresolved, char *specNmspName, char *specNmspValue, bool *elNmspIsSpecial)
 {
 
 	unsigned int i;
@@ -976,20 +986,35 @@ resolveNamespaces(XMLNodeContainer declarations, unsigned int declsActive, char 
 	 */
 	for (i = declsActive; i > 0; i--)
 	{
-		char	   *nmspName;
+		char	   *declNmspName;
 		XNodeListItem *item = decls + i - 1;
-		unsigned int nmspLength;
+		unsigned int declNmspLength;
+		XMLNodeHdr	declNode;
 
 		Assert(item->kind == XNODE_LIST_ITEM_SINGLE_PTR);
-		nmspName = (char *) item->value.singlePtr;
-		nmspLength = strlen(nmspName);
+		declNode = (XMLNodeHdr) item->value.singlePtr;
+		declNmspName = (char *) XNODE_CONTENT(declNode) + strlen(XNODE_NAMESPACE_DEF_PREFIX) + 1;
+		declNmspLength = strlen(declNmspName);
 
 		if (!(*elNmspNameResolved))
 		{
-			if (strncmp(elNmspName, nmspName, nmspLength) == 0 &&
-				elNmspName[nmspLength] == XNODE_CHAR_COLON)
+			if (strncmp(elNmspName, declNmspName, declNmspLength) == 0 &&
+				elNmspName[declNmspLength] == XNODE_CHAR_COLON)
 			{
 				*elNmspNameResolved = true;
+
+				/*
+				 * If seems to be a special namespace (e.g. 'xnt'), check
+				 * whether the namespace value matches. If it does not, it
+				 * must be considered an 'ordinary namespace'.
+				 */
+				if (specNmspName != NULL && specNmspValue != NULL && elNmspIsSpecial != NULL)
+				{
+					char	   *declNmspValue = (char *) declNmspName + declNmspLength + 1;
+
+					*elNmspIsSpecial = (strcmp(declNmspName, specNmspName) == 0 &&
+								  strcmp(declNmspValue, specNmspValue) == 0);
+				}
 			}
 		}
 
@@ -1010,8 +1035,8 @@ resolveNamespaces(XMLNodeContainer declarations, unsigned int declsActive, char 
 
 					Assert(attrNode->flags & XNODE_NMSP_PREFIX);
 
-					if (strncmp(attrNmspName, nmspName, nmspLength) == 0 &&
-						attrNmspName[nmspLength] == XNODE_CHAR_COLON)
+					if (strncmp(attrNmspName, declNmspName, declNmspLength) == 0 &&
+						attrNmspName[declNmspLength] == XNODE_CHAR_COLON)
 					{
 						attrFlags[j] = true;
 						(*attrsUnresolved)--;
@@ -1097,7 +1122,7 @@ checkNodeNamespaces(XMLNodeHdr *stack, unsigned int depth, void *userData)
 	if (!elNmspNameResolved || attrsUnresolved > 0)
 	{
 		resolveNamespaces(&state->declarations, state->counts[depth], elNmspName, &elNmspNameResolved, attrsPrefixed,
-						  attrsPrefixedCount, attrFlags, &attrsUnresolved);
+		  attrsPrefixedCount, attrFlags, &attrsUnresolved, NULL, NULL, NULL);
 	}
 
 	if (!elNmspNameResolved)

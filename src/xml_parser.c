@@ -18,6 +18,7 @@
 
 #include "xml_parser.h"
 #include "xmlnode_util.h"
+#include "xnt.h"
 
 /*
  * Input tokens, for internal use only.
@@ -144,14 +145,13 @@ static void ensureSpace(unsigned int size, XMLParserState state);
 static void saveNodeHeader(XMLParserState state, XMLNodeInternal nodeInfo, char flags);
 static void saveContent(XMLParserState state, XMLNodeInternal nodeInfo);
 static void saveReferences(XMLParserState state, XMLNodeInternal nodeInfo, XMLCompNodeHdr compNode,
-			   unsigned short int children);
+  unsigned short children, bool *specAttrsValid, unsigned int specAttrCount);
 static char *getContentToLog(char *input, unsigned int offset, unsigned int length, unsigned int maxLen);
 static void saveRootNodeHeader(XMLParserState state, XMLNodeKind kind);
 
-static void checkNamespaces(XMLParserState state, XMLNodeInternal nodeInfo, unsigned int attrsPrefixedCount);
-
-static unsigned int dumpAttributes(XMLCompNodeHdr element, char *input,
-			   char **output, unsigned int *pos);
+static void checkNamespaces(XMLParserState state, XMLNodeInternal nodeInfo, unsigned int attrsPrefixedCount,
+				bool *elNmspIsSpecial);
+static unsigned int dumpAttributes(XMLCompNodeHdr element, char *input, char **output, unsigned int *pos, char **paramNames);
 static void dumpContentEscaped(XMLNodeKind kind, char **output, char *input, unsigned int inputLen,
 				   unsigned int *outPos);
 static void dumpSpecString(char **output, char *outNew, unsigned int *outPos, unsigned int *incrInput);
@@ -210,6 +210,7 @@ xmlnodeParseDoc(XMLParserState state)
 	tagRow = tagCol = 1;
 	processToken(state, &nodeInfo, TOKEN_XMLDECL | TOKEN_MISC | TOKEN_DTD
 				 | TOKEN_STAG);
+
 	if (nodeInfo.tokenType != TOKEN_WHITESPACE && nodeInfo.tokenType != TOKEN_XMLDECL)
 	{
 		xmlnodePushSingleNode(&(state->stack), nodeInfo.nodeOut);
@@ -260,7 +261,7 @@ xmlnodeParseDoc(XMLParserState state)
 	nextChar(state, true);
 	if (XNODE_INPUT_END(state))
 	{
-		saveRootNodeHeader(state, XMLNODE_DOC);
+		saveRootNodeHeader(state, state->targetKind);
 		return;
 	}
 
@@ -285,7 +286,7 @@ xmlnodeParseDoc(XMLParserState state)
 		nextChar(state, true);
 	} while (!XNODE_INPUT_END(state));
 
-	saveRootNodeHeader(state, XMLNODE_DOC);
+	saveRootNodeHeader(state, state->targetKind);
 }
 
 void
@@ -411,7 +412,7 @@ xmlnodeParseNode(XMLParserState state)
 }
 
 void
-initXMLParserState(XMLParserState state, char *inputText, XMLNodeKind targetKind)
+initXMLParserState(XMLParserState state, char *inputText, XMLNodeKind targetKind, GetSpecialXNodeKindFunc checkFunc)
 {
 	unsigned int hdrSize = (targetKind == XMLNODE_ATTRIBUTE || targetKind == XMLNODE_ELEMENT) ? 0 : VARHDRSZ;
 
@@ -444,9 +445,11 @@ initXMLParserState(XMLParserState state, char *inputText, XMLNodeKind targetKind
 	}
 	else
 	{
+
 		state->sizeOut = state->sizeIn + (state->sizeIn >> XNODE_OUT_OVERHEAD_BITS);
 		state->sizeOut = (state->sizeOut > XNODE_PARSER_OUTPUT_MIN) ? state->sizeOut
 			: XNODE_PARSER_OUTPUT_MIN;
+		/* state->sizeOut = 16384; */
 		elog(DEBUG1, "source xml size: %u, binary xml size (initial estimate): %u", state->sizeIn,
 			 state->sizeOut);
 	}
@@ -466,8 +469,23 @@ initXMLParserState(XMLParserState state, char *inputText, XMLNodeKind targetKind
 		xmlnodeContainerInit(&state->stack);
 		xmlnodeContainerInit(&state->nmspDecl);
 	}
+
 	state->decl = NULL;
 	state->nmspPrefix = false;
+	if (targetKind == XNTNODE_ROOT)
+	{
+		state->nmspSpecialName = XNTNODE_NAMESPACE_PREFIX;
+		state->nmspSpecialValue = XNTNODE_NAMESPACE_VALUE;
+		state->getXNodeKindFunc = checkFunc;
+		xmlnodeContainerInit(&state->paramNames);
+		xmlnodeContainerInit(&state->substNodes);
+	}
+	else
+	{
+		state->nmspSpecialName = NULL;
+		state->nmspSpecialValue = NULL;
+		state->getXNodeKindFunc = NULL;
+	}
 }
 
 void
@@ -484,6 +502,12 @@ finalizeXMLParserState(XMLParserState state)
 	{
 		pfree(state->decl);
 		state->decl = NULL;
+	}
+
+	if (state->targetKind == XNTNODE_ROOT)
+	{
+		xmlnodeContainerFree(&state->paramNames);
+		xmlnodeContainerFree(&state->substNodes);
 	}
 }
 
@@ -1076,6 +1100,11 @@ processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowe
 					attributes;
 		unsigned int nmspDecls = 0;
 		unsigned int attrsPrefixedCount = 0;
+		bool		isSpecialNode = false;
+		XMLNodeKind specialNodeKind = 0;
+		unsigned int specAttrCount = 0;
+		bool	   *specAttrsValid = NULL;
+
 
 		if (!(allowed & TOKEN_STAG))
 		{
@@ -1098,9 +1127,25 @@ processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowe
 		 * Check if all namespaces are bound. This is only necessary for
 		 * document. Node will be checked if/when it gets added to a document.
 		 */
-		if (state->targetKind == XMLNODE_DOC && (nodeInfo->nmspLength > 0 || attrsPrefixedCount > 0))
+		if ((state->targetKind == XMLNODE_DOC || state->targetKind == XNTNODE_ROOT) &&
+			(nodeInfo->nmspLength > 0 || attrsPrefixedCount > 0))
 		{
-			checkNamespaces(state, nodeInfo, attrsPrefixedCount);
+
+			checkNamespaces(state, nodeInfo, attrsPrefixedCount, &isSpecialNode);
+
+			if (isSpecialNode)
+			{
+				char	   *name;
+
+				Assert(state->targetKind == XNTNODE_ROOT);
+				Assert(state->getXNodeKindFunc != NULL);
+
+				name = (char *) palloc(nodeInfo->cntLength + 1);
+				memcpy(name, state->inputText + nodeInfo->cntSrc, nodeInfo->cntLength);
+				name[nodeInfo->cntLength] = '\0';
+				specialNodeKind = state->getXNodeKindFunc(name);
+				pfree(name);
+			}
 		}
 
 		/*
@@ -1108,21 +1153,175 @@ processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowe
 		 */
 		attributes = children = state->stack.position - stackPosOrig;
 
+		if (isSpecialNode || state->targetKind == XNTNODE_ROOT)
+		{
+			unsigned int attrsNewMaxCount;
+			XNodeListItem *attrOffsets,
+					   *attrOffsetsNew;
+			char	   *attrsNew = NULL;
+			unsigned int newSize = 0;
+			unsigned int newCount = 0;
+
+			/*
+			 * One may think processTag() can do this, but it does not have
+			 * sufficient information to decide whether given attribute should
+			 * accept a template containing parameters. It's accepted, in most
+			 * cases, e.g.
+			 *
+			 * <myelement myattr="{myparam}"/>
+			 *
+			 * However not allways: <xnt:copy-of-param name="myparam"/>
+			 *
+			 * Inside processTag() we don't know yet if e.g the last attribute
+			 * of the current tag isn't just overriding the 'xnt' namespace
+			 * and thus making an 'ordinary tag' out of the '<copy-of-param/>'
+			 *
+			 * While special format has to be used in both cases, the parsing
+			 * algorithm is different.
+			 */
+
+			attrsNewMaxCount = attributes + XNT_SPECIAL_ATTRS_MAX;
+			attrOffsets = state->stack.content + stackPosOrig;
+			attrOffsetsNew = (XNodeListItem *) palloc(attrsNewMaxCount * sizeof(XNodeListItem));
+
+			if (attributes > 0)
+			{
+				/* Prepare input data for preprocessXNTAttributes(). */
+				memcpy(attrOffsetsNew, attrOffsets, attributes * sizeof(XNodeListItem));
+			}
+
+			if (isSpecialNode)
+			{
+				/*
+				 * preprocessXNTAttributes() is called even if there are no
+				 * attributes:
+				 *
+				 * 1. To check whether the node does not miss any required
+				 * attribute. 2. To ensure that missing optional attributes
+				 * have the (invalid) offset set at the appropriate position.
+				 */
+				specAttrsValid = (bool *) palloc(attrsNewMaxCount * sizeof(bool));
+				attrsNew = preprocessXNTAttributes(attrOffsetsNew, attributes, state->tree, specialNodeKind,
+												   specAttrsValid, &specAttrCount, &newSize, &newCount, &state->paramNames);
+			}
+			else if (state->targetKind == XNTNODE_ROOT)
+			{
+				/*
+				 * When parsing template, non-special attributes need to be
+				 * checked too: some of them may reference parameters in the
+				 * value.
+				 */
+				attrsNew = preprocessXNTAttrValues(attrOffsetsNew, attributes, state->tree, &newSize, &state->paramNames,
+												   &state->substNodes);
+				newCount = attributes;
+			}
+
+			if (attrsNew != NULL)
+			{
+				unsigned int i;
+				char	   *attrData = state->tree + attrOffsets->value.singleOff;
+				unsigned int attrDataOrigSize = state->dstPos - attrOffsets->value.singleOff;
+
+				Assert(newCount >= attributes);
+
+				/*
+				 * Copy the possibly adjusted values back into the stack and
+				 * add new if appropriate.
+				 */
+				for (i = 0; i < newCount; i++)
+				{
+					XNodeListItem *itemNew = attrOffsetsNew + i;
+
+					if (i < attributes)
+					{
+						XNodeListItem *itemOrig = attrOffsets + i;
+
+						itemOrig->value.singleOff = itemNew->value.singleOff;
+					}
+					else
+					{
+						xmlnodePushSingleNode(&state->stack, itemNew->value.singleOff);
+					}
+				}
+
+				/*
+				 * Replace the original attribute data with those (possibly)
+				 * changed.
+				 */
+				if (newSize > attrDataOrigSize)
+				{
+					ensureSpace(newSize - attrDataOrigSize, state);
+				}
+				memcpy(attrData, attrsNew, newSize);
+				if (newSize != attrDataOrigSize)
+				{
+					if (newSize > attrDataOrigSize)
+					{
+						state->dstPos += newSize - attrDataOrigSize;
+					}
+					else
+					{
+						state->dstPos -= attrDataOrigSize - newSize;
+					}
+				}
+				pfree(attrsNew);
+				children = attributes = newCount;
+			}
+			pfree(attrOffsetsNew);
+		}
+
 		if (tagType == TOKEN_EMPTY_ELEMENT)
 		{
 			XMLCompNodeHdr element;
+			XMLNodeOffset elementOff;
 
 			/*
 			 * In this case 'child' always means 'attribute'
 			 */
-			nodeInfo->nodeOut = state->dstPos;
-			nodeInfo->tokenType = TOKEN_EMPTY_ELEMENT;
 
-			element = (XMLCompNodeHdr) (state->tree + nodeInfo->nodeOut);
+			elementOff = nodeInfo->nodeOut = state->dstPos;
+			nodeInfo->tokenType = TOKEN_EMPTY_ELEMENT;
 			saveNodeHeader(state, nodeInfo, XNODE_EMPTY);
+			element = (XMLCompNodeHdr) (state->tree + elementOff);
+
+			/*
+			 * Overwrite the node kind additionally. This is quite rare action
+			 * so we don't have to make the 'saveNodeHeader() function less
+			 * generic.
+			 */
+			if (isSpecialNode)
+			{
+				element->common.kind = specialNodeKind;
+				element->common.flags |= XNODE_EL_SPECIAL;
+
+				/*
+				 * Remember which nodes need to be constructed when using the
+				 * template.
+				 */
+				if (element->common.kind != XNTNODE_ROOT && element->common.kind != XNTNODE_TEMPLATE)
+				{
+					xmlnodePushSingleNode(&state->substNodes, elementOff);
+				}
+			}
+
 			element->children = children;
-			saveReferences(state, nodeInfo, element, children);
-			saveContent(state, nodeInfo);
+			if (children > 0)
+			{
+				saveReferences(state, nodeInfo, element, children, specAttrsValid, specAttrCount);
+			}
+			if (specAttrsValid != NULL)
+			{
+				pfree(specAttrsValid);
+			}
+
+			/*
+			 * Node name would be redundant in this case, the 'kind' is
+			 * enough.
+			 */
+			if (!isSpecialNode)
+			{
+				saveContent(state, nodeInfo);
+			}
 
 			/*
 			 * The most recent namespace declarations might only be relevant
@@ -1142,6 +1341,7 @@ processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowe
 			bool		match;
 			XMLCompNodeHdr element;
 			XMLNodeHdr	firstText = NULL;
+			XMLNodeOffset elementOff;
 
 			state->saveHeader = true;
 
@@ -1244,16 +1444,37 @@ processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowe
 			 * Now that children are processed, the node can be written to
 			 * output.
 			 */
-			nodeInfo->nodeOut = state->dstPos;
+			elementOff = nodeInfo->nodeOut = state->dstPos;
 			nodeInfo->tokenType = childTag.tokenType;
-			element = (XMLCompNodeHdr) (state->tree + nodeInfo->nodeOut);
 			saveNodeHeader(state, nodeInfo, children == attributes ? XNODE_EMPTY : 0);
+			element = (XMLCompNodeHdr) (state->tree + elementOff);
+
+			if (isSpecialNode)
+			{
+				element->common.kind = specialNodeKind;
+				element->common.flags |= XNODE_EL_SPECIAL;
+
+				if (element->common.kind != XNTNODE_ROOT && element->common.kind != XNTNODE_TEMPLATE)
+				{
+					xmlnodePushSingleNode(&state->substNodes, elementOff);
+				}
+			}
+
 			element->children = children;
 			if (children > 0)
 			{
-				saveReferences(state, nodeInfo, element, children);
+				saveReferences(state, nodeInfo, element, children, specAttrsValid, specAttrCount);
 			}
-			saveContent(state, nodeInfo);
+
+			if (specAttrsValid != NULL)
+			{
+				pfree(specAttrsValid);
+			}
+
+			if (!isSpecialNode)
+			{
+				saveContent(state, nodeInfo);
+			}
 			return;
 		}
 	}
@@ -1279,7 +1500,7 @@ forgetNamespaceDeclarations(unsigned int count, XMLNodeContainer stack)
  * unbound namespace prefixes.
  */
 static void
-checkNamespaces(XMLParserState state, XMLNodeInternal nodeInfo, unsigned int attrsPrefixedCount)
+checkNamespaces(XMLParserState state, XMLNodeInternal nodeInfo, unsigned int attrsPrefixedCount, bool *elNmspIsSpecial)
 {
 	/*
 	 * The element name must be taken from the source text because the element
@@ -1344,7 +1565,8 @@ checkNamespaces(XMLParserState state, XMLNodeInternal nodeInfo, unsigned int att
 	if (!elNmspNameResolved || attrsUnresolved > 0)
 	{
 		resolveNamespaces(&state->nmspDecl, state->nmspDecl.position, elNmspName, &elNmspNameResolved, attrsPrefixed,
-						  attrsPrefixedCount, attrFlags, &attrsUnresolved);
+						  attrsPrefixedCount, attrFlags, &attrsUnresolved, state->nmspSpecialName,
+						  state->nmspSpecialValue, elNmspIsSpecial);
 	}
 
 	if (!elNmspNameResolved)
@@ -1408,7 +1630,6 @@ static XMLNodeToken
 processTag(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowed,
 		   XMLNodeHdr *declAttrs, unsigned short *declAttrNum, unsigned int *nmspDecls, unsigned int *attrsPrefixed)
 {
-
 	bool		mustEnd = false;
 	unsigned short attributes = 0;
 	unsigned int stackInit = state->stack.position;
@@ -1622,7 +1843,6 @@ processTag(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowed,
 				 * the names&values to the output array.
 				 *
 				 */
-
 				xmlnodePushSingleNode(&state->stack, state->dstPos);
 				if (allowed == TOKEN_XMLDECL)
 				{
@@ -1695,13 +1915,11 @@ processTag(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowed,
 						 * Declaration of non-default namespace, e.g.
 						 * xmlns:a="..."
 						 */
-						char	   *nmspName;
 
 						/* readName() does not allow for 2 or more colons. */
 						Assert(attrName[nameLength - 1] != XNODE_CHAR_COLON);
 
-						nmspName = attrName + nmspDefPrefixLen + 1;
-						xmlnodePushSinglePtr(&state->nmspDecl, (void *) nmspName);
+						xmlnodePushSinglePtr(&state->nmspDecl, (void *) attrNode);
 						if (nmspDecls != NULL)
 						{
 							(*nmspDecls)++;
@@ -2890,8 +3108,8 @@ saveContent(XMLParserState state, XMLNodeInternal nodeInfo)
 }
 
 static void
-saveReferences(XMLParserState state, XMLNodeInternal nodeInfo,
-			   XMLCompNodeHdr compNode, unsigned short int children)
+saveReferences(XMLParserState state, XMLNodeInternal nodeInfo, XMLCompNodeHdr compNode,
+   unsigned short children, bool *specAttrsValid, unsigned int specAttrCount)
 {
 	/*
 	 * Find out the range of reference values and the corresponding storage.
@@ -2908,15 +3126,22 @@ saveReferences(XMLParserState state, XMLNodeInternal nodeInfo,
 	compNode = (XMLCompNodeHdr) (state->tree + elementOff);
 	XNODE_SET_REF_BWIDTH(compNode, bwidth);
 	childOffTarg = XNODE_LAST_REF(compNode);
+
 	for (i = 0; i < children; i++)
 	{
 		XMLNodeOffset childOffset = xmlnodePopOffset(&state->stack);
 
-		/*
-		 * Distance between parent and child
-		 */
-		dist = nodeInfo->nodeOut - childOffset;
-
+		if (specAttrsValid != NULL && !specAttrsValid[i] && i < specAttrCount)
+		{
+			dist = XMLNodeOffsetInvalid;
+		}
+		else
+		{
+			/*
+			 * Distance between parent and child
+			 */
+			dist = nodeInfo->nodeOut - childOffset;
+		}
 		writeXMLNodeOffset(dist, &childOffTarg, bwidth, false);
 		childOffTarg = XNODE_PREV_REF(childOffTarg, compNode);
 	}
@@ -2994,6 +3219,12 @@ saveRootNodeHeader(XMLParserState state, XMLNodeKind kind)
 	unsigned short int childCount;
 	unsigned int refsTotal;
 	char		bwidth;
+	unsigned int declSize = 0;
+	unsigned int xntHdrSize = 0;
+	unsigned int extraSize;
+	char	  **paramNames = NULL;
+	unsigned short paramCount = 0;
+	unsigned short substNodesCount = 0;
 
 	rootHdrSz = sizeof(XMLCompNodeHdrData);
 
@@ -3030,21 +3261,86 @@ saveRootNodeHeader(XMLParserState state, XMLNodeKind kind)
 
 	if (kind == XMLNODE_DOC && state->decl != NULL)
 	{
-		unsigned int declSize = sizeof(XMLDeclData);
+		declSize = sizeof(XMLDeclData);
+	}
 
-		ensureSpace(declSize, state);
+	if (state->targetKind == XNTNODE_ROOT)
+	{
+		XMLNodeContainer paramNameCont = &state->paramNames;
+		XMLNodeContainer substNodesCont = &state->substNodes;
 
-		/*
-		 * re-initialize the 'rootNode', in case re-allocation took place
-		 */
-		rootNode = (XMLCompNodeHdr) (state->tree + rootNodeOff);
+		if (paramNameCont->position > 0)
+		{
+			XNodeListItem *lItem = paramNameCont->content;
+			unsigned short i;
 
+			paramCount = paramNameCont->position;
+			paramNames = (char **) palloc(paramCount * sizeof(char *));
+			for (i = 0; i < paramCount; i++)
+			{
+				char	   *parName = lItem->value.singlePtr;
+
+				xntHdrSize += strlen(parName) + 1;
+				paramNames[i] = parName;
+				lItem++;
+			}
+		}
+		xntHdrSize += sizeof(XNTHeaderData);
+
+		substNodesCount = substNodesCont->position;
+		xntHdrSize += substNodesCount * sizeof(XMLNodeOffset);
+
+	}
+
+	extraSize = declSize + xntHdrSize;
+	ensureSpace(extraSize + sizeof(XMLNodeOffset), state);
+	/* re-initialize the 'rootNode', re-allocation might have taken place. */
+	rootNode = (XMLCompNodeHdr) (state->tree + rootNodeOff);
+
+	if (declSize > 0)
+	{
 		memcpy(state->tree + state->dstPos, state->decl, declSize);
 		state->dstPos += declSize;
 		rootNode->common.flags |= XNODE_DOC_XMLDECL;
 	}
-	ensureSpace(sizeof(XMLNodeOffset), state);
-	rootNode = (XMLCompNodeHdr) (state->tree + rootNodeOff);
+
+	if (xntHdrSize > 0)
+	{
+		XNTHeaderData hdr;
+
+		hdr.paramCount = paramCount;
+		hdr.substNodesCount = substNodesCount;
+		memcpy(state->tree + state->dstPos, &hdr, sizeof(XNTHeaderData));
+		state->dstPos += sizeof(XNTHeaderData);
+
+		if (paramCount > 0)
+		{
+			unsigned short i;
+
+			for (i = 0; i < paramCount; i++)
+			{
+				strcpy(state->tree + state->dstPos, paramNames[i]);
+				state->dstPos += strlen(paramNames[i]) + 1;
+			}
+			pfree(paramNames);
+		}
+
+		if (substNodesCount > 0)
+		{
+			XMLNodeContainer substNodesCont = &state->substNodes;
+			XNodeListItem *item = substNodesCont->content;
+			unsigned short i;
+			XMLNodeOffset *offPtr = (XMLNodeOffset *) (state->tree + state->dstPos);
+
+			for (i = 0; i < substNodesCount; i++)
+			{
+				*offPtr = item->value.singleOff;
+				offPtr++;
+				item++;
+			}
+			state->dstPos += substNodesCount * sizeof(XMLNodeOffset);
+		}
+	}
 
 	rootNodeOffPtr = (XMLNodeOffset *) (state->tree + state->dstPos);
 	*rootNodeOffPtr = ((char *) rootNode - state->tree);
@@ -3057,10 +3353,10 @@ saveRootNodeHeader(XMLParserState state, XMLNodeKind kind)
  * to be computed.
  */
 void
-xmlnodeDumpNode(char *input, XMLNodeOffset nodeOff, char **output, unsigned int *pos)
+xmlnodeDumpNode(char *input, XMLNodeOffset nodeOff, char **output, unsigned int *pos, char **paramNames)
 {
-	char	   *content;
-	unsigned int cntLen;
+	char	   *content = NULL;
+	unsigned int cntLen = 0;
 	unsigned int incr;
 	XMLNodeHdr	node = (XMLNodeHdr) (input + nodeOff);
 
@@ -3070,13 +3366,24 @@ xmlnodeDumpNode(char *input, XMLNodeOffset nodeOff, char **output, unsigned int 
 			char	   *childOffPtr,
 					   *lastChild;
 
-		case XMLNODE_ELEMENT:
 		case XMLNODE_DOC:
-			if (node->kind == XMLNODE_ELEMENT)
+		case XMLNODE_ELEMENT:
+
+		case XNTNODE_ROOT:
+		case XNTNODE_TEMPLATE:
+		case XNTNODE_COPY_OF:
+			if (node->kind == XMLNODE_ELEMENT || (node->flags & XNODE_EL_SPECIAL))
 			{
 				XMLCompNodeHdr element = (XMLCompNodeHdr) node;
 
-				content = XNODE_ELEMENT_NAME(element);
+				if (node->flags & XNODE_EL_SPECIAL)
+				{
+					content = getXNTNodeName(node->kind);
+				}
+				else
+				{
+					content = XNODE_ELEMENT_NAME(element);
+				}
 				cntLen = strlen(content);
 
 				/*
@@ -3096,12 +3403,14 @@ xmlnodeDumpNode(char *input, XMLNodeOffset nodeOff, char **output, unsigned int 
 				*pos += cntLen + 1;
 				/* '<' + Name */
 			}
+
 			childOffPtr = XNODE_FIRST_REF(((XMLCompNodeHdr) node));
-			if (node->kind == XMLNODE_ELEMENT)
+
+			if (node->kind == XMLNODE_ELEMENT || (node->flags & XNODE_EL_SPECIAL))
 			{
 				XMLCompNodeHdr eh = (XMLCompNodeHdr) node;
 
-				i = dumpAttributes(eh, input, output, pos);
+				i = dumpAttributes(eh, input, output, pos, paramNames);
 				childOffPtr = childOffPtr + i * XNODE_GET_REF_BWIDTH(eh);
 
 				if (node->flags & XNODE_EMPTY)
@@ -3132,7 +3441,7 @@ xmlnodeDumpNode(char *input, XMLNodeOffset nodeOff, char **output, unsigned int 
 					while (childOffPtr <= lastChild)
 					{
 						xmlnodeDumpNode(input, nodeOff - readXMLNodeOffset(&childOffPtr,
-							   XNODE_GET_REF_BWIDTH(eh), true), output, pos);
+																		   XNODE_GET_REF_BWIDTH(eh), true), output, pos, paramNames);
 					}
 
 					/*
@@ -3152,6 +3461,15 @@ xmlnodeDumpNode(char *input, XMLNodeOffset nodeOff, char **output, unsigned int 
 					*pos += 3 + strlen(content);
 					/* '</' + 'Name' + '>' */
 				}
+
+				if (node->flags & XNODE_EL_SPECIAL)
+				{
+					/*
+					 * 'content' is the constructed full name as opposed to
+					 * pointer to the binary tree;
+					 */
+					pfree(content);
+				}
 			}
 			else
 			{
@@ -3164,7 +3482,7 @@ xmlnodeDumpNode(char *input, XMLNodeOffset nodeOff, char **output, unsigned int 
 				{
 					xmlnodeDumpNode(input, nodeOff -
 									readXMLNodeOffset(&childOffPtr, XNODE_GET_REF_BWIDTH((XMLCompNodeHdr) node), true),
-									output, pos);
+									output, pos, paramNames);
 				}
 			}
 			break;
@@ -3289,9 +3607,9 @@ xmlnodeDumpNode(char *input, XMLNodeOffset nodeOff, char **output, unsigned int 
 			while (childOffPtr <= lastChild)
 			{
 				XMLCompNodeHdr eh = (XMLCompNodeHdr) node;
+				XMLNodeOffset offRel = readXMLNodeOffset(&childOffPtr, XNODE_GET_REF_BWIDTH(eh), true);
 
-				xmlnodeDumpNode(input, nodeOff - readXMLNodeOffset(&childOffPtr, XNODE_GET_REF_BWIDTH(eh), true),
-								output, pos);
+				xmlnodeDumpNode(input, nodeOff - offRel, output, pos, paramNames);
 			}
 			break;
 
@@ -3303,28 +3621,57 @@ xmlnodeDumpNode(char *input, XMLNodeOffset nodeOff, char **output, unsigned int 
 
 static unsigned int
 dumpAttributes(XMLCompNodeHdr element, char *input,
-			   char **output, unsigned int *pos)
+			   char **output, unsigned int *pos, char **paramNames)
 {
 
 	unsigned int i = 0;
 	char	   *childOffPtr = XNODE_FIRST_REF(element);
-	char	   *lastChild = XNODE_LAST_REF(element);
 
-	while (childOffPtr <= lastChild)
+	for (i = 0; i < element->children; i++)
 	{
-		XMLNodeHdr	attrNode = (XMLNodeHdr) ((char *) element
-											 - readXMLNodeOffset(&childOffPtr, XNODE_GET_REF_BWIDTH(element), true));
-		char	   *attrName,
-				   *attrValue;
+		XMLNodeOffset attrOffset = readXMLNodeOffset(&childOffPtr, XNODE_GET_REF_BWIDTH(element), true);
+		XMLNodeHdr	attrNode;
+		char	   *attrName = NULL;
+		char	   *attrValue = NULL;
 		unsigned int attrNameLen,
 					attrValueLen;
-		char		qMark = (attrNode->flags & XNODE_ATTR_APOSTROPHE) ? XNODE_CHAR_APOSTR : XNODE_CHAR_QUOTMARK;
+		char		qMark;
+		bool		isSpecialAttr = false;
+		bool		valueCopy = false;
 
+		if (attrOffset == XMLNodeOffsetInvalid)
+		{
+			/* Empty slot for an optional attribute. */
+			continue;
+		}
+
+		attrNode = (XMLNodeHdr) ((char *) element - attrOffset);
 		if (attrNode->kind != XMLNODE_ATTRIBUTE)
 		{
 			break;
 		}
-		attrName = (char *) attrNode + sizeof(XMLNodeHdrData);
+
+		if (element->common.flags & XNODE_EL_SPECIAL)
+		{
+			/*
+			 * Special node shouldn't have other-than-special attributes too
+			 * often, so it's not wasting time if we always assume that this
+			 * attribute is special. The worst case is that we receive NULL,
+			 * indicating that it's an ordinary attribute.
+			 */
+			attrName = getXNTAttributeName(element->common.kind, i);
+			if (attrName != NULL)
+			{
+				isSpecialAttr = true;
+			}
+		}
+		if (!isSpecialAttr)
+		{
+			attrName = XNODE_CONTENT(attrNode);
+		}
+
+		qMark = (attrNode->flags & XNODE_ATTR_APOSTROPHE) ? XNODE_CHAR_APOSTR : XNODE_CHAR_QUOTMARK;
+
 		attrNameLen = strlen(attrName);
 		if (*output != NULL)
 		{
@@ -3339,7 +3686,49 @@ dumpAttributes(XMLCompNodeHdr element, char *input,
 		}
 		*pos += attrNameLen + 3;
 
-		attrValue = attrName + attrNameLen + 1;
+		if (isSpecialAttr)
+		{
+			/*
+			 * Special attribute has no name stored, value immediately follows
+			 * the header.
+			 */
+			attrValue = XNODE_CONTENT(attrNode);
+
+			if (attrNode->flags & XNODE_ATTR_VALUE_BINARY)
+			{
+				if (element->common.kind == XNTNODE_COPY_OF && i == XNT_COPY_OF_EXPR)
+				{
+					XPathExpression xpExpr = (XPathExpression) attrValue;
+					StringInfoData output;
+
+					output.maxlen = 32;
+					output.data = (char *) palloc(output.maxlen);
+					resetStringInfo(&output);
+					dumpXPathExpression(xpExpr, NULL, &output, true, paramNames, false);
+					attrValue = output.data;
+					valueCopy = true;
+				}
+				else
+				{
+					elog(ERROR, "element of kind %u has unrecognized special attribute %u",
+						 element->common.kind, i);
+				}
+			}
+		}
+		else
+		{
+			attrValue = attrName + attrNameLen + 1;
+
+			/*
+			 * Ordinary element can have binary (tokenized) value too. This
+			 * happens when it's used in a template.
+			 */
+			if (attrNode->flags & XNODE_ATTR_VALUE_BINARY)
+			{
+				attrValue = dumpBinaryAttrValue(attrValue, paramNames, NULL, NULL, NULL);
+				valueCopy = true;
+			}
+		}
 		attrValueLen = strlen(attrValue);
 
 		if (attrNode->flags & XNODE_ATTR_CONTAINS_REF)
@@ -3356,13 +3745,16 @@ dumpAttributes(XMLCompNodeHdr element, char *input,
 			*pos += attrValueLen;
 		}
 
+		if (valueCopy)
+		{
+			pfree(attrValue);
+		}
 		if (*output != NULL)
 		{
 			**output = qMark;
 			(*output)++;
 		}
 		(*pos)++;
-		i++;
 	}
 	return i;
 }
