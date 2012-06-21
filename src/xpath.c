@@ -351,7 +351,7 @@ xpath_single(PG_FUNCTION_ARGS)
 		elog(ERROR, "neither relative paths nor attributes expected in main expression");
 	}
 	exprState = prepareXPathExpression(expr, (XMLCompNodeHdr) XNODE_ROOT(doc), doc, xpHdr, NULL);
-	evaluateXPathExpression(exprState, exprState->expr, NULL, (XMLCompNodeHdr) XNODE_ROOT(doc), 0, &resData);
+	evaluateXPathExpression(exprState, exprState->expr, 0, &resData);
 	result = getXPathExprValue(exprState, doc, &notNull, &resData);
 	freeExpressionState(exprState);
 
@@ -974,8 +974,7 @@ getResultArray(XMLScanContext ctx, XMLNodeOffset baseNodeOff)
 		XPathExprState exprState = prepareXPathExpression(expr, baseNode, doc, xpHdr, ctx->baseScan);
 		XPathExprOperandValueData resData;
 
-		evaluateXPathExpression(exprState, exprState->expr, XMLSCAN_CURRENT_LEVEL(ctx->baseScan),
-		(XMLCompNodeHdr) ((char *) VARDATA(doc) + baseNodeOff), 0, &resData);
+		evaluateXPathExpression(exprState, exprState->expr, 0, &resData);
 		colValue = getXPathExprValue(exprState, doc, &colNotNull, &resData);
 		freeExpressionState(exprState);
 

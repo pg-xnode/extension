@@ -673,8 +673,8 @@ extern XPathExprState prepareXPathExpression(XPathExpression exprOrig, XMLCompNo
 					   xmldoc document, XPathHeader xpHdr, XMLScan xscan);
 extern XPathExprState createXPathVarCache(unsigned int size);
 extern void allocXPathExpressionVarCache(XPathExprState state, XPathExprVar varKind, unsigned int increment, bool init);
-extern void evaluateXPathExpression(XPathExprState exprState, XPathExpression expr, XMLScanOneLevel scan,
-						XMLCompNodeHdr element, unsigned short recursionLevel, XPathExprOperandValue result);
+extern void evaluateXPathExpression(XPathExprState exprState, XPathExpression expr,
+				unsigned short recursionLevel, XPathExprOperandValue result);
 
 extern void freeExpressionState(XPathExprState state);
 

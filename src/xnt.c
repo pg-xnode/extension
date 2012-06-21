@@ -597,7 +597,7 @@ dumpBinaryAttrValue(char *binValue, char **paramNames, XPathExprOperandValue par
 				XPathExpression exprCopy;
 
 				exprCopy = substituteParameters(exprState, expr, paramValues, paramMap);
-				evaluateXPathExpression(exprState, exprCopy, NULL, NULL, 0, &result);
+				evaluateXPathExpression(exprState, exprCopy, 0, &result);
 
 				if (result.type == XPATH_VAL_NODESET)
 				{
@@ -1381,7 +1381,7 @@ buildNewNodeTree(XMLNodeHdr node, XNodeInternal parent, unsigned int *storageSiz
 						 */
 						expr = (XPathExpression) XNODE_CONTENT(attrNode);
 						exprCopy = substituteParameters(exprState, expr, paramValues, paramMap);
-						evaluateXPathExpression(exprState, exprCopy, NULL, NULL, 0, &exprResult);
+						evaluateXPathExpression(exprState, exprCopy, 0, &exprResult);
 
 						if (!exprResult.isNull)
 						{

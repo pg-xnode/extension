@@ -8,13 +8,13 @@
 #include "xpath.h"
 #include "xmlnode_util.h"
 
-static unsigned int evaluateXPathOperand(XPathExprState exprState, XPathExprOperand operand, XMLScanOneLevel scan,
-					 XMLCompNodeHdr element, unsigned short recursionLevel, XPathExprOperandValue result);
-static void evaluateXPathFunction(XPathExprState exprState, XPathExpression funcExpr, XMLScanOneLevel scan,
-					  XMLCompNodeHdr element, unsigned short recursionLevel, XPathExprOperandValue result);
+static unsigned int evaluateXPathOperand(XPathExprState exprState, XPathExprOperand operand,
+				unsigned short recursionLevel, XPathExprOperandValue result);
+static void evaluateXPathFunction(XPathExprState exprState, XPathExpression funcExpr,
+				unsigned short recursionLevel, XPathExprOperandValue result);
 static void prepareLiteral(XPathExprState exprState, XPathExprOperand operand);
-static void evaluateBinaryOperator(XPathExprState exprState, XPathExprOperandValue valueLeft, XPathExprOperandValue valueRight,
-					   XPathExprOperator operator, XPathExprOperandValue result, XMLCompNodeHdr element);
+static void evaluateBinaryOperator(XPathExprState exprState, XPathExprOperandValue valueLeft,
+					   XPathExprOperandValue valueRight, XPathExprOperator operator, XPathExprOperandValue result);
 
 static bool considerSubScan(XPathElement xpEl, XMLNodeHdr node, XMLScan xscan, bool subScanJustDone);
 static void addNodeToIgnoreList(XMLNodeHdr node, XMLScan scan);
@@ -291,7 +291,7 @@ getNextXMLNode(XMLScan xscan, bool removed)
 						XPathExprState exprState = prepareXPathExpression(exprOrig, currentElement,
 								 xscan->document, xscan->xpathHeader, xscan);
 
-						evaluateXPathExpression(exprState, exprState->expr, scanLevel, currentElement, 0, &result);
+						evaluateXPathExpression(exprState, exprState->expr, 0, &result);
 
 						if (result.isNull)
 						{
@@ -665,8 +665,8 @@ createXPathVarCache(unsigned int size)
  * evaluating. In general - a context node.
  */
 void
-evaluateXPathExpression(XPathExprState exprState, XPathExpression expr, XMLScanOneLevel scan,
-						XMLCompNodeHdr element, unsigned short recursionLevel, XPathExprOperandValue result)
+evaluateXPathExpression(XPathExprState exprState, XPathExpression expr, unsigned short recursionLevel,
+						XPathExprOperandValue result)
 {
 	unsigned short i;
 	char	   *currentPtr = (char *) expr;
@@ -685,7 +685,7 @@ evaluateXPathExpression(XPathExprState exprState, XPathExpression expr, XMLScanO
 	}
 	currentOpnd = (XPathExprOperand) currentPtr;
 	prepareLiteral(exprState, currentOpnd);
-	currentSize = evaluateXPathOperand(exprState, currentOpnd, scan, element, recursionLevel, result);
+	currentSize = evaluateXPathOperand(exprState, currentOpnd, recursionLevel, result);
 
 	for (i = 0; i < expr->members - 1; i++)
 	{
@@ -703,8 +703,8 @@ evaluateXPathExpression(XPathExprState exprState, XPathExpression expr, XMLScanO
 		currentOpnd = (XPathExprOperand) currentPtr;
 		prepareLiteral(exprState, currentOpnd);
 
-		currentSize = evaluateXPathOperand(exprState, currentOpnd, scan, element, recursionLevel, &currentVal);
-		evaluateBinaryOperator(exprState, result, &currentVal, operator, &resTmp, element);
+		currentSize = evaluateXPathOperand(exprState, currentOpnd, recursionLevel, &currentVal);
+		evaluateBinaryOperator(exprState, result, &currentVal, operator, &resTmp);
 		memcpy(result, &resTmp, sizeof(XPathExprOperandValueData));
 
 		/*
@@ -784,20 +784,20 @@ freeExpressionState(XPathExprState state)
 }
 
 static unsigned int
-evaluateXPathOperand(XPathExprState exprState, XPathExprOperand operand, XMLScanOneLevel scan, XMLCompNodeHdr element,
-				 unsigned short recursionLevel, XPathExprOperandValue result)
+evaluateXPathOperand(XPathExprState exprState, XPathExprOperand operand, unsigned short recursionLevel,
+					 XPathExprOperandValue result)
 {
 	unsigned int resSize;
 	XPathExpression expr = (XPathExpression) operand;
 
 	if (operand->common.type == XPATH_OPERAND_EXPR_SUB)
 	{
-		evaluateXPathExpression(exprState, expr, scan, element, recursionLevel + 1, result);
+		evaluateXPathExpression(exprState, expr, recursionLevel + 1, result);
 		resSize = expr->common.size;
 	}
 	else if (operand->common.type == XPATH_OPERAND_FUNC)
 	{
-		evaluateXPathFunction(exprState, expr, scan, element, recursionLevel + 1, result);
+		evaluateXPathFunction(exprState, expr, recursionLevel + 1, result);
 		resSize = expr->common.size;
 	}
 	else
@@ -816,8 +816,8 @@ evaluateXPathOperand(XPathExprState exprState, XPathExprOperand operand, XMLScan
  * and as such has already been evaluated by substituteFunctions().
  */
 static void
-evaluateXPathFunction(XPathExprState exprState, XPathExpression funcExpr, XMLScanOneLevel scan,
-					  XMLCompNodeHdr element, unsigned short recursionLevel, XPathExprOperandValue result)
+evaluateXPathFunction(XPathExprState exprState, XPathExpression funcExpr, unsigned short recursionLevel,
+					  XPathExprOperandValue result)
 {
 	char	   *c = (char *) funcExpr + sizeof(XPathExpressionData);
 	unsigned short i;
@@ -843,11 +843,11 @@ evaluateXPathFunction(XPathExprState exprState, XPathExpression funcExpr, XMLSca
 			if (opnd->common.type == XPATH_OPERAND_FUNC)
 			{
 				/* In this case, 'subExpr' means 'argument list'. */
-				evaluateXPathFunction(exprState, subExpr, scan, element, recursionLevel, argsTmp);
+				evaluateXPathFunction(exprState, subExpr, recursionLevel, argsTmp);
 			}
 			else
 			{
-				evaluateXPathExpression(exprState, subExpr, scan, element, recursionLevel, argsTmp);
+				evaluateXPathExpression(exprState, subExpr, recursionLevel, argsTmp);
 			}
 		}
 		else
@@ -886,8 +886,8 @@ prepareLiteral(XPathExprState exprState, XPathExprOperand operand)
 }
 
 static void
-evaluateBinaryOperator(XPathExprState exprState, XPathExprOperandValue valueLeft, XPathExprOperandValue valueRight,
-					   XPathExprOperator operator, XPathExprOperandValue result, XMLCompNodeHdr element)
+evaluateBinaryOperator(XPathExprState exprState, XPathExprOperandValue valueLeft,
+					   XPathExprOperandValue valueRight, XPathExprOperator operator, XPathExprOperandValue result)
 {
 
 
