@@ -3372,6 +3372,8 @@ xmlnodeDumpNode(char *input, XMLNodeOffset nodeOff, char **output, unsigned int 
 		case XNTNODE_ROOT:
 		case XNTNODE_TEMPLATE:
 		case XNTNODE_COPY_OF:
+		case XNTNODE_ELEMENT:
+		case XNTNODE_ATTRIBUTE:
 			if (node->kind == XMLNODE_ELEMENT || (node->flags & XNODE_EL_SPECIAL))
 			{
 				XMLCompNodeHdr element = (XMLCompNodeHdr) node;
@@ -3706,6 +3708,13 @@ dumpAttributes(XMLCompNodeHdr element, char *input,
 					resetStringInfo(&output);
 					dumpXPathExpression(xpExpr, NULL, &output, true, paramNames, false);
 					attrValue = output.data;
+					valueCopy = true;
+				}
+				else if ((element->common.kind == XNTNODE_ELEMENT && i == XNT_ELEMENT_NAME) ||
+						 (element->common.kind == XNTNODE_ATTRIBUTE &&
+					  (i == XNT_ATTRIBUTE_NAME || i == XNT_ATTRIBUTE_VALUE)))
+				{
+					attrValue = dumpBinaryAttrValue(attrValue, paramNames, NULL, NULL, NULL);
 					valueCopy = true;
 				}
 				else

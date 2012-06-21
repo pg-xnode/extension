@@ -24,6 +24,14 @@
 #define XNT_COPY_OF				"copy-of"
 #define XNT_COPY_OF_EXPR		0
 
+#define XNT_ELEMENT				"element"
+#define XNT_ELEMENT_NAME		0
+
+#define XNT_ATTRIBUTE			"attribute"
+#define XNT_ATTRIBUTE_NAME		0
+#define XNT_ATTRIBUTE_VALUE		1
+
+
 /*
  * Information on special attribute names defined for each XNT tag.
  */
@@ -32,6 +40,7 @@
 
 typedef struct XNTAttrNames
 {
+	/* Number of attributes. */
 	unsigned short number;
 
 	/*
