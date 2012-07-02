@@ -2751,6 +2751,14 @@ select xml.element('root', '{{"i", "x"}, {"j", 1}}', NULL);
  <root i="x" j="1"/>
 (1 row)
 
+WITH tmp(n) as (VALUES ('<a i="1"/>'), ('<!--c-->'), ('<c><d j="2"/></c>'))
+SELECT xml.fragment(n::xml.node)
+FROM tmp;
+              fragment               
+-------------------------------------
+ <a i="1"/><!--c--><c><d j="2"/></c>
+(1 row)
+
 drop table states;
 DROP TABLE
 drop table paths;

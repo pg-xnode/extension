@@ -453,7 +453,6 @@ getFirstXMLNodeLeaf(XMLCompNodeHdr compNode)
 	return NULL;
 }
 
-
 void
 checkXMLWellFormedness(XMLCompNodeHdr root)
 {

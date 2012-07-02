@@ -205,6 +205,16 @@ CREATE FUNCTION element(text, text[][2], node)
 	LANGUAGE C
 	IMMUTABLE;
 
+CREATE FUNCTION fragment_sfunc(node, node) RETURNS node 
+	as 'MODULE_PATHNAME', 'xmlfragment'
+	LANGUAGE C
+	IMMUTABLE
+	STRICT;
+
+CREATE AGGREGATE fragment(node) (
+	SFUNC = fragment_sfunc,
+	STYPE = node
+);
 
 CREATE DOMAIN add_mode AS CHAR(1)
 	NOT NULL
@@ -252,3 +262,5 @@ CREATE FUNCTION node(template, text[], record)
 	LANGUAGE C
 	IMMUTABLE
 	STRICT;
+
+

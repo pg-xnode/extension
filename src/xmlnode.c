@@ -56,6 +56,8 @@ UTF8Interval nameCharIntervals[XNODE_NAME_CHAR_INTERVALS] =
 	{{0xe2, 0x80, 0xbf, 0x00}, {0xe2, 0x81, 0x80, 0x00}},
 };
 
+static void getDocFragmentInfo(XMLNodeHdr node, unsigned int *size, unsigned short *count);
+
 typedef struct TypeInfo
 {
 	Oid			oid;
@@ -77,6 +79,7 @@ initXNodeTypeInfo(Oid fnOid, int argNr, TypeInfo *ti)
 	ReleaseSysCache(tup);
 	get_typlenbyvalalign(ti->oid, &ti->elmlen, &ti->elmbyval, &ti->elmalign);
 }
+
 
 PG_MODULE_MAGIC;
 
@@ -928,5 +931,183 @@ collectXMLNamespaceDeclarations(XMLCompNodeHdr currentNode, unsigned int *attrCo
 				}
 			}
 		}
+	}
+}
+
+
+PG_FUNCTION_INFO_V1(xmlfragment);
+
+/*
+ * Aggregate function to turn group of nodes into a single document fragment (node).
+ *
+ * Instead of constructing a new document fragment per each state transition it might be
+ * better to collect pointers to the group members and only create one fragment when
+ * at the end of the group. However there seems to be no appropriate type for
+ * the state.
+ */
+Datum
+xmlfragment(PG_FUNCTION_ARGS)
+{
+	xmlnode		nodeVar,
+				newNodeVar;
+	unsigned short nodeCount,
+				nodeCountNew;
+	unsigned int nodeCountTotal;
+	char	   *resData,
+			   *resCursor,
+			   *result = NULL;
+	unsigned int nodeSize,
+				newNodeSize;
+	unsigned int resultSize = 0;
+	XMLNodeHdr	newNode,
+				node = NULL;
+	XMLNodeOffset *rootsAbs;
+	XMLNodeOffset rootOff,
+				offCursor,
+				offRelMax,
+				root = 0;
+	XMLCompNodeHdr resFragment;
+	XMLNodeOffset *rootOffPtr;
+	unsigned int sizeFinal;
+	unsigned short i;
+	char	  **roots;
+	char		bwidth;
+
+	nodeVar = PG_GETARG_VARLENA_P(0);
+	newNodeVar = PG_GETARG_VARLENA_P(1);
+	node = XNODE_ROOT(nodeVar);
+	newNode = XNODE_ROOT(newNodeVar);
+	nodeCount = 0;
+
+	if (newNode->kind == XMLNODE_DOC || newNode->kind >= XNTNODE_ROOT)
+	{
+		elog(ERROR, "node of kind %u can't be concatenated to anything", newNode->kind);
+	}
+
+	/* Evaluate the 'state node'... */
+	getDocFragmentInfo(node, &nodeSize, &nodeCount);
+	resultSize += nodeSize;
+
+	/* ... as well as the new one. */
+	getDocFragmentInfo(newNode, &newNodeSize, &nodeCountNew);
+	resultSize += newNodeSize;
+
+	nodeCountTotal = nodeCount + nodeCountNew;
+	Assert(nodeCountTotal > 1);
+	if (nodeCountTotal > XMLNODE_MAX_CHILDREN)
+	{
+		elog(ERROR, "maximum number of child nodes is %u", XMLNODE_MAX_CHILDREN);
+	}
+
+	/*
+	 * getXMLNodeSize() does account for references, but not always the
+	 * maximum byte width.
+	 */
+	resultSize += nodeCountTotal * sizeof(XMLNodeOffset);
+	resultSize += VARHDRSZ + sizeof(XMLCompNodeHdrData) + sizeof(XMLNodeOffset);
+	result = (char *) palloc(resultSize);
+	resData = resCursor = VARDATA(result);
+
+	rootsAbs = (XMLNodeOffset *) palloc(nodeCountTotal * sizeof(XMLNodeOffset));
+
+	offCursor = 0;
+
+	/* Copy the existing node. */
+	if (nodeCount == 1)
+	{
+		copyXMLNode(node, resCursor, false, &root);
+		resCursor += nodeSize;
+		rootsAbs[0] = root;
+	}
+	else
+	{
+		roots = copyXMLDocFragment((XMLCompNodeHdr) node, &resCursor);
+		for (i = 0; i < nodeCount; i++)
+		{
+			XMLNodeOffset rootAbs;
+
+			rootAbs = roots[i] - resData;
+			rootsAbs[i] = rootAbs;
+		}
+		pfree(roots);
+	}
+	offCursor += nodeSize;
+
+	/* And append the new one(s). */
+	if (nodeCountNew == 1)
+	{
+		copyXMLNode(newNode, resCursor, false, &root);
+		resCursor += newNodeSize;
+		rootsAbs[nodeCount] = root + offCursor;
+	}
+	else
+	{
+		XMLNodeOffset *dst;
+
+		roots = copyXMLDocFragment((XMLCompNodeHdr) newNode, &resCursor);
+
+		dst = rootsAbs + nodeCount;
+		for (i = 0; i < nodeCountNew; i++)
+		{
+			dst[i] = roots[i] - resData;
+		}
+		pfree(roots);
+	}
+	offCursor += newNodeSize;
+
+	resFragment = (XMLCompNodeHdr) resCursor;
+	resFragment->common.kind = XMLNODE_DOC_FRAGMENT;
+	resFragment->common.flags = 0;
+	resFragment->children = nodeCountTotal;
+
+	offRelMax = offCursor - rootsAbs[0];
+	bwidth = getXMLNodeOffsetByteWidth(offRelMax);
+	XNODE_SET_REF_BWIDTH(resFragment, bwidth);
+
+	resCursor += sizeof(XMLCompNodeHdrData);
+
+	for (i = 0; i < nodeCountTotal; i++)
+	{
+		XMLNodeOffset offRel;
+		XMLNodeHdr	fragChild;
+
+		/*
+		 * There should be no way for such a fragment to arise but the check
+		 * doesn't hurt.
+		 */
+		fragChild = (XMLNodeHdr) (resData + rootsAbs[i]);
+		if (fragChild->kind == XMLNODE_ATTRIBUTE)
+		{
+			elog(ERROR, "resulting document fragment must not contain attribute nodes");
+		}
+		offRel = (char *) resFragment - (resData + rootsAbs[i]);
+		writeXMLNodeOffset(offRel, &resCursor, bwidth, true);
+	}
+
+	rootOff = (char *) resFragment - resData;
+	rootOffPtr = (XMLNodeOffset *) resCursor;
+	*rootOffPtr = rootOff;
+	sizeFinal = resCursor - result + sizeof(XMLNodeOffset);
+	SET_VARSIZE(result, sizeFinal);
+	PG_RETURN_POINTER(result);
+}
+
+static void
+getDocFragmentInfo(XMLNodeHdr node, unsigned int *size, unsigned short *count)
+{
+	/* Evaluate the 'state node'... */
+	*size = getXMLNodeSize(node, true);
+	if (node->kind == XMLNODE_DOC_FRAGMENT)
+	{
+		XMLCompNodeHdr fragment = (XMLCompNodeHdr) node;
+
+		*count = fragment->children;
+		Assert(*count > 1);
+		/* The fragment node (header) itself won't be copied. */
+		*size -= sizeof(XMLCompNodeHdrData) + XNODE_GET_REF_BWIDTH(fragment) *fragment->children;
+	}
+	else
+	{
+		*count = 1;
 	}
 }

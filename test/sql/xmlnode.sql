@@ -603,9 +603,14 @@ select xml.element('root', '{{"i", "x"}, {"j", 1}}', '<x k="u"><y l="v"/></x>');
 select xml.element('root', NULL, '<x k="u"><y l="v"/></x>');
 select xml.element('root', '{{"i", "x"}, {"j", 1}}', NULL);
 
+-- xml.fragment()
+WITH tmp(n) as (VALUES ('<a i="1"/>'), ('<!--c-->'), ('<c><d j="2"/></c>'))
+SELECT xml.fragment(n::xml.node)
+FROM tmp;
+
+
 -- Cleanup
 
 drop table states;
 drop table paths;
 drop table docs_other;
-

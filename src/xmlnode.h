@@ -52,7 +52,17 @@ typedef enum XMLNodeKind
 	XMLNODE_CDATA,
 	XMLNODE_PI,
 	XMLNODE_TEXT,
+
+	/*
+	 * Document fragment containing zero or one child node should never be
+	 * created. It's relied on that a non-compound node will be used in such
+	 * cases.
+	 *
+	 * Also it's not allowed to create nested fragments (i.e. one fragment to
+	 * be a child of another one).
+	 */
 	XMLNODE_DOC_FRAGMENT,
+
 	XMLNODE_NODE,
 
 	XNTNODE_ROOT,
@@ -342,6 +352,6 @@ typedef enum XMLNodeAction
  */
 extern Datum xmlnode_children(PG_FUNCTION_ARGS);
 extern Datum xmlelement(PG_FUNCTION_ARGS);
-
+extern Datum xmlfragment(PG_FUNCTION_ARGS);
 
 #endif   /* XMLNODE_H */
