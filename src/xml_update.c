@@ -51,6 +51,11 @@ xmlnode_add(PG_FUNCTION_ARGS)
 	{
 		elog(ERROR, "invalid target path");
 	}
+	if (xpath->targNdKind == XMLNODE_ATTRIBUTE)
+	{
+		elog(ERROR, "target path for node addition must not point to attribute");
+	}
+
 	newNode = XNODE_ROOT(newNdVar);
 	if (newNode->kind == XMLNODE_ATTRIBUTE)
 	{
