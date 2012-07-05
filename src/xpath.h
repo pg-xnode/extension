@@ -513,19 +513,25 @@ typedef struct XPathParserStateData
 	unsigned int elementPos;
 	char	   *c;
 	unsigned short cWidth;
-	char	   *result,
-			   *output;
-	unsigned short outChunks;
 
-	/*
-	 * Strictly, this attribute is redundant. The purpose is to eliminate need
-	 * for evaluating (outChunks * XPATH_PARSER_OUTPUT_CHUNK) each time the
-	 * free space in 'result' is being checked.
-	 */
-	unsigned int outSize;
 } XPathParserStateData;
 
 typedef struct XPathParserStateData *XPathParserState;
+
+typedef struct LocationPathOutput
+{
+	char	   *data,
+			   *cursor;
+	unsigned short chunks;
+
+	/*
+	 * Strictly, this attribute is redundant. The purpose is to eliminate need
+	 * for evaluating (chunks * XPATH_PARSER_OUTPUT_CHUNK) each time the free
+	 * space in 'data' is being checked.
+	 */
+	unsigned int size;
+} LocationPathOutput;
+
 
 #define XPATH_NODE_TYPE_MAX_LEN 22		/* 'processing-instruction' */
 #define XPATH_NODE_TYPES_COUNT	4

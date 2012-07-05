@@ -28,7 +28,7 @@ static int parseFunctionArgList(XPathParserState state, XPathFunction, char *out
 static void checkFunctionArgTypes(XPathExpression argList, XPathFunction function);
 static void nextChar(XPathParserState state, bool endAllowed);
 static void skipWhiteSpace(XPathParserState state, bool endAllowed);
-static char *ensureSpace(unsigned int sizeNeeded, XPathParserState state);
+static char *ensureSpace(unsigned int sizeNeeded, LocationPathOutput *output);
 static void checkExpressionBuffer(unsigned short maxPos);
 static void utilizeSpaceForVars(char *output, unsigned short *outPos);
 
@@ -473,6 +473,7 @@ parseLocationPath(XPath *paths, bool isSubPath, unsigned short *pathCount, char 
 	char	   *xpathStr = *xpathSrc;
 	bool		slashAllowed = true;
 	bool		nonEmpty;
+	LocationPathOutput output;
 
 	if (paths == NULL)
 	{
@@ -489,10 +490,10 @@ parseLocationPath(XPath *paths, bool isSubPath, unsigned short *pathCount, char 
 	 * block of memory for each location path (pointer to which will be added
 	 * to 'paths' output array).
 	 */
-	state.outSize = XPATH_PARSER_OUTPUT_CHUNK;
-	state.outChunks = 1;
-	state.output = state.result = (char *) palloc(state.outSize);
-	locPath = (XPath) ensureSpace(sizeof(XPathData), &state);
+	output.size = XPATH_PARSER_OUTPUT_CHUNK;
+	output.chunks = 1;
+	output.cursor = output.data = (char *) palloc(output.size);
+	locPath = (XPath) ensureSpace(sizeof(XPathData), &output);
 	locPath->depth = 0;
 	locPath->descendants = 0;
 	locPath->relative = (*xpathStr != XNODE_CHAR_SLASH);
@@ -525,7 +526,7 @@ parseLocationPath(XPath *paths, bool isSubPath, unsigned short *pathCount, char 
 		 * Ensure space for 'XPathData.elements' array. The first element is
 		 * inside the XPathData structure, that's why (XPATH_MAX_DEPTH - 1).
 		 */
-		ensureSpace((XPATH_MAX_DEPTH - 1) * sizeof(XPathOffset), &state);
+		ensureSpace((XPATH_MAX_DEPTH - 1) * sizeof(XPathOffset), &output);
 
 		state.cWidth = pg_utf_mblen((unsigned char *) state.c);
 
@@ -539,8 +540,8 @@ parseLocationPath(XPath *paths, bool isSubPath, unsigned short *pathCount, char 
 			unsigned short nameLen = 0;
 			char	   *exprOutput = NULL;
 			XPathExpression expr = NULL;
-			XPathElement xpel = (XPathElement) ensureSpace(sizeof(XPathElementData), &state);
-			XPathOffset xpelOff = (char *) xpel - state.result;
+			XPathElement xpel = (XPathElement) ensureSpace(sizeof(XPathElementData), &output);
+			XPathOffset xpelOff = (char *) xpel - output.data;
 
 			xpel->descendant = false;
 
@@ -549,7 +550,7 @@ parseLocationPath(XPath *paths, bool isSubPath, unsigned short *pathCount, char 
 			 * it's clear that no reallocation of the output array happened
 			 * since the last use of the 'hdr' pointer.
 			 */
-			locPath = (XPath) state.result;
+			locPath = (XPath) output.data;
 
 			if (locPath->depth >= XPATH_MAX_DEPTH)
 			{
@@ -564,7 +565,7 @@ parseLocationPath(XPath *paths, bool isSubPath, unsigned short *pathCount, char 
 				{
 					if (*state.c == XNODE_CHAR_AT)
 					{
-						locPath = (XPath) state.result;
+						locPath = (XPath) output.data;
 						locPath->targNdKind = XMLNODE_ATTRIBUTE;
 						locPath->allAttributes = false;
 
@@ -606,7 +607,7 @@ parseLocationPath(XPath *paths, bool isSubPath, unsigned short *pathCount, char 
 								 */
 								ndTestLen++;
 							}
-							locPath = (XPath) state.result;
+							locPath = (XPath) output.data;
 
 							switch (nodeType)
 							{
@@ -679,7 +680,7 @@ parseLocationPath(XPath *paths, bool isSubPath, unsigned short *pathCount, char 
 						{
 							if (XNODE_VALID_NAME_START(state.c))
 							{
-								locPath = (XPath) state.result;
+								locPath = (XPath) output.data;
 								locPath->targNdKind = XMLNODE_ELEMENT;
 
 								nameLen += state.cWidth;
@@ -703,7 +704,7 @@ parseLocationPath(XPath *paths, bool isSubPath, unsigned short *pathCount, char 
 				else
 				{
 					/* state.elementPos > 0 */
-					locPath = (XPath) state.result;
+					locPath = (XPath) output.data;
 
 					if (locPath->targNdKind == XMLNODE_ELEMENT)
 					{
@@ -712,7 +713,7 @@ parseLocationPath(XPath *paths, bool isSubPath, unsigned short *pathCount, char 
 						{
 							unsigned short outPos;
 
-							xpel = (XPathElement) (state.result + xpelOff);
+							xpel = (XPathElement) (output.data + xpelOff);
 							xpel->hasPredicate = true;
 							exprOutput = (char *) palloc(XPATH_EXPR_BUFFER_SIZE);
 							expr = (XPathExpression) exprOutput;
@@ -816,7 +817,7 @@ parseLocationPath(XPath *paths, bool isSubPath, unsigned short *pathCount, char 
 					elog(ERROR, "invalid xpath expression");
 				}
 				slashAllowed = false;
-				state.output -= sizeof(XPathElementData);
+				output.cursor -= sizeof(XPathElementData);
 				nextChar(&state, false);
 				continue;
 			}
@@ -867,7 +868,7 @@ parseLocationPath(XPath *paths, bool isSubPath, unsigned short *pathCount, char 
 				}
 			}
 
-			locPath = (XPath) state.result;
+			locPath = (XPath) output.data;
 
 			/*
 			 * Save the xpath element
@@ -877,25 +878,25 @@ parseLocationPath(XPath *paths, bool isSubPath, unsigned short *pathCount, char 
 			if (locPath->targNdKind == XMLNODE_ELEMENT || locPath->targNdKind == XMLNODE_PI ||
 				(locPath->targNdKind == XMLNODE_ATTRIBUTE && !locPath->allAttributes))
 			{
-				ensureSpace(nameLen, &state);
+				ensureSpace(nameLen, &output);
 
 				/*
 				 * Potential reallocation of the output array has to be taken
 				 * into account:
 				 */
-				xpel = (XPathElement) (state.result + xpelOff);
+				xpel = (XPathElement) (output.data + xpelOff);
 				memcpy(xpel->name, xpathStr + nameSrcPos, nameLen);
-				*(state.output - 1) = '\0';
+				*(output.cursor - 1) = '\0';
 			}
 			else
 			{
-				xpel = (XPathElement) (state.result + xpelOff);
+				xpel = (XPathElement) (output.data + xpelOff);
 				xpel->name[0] = '\0';
 			}
 
 			if (xpel->hasPredicate)
 			{
-				char	   *target = ensureSpace(expr->common.size, &state);
+				char	   *target = ensureSpace(expr->common.size, &output);
 
 				memcpy(target, exprOutput, expr->common.size);
 				pfree(exprOutput);
@@ -905,7 +906,7 @@ parseLocationPath(XPath *paths, bool isSubPath, unsigned short *pathCount, char 
 				locPath->descendants++;
 			}
 			slashAllowed = true;
-			locPath = (XPath) state.result;
+			locPath = (XPath) output.data;
 			locPath->depth++;
 		}
 
@@ -913,17 +914,17 @@ parseLocationPath(XPath *paths, bool isSubPath, unsigned short *pathCount, char 
 		 * If there's unused space in the array of element offsets, shift all
 		 * elements left
 		 */
-		locPath = (XPath) state.result;
+		locPath = (XPath) output.data;
 
 		if (locPath->depth < XPATH_MAX_DEPTH)
 		{
 			unsigned short shift = (XPATH_MAX_DEPTH - locPath->depth) * sizeof(XPathOffset);
-			char	   *firstEl = state.result + locPath->elements[0];
-			unsigned short len = state.output - firstEl;
+			char	   *firstEl = output.data + locPath->elements[0];
+			unsigned short len = output.cursor - firstEl;
 			unsigned short i;
 
 			memmove(firstEl - shift, firstEl, len);
-			state.output -= shift;
+			output.cursor -= shift;
 
 			for (i = 0; i < locPath->depth; i++)
 			{
@@ -940,8 +941,8 @@ parseLocationPath(XPath *paths, bool isSubPath, unsigned short *pathCount, char 
 		locPath->depth = 0;
 		locPath->targNdKind = XMLNODE_DOC;
 	}
-	locPath = (XPath) state.result;
-	locPath->size = state.output - state.result;
+	locPath = (XPath) output.data;
+	locPath->size = output.cursor - output.data;
 
 	*xpathSrc = state.c;
 	*pos = state.pos;
@@ -1767,29 +1768,29 @@ skipWhiteSpace(XPathParserState state, bool endAllowed)
  * byte(s), regardless reallocation took place or not.
  */
 static char *
-ensureSpace(unsigned int sizeNeeded, XPathParserState state)
+ensureSpace(unsigned int sizeNeeded, LocationPathOutput *output)
 {
 	unsigned short chunksNew = 0;
-	unsigned short currentSize = state->output - state->result;
-	char	   *target = state->output;
+	unsigned short currentSize = output->cursor - output->data;
+	char	   *target = output->cursor;
 
-	while (currentSize + sizeNeeded > state->outSize)
+	while (currentSize + sizeNeeded > output->size)
 	{
-		state->outSize += XPATH_PARSER_OUTPUT_CHUNK;
+		output->size += XPATH_PARSER_OUTPUT_CHUNK;
 		chunksNew++;
 	}
 	if (chunksNew > 0)
 	{
-		state->outChunks += chunksNew;
-		if (state->outChunks > XPATH_PARSER_OUTPUT_CHUNKS)
+		output->chunks += chunksNew;
+		if (output->chunks > XPATH_PARSER_OUTPUT_CHUNKS)
 		{
 			elog(ERROR, "XPath parser: maximum size of output exceeded");
 		}
-		state->result = (char *) repalloc(state->result, state->outSize);
-		target = state->output = state->result + currentSize;
+		output->data = (char *) repalloc(output->data, output->size);
+		target = output->cursor = output->data + currentSize;
 		elog(DEBUG1, "XPath output buffer reallocated");
 	}
-	state->output += sizeNeeded;
+	output->cursor += sizeNeeded;
 	return target;
 }
 

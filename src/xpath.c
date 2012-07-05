@@ -66,7 +66,6 @@ xpath_in(PG_FUNCTION_ARGS)
 	 */
 	state.cWidth = 0;
 	state.pos = 0;
-	state.output = state.result = (char *) palloc(XPATH_EXPR_BUFFER_SIZE);
 
 	xmlnodeContainerInit(&paramNames);
 	outPos = sizeof(XPathExpressionData) + XPATH_EXPR_VAR_MAX * sizeof(XPathOffset);
