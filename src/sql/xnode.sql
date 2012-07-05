@@ -1,3 +1,4 @@
+CREATE EXTENSION xnode;
 SET search_path TO xml;
 
 CREATE TABLE STATES ( 

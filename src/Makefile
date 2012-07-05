@@ -6,7 +6,8 @@ xml_scan.o xml_update.o xnt.o
 EXTENSION = xnode
 DATA = xnode--0.7.0.sql
 
-#REGRESS = xnode
+REGRESS = xnode update
+REGRESS_OPTS += --user=postgres
 
 ifndef PG_CONFIG
 PG_CONFIG = pg_config

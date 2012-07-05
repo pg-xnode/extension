@@ -73,6 +73,19 @@
    	</listitem>
    	<listitem>
    	 <para>
+   	  Start the PostgreSQL cluster.
+   	 </para>
+   	</listitem>
+   	<listitem>
+   	 <para>
+   	  Optional verification:
+<screen>
+<userinput>make installcheck</userinput>
+</screen>
+   	 </para>
+   	</listitem>
+   	<listitem>
+   	 <para>
    	  Connect to your database.
    	 </para>
    	</listitem>
