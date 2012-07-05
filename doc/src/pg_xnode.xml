@@ -405,7 +405,7 @@ SELECT data FROM ecosystems e where e.id=2;
 xml.remove(xml.doc doc, xml.path path) returns xml.doc
 </synopsis>
    <para>
-    Removes all occurrences of <literal>path</literal> from <literal>docu</literal>.
+    Removes all occurrences of <literal>path</literal> from <literal>doc</literal>.
    </para>
    <para>
     A document is returned where all the removals have been done as required
