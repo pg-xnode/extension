@@ -38,6 +38,7 @@ static void dumpXPathExprOperand(char **input, XPathHeader xpathHdr, StringInfo 
 					 char **paramNames, bool debug);
 static void dumpXPathExprOperator(char **input, StringInfo output, unsigned short level,
 					  bool debug);
+static void separateOperand(bool debug, StringInfo output, XPathExprOperatorIdStore id);
 
 /*
  * If multiple operators start with the same char/substring, the longer
@@ -2245,14 +2246,22 @@ dumpXPathExprOperator(char **input, StringInfo output, unsigned short level,
 		appendStringInfoChar(output, '\n');
 		appendStringInfoSpaces(output, 2 * (level + 2));
 	}
-	if (!debug && (operator->id == XPATH_EXPR_OPERATOR_AND || operator->id == XPATH_EXPR_OPERATOR_OR))
-	{
-		appendStringInfoSpaces(output, 1);
-	}
+	separateOperand(debug, output, operator->id);
 	appendStringInfoString(output, xpathOperators[operator->id].text);
-	if (!debug && (operator->id == XPATH_EXPR_OPERATOR_AND || operator->id == XPATH_EXPR_OPERATOR_OR))
+	separateOperand(debug, output, operator->id);
+	*input += sizeof(XPathExprOperatorIdStore);
+}
+
+/*
+ * Operators consisting of valid XML name characters must be separated by the space.
+ * Otherwise the operator becomes part of the neighbour operand.
+ */
+static void
+separateOperand(bool debug, StringInfo output, XPathExprOperatorIdStore id)
+{
+	if (!debug && (id == XPATH_EXPR_OPERATOR_AND || id == XPATH_EXPR_OPERATOR_OR ||
+			 id == XPATH_EXPR_OPERATOR_DIV || id == XPATH_EXPR_OPERATOR_MOD))
 	{
 		appendStringInfoSpaces(output, 1);
 	}
-	*input += sizeof(XPathExprOperatorIdStore);
 }
