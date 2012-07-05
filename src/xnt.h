@@ -17,7 +17,7 @@
 #define XNT_H_
 
 #define XNTNODE_NAMESPACE_PREFIX		"xnt"
-#define XNTNODE_NAMESPACE_VALUE			"http://www.pg_xnode.org/xnt"
+#define XNTNODE_NAMESPACE_VALUE			"http://www.pg-xnode.org/xnt"
 
 #define XNT_TEMPLATE			"template"
 
