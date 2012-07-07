@@ -672,9 +672,18 @@ getXPathExpression(char *src, unsigned int termFlags, XMLNodeContainer paramName
 
 			/*
 			 * Functions having no arguments are excluded by passing
-			 * 'mainExpr=true' to parseXPathExpression()
+			 * 'mainExpr=true' to parseXPathExpression(). This is just a a
+			 * cross check.
 			 */
-			Assert(opnd->common.type != XPATH_OPERAND_FUNC_NOARG);
+			if (opnd->common.type == XPATH_OPERAND_FUNC_NOARG || opnd->common.type == XPATH_OPERAND_FUNC)
+			{
+				XPathFunction func = &xpathFunctions[opnd->value.v.funcId];
+
+				if (func->predicateOnly)
+				{
+					elog(ERROR, "xnt expression does not accept context-dependent functions");
+				}
+			}
 		}
 	}
 
