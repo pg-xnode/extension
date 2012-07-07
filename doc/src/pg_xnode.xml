@@ -118,10 +118,11 @@
    in binary form. This helps to avoid (repeated) unnecessary parsing and serialization of
    those objects and thus provides potential for efficient data processing.
   </para>
-  <sect2>
+  
+  <sect2 id="types_node">
    <title><literal>xml.node</literal></title>
    <para>
-    <literal>xml.node</literal> type represents a node of XML document tree.
+    <literal>node</literal> type represents a node of XML document tree.
     Following are the valid node kinds: <firstterm>document</firstterm>,
     <firstterm>document type declaration (DTD)</firstterm>, <firstterm>element</firstterm>,
     <firstterm>attribute</firstterm>, <firstterm>comment</firstterm>,
@@ -130,7 +131,8 @@
    </para>
    <para>
     Special node type <firstterm>document fragment</firstterm> exists to represent
-    a set of nodes.
+    a set of nodes. To add document fragment to some location in the tree in fact means to add its children.
+    The document fragment node is actually just a kind of node container.
    </para>
    <para>
     Example:
@@ -157,10 +159,10 @@ FROM nodes;
    </para>
   </sect2>
   
-  <sect2>
+  <sect2 id="types_doc">
    <title><literal>xml.doc</literal></title>
    <para>
-    <literal>xml.doc</literal> represents well-formed XML document.
+    <literal>doc</literal> represents well-formed XML document.
     <footnote>
      <para>
       Unlike other node kinds (comment, element, etc.) there's no polymorphism between
@@ -196,15 +198,33 @@ INSERT INTO ecosystems VALUES (3,
    </para>
   </sect2>
   
-  <sect2>
+  <sect2 id="types_pathval">
    <title><literal>xml.pathval</literal></title>
    <para>
-    <literal>xml.pathval</literal> represents a result of <literal>xml.path()</literal> functions
-    (see bellow). Depending on the XPath used for a search, the <literal>xml.pathval</literal> value
-    contains value of one of the following types: number, string, boolean,
-    <literal>xml.node</literal>.
+    <literal>pathval</literal> represents a result of <literal>xml.path()</literal> functions
+    (see bellow). Depending on particular XPath expression, the resulting <literal>pathval</literal> value
+    contains binary value of the appropriate XPath data type: number, string, boolean,
+    <link linkend="types_node"><literal>node</literal></link>.
    </para>
   </sect2>
+ 
+  <sect2 id="types_template">
+   <title><literal>xml.xnt</literal></title>
+   <para>
+    <literal>xnt</literal> stands for <link linkend="chapter_template"><firstterm>XML Node Template (XNT)</firstterm></link>.
+    Such a template may be undersotood as incomplete <link linkend="types_node"><literal>node</literal></link>.
+    Instead of nodes, it contains <firstterm>parameters</firstterm> at some locations of the tree.
+   </para>
+   <para>
+    The template gets converted to <link linkend="types_node"><literal>node</literal></link> when valid
+    <link linkend="types_pathval"><literal>pathval</literal></link> values are substituted for all parameters.
+    <link linkend="functions_node"><literal>xml.node(xnt, text[], record)</literal></link> is the function
+    to perform the substitution.
+   </para>
+   <para>
+    See <xref linkend="chapter_template"/> for more information and some examples.
+   </para>
+  </sect2> 
  </sect1>
 
  <sect1>
@@ -433,6 +453,46 @@ WHERE xml.path('/zoo', data);
    </para>
   </sect2>
  
+  <sect2 id="functions_fragment">
+   <title><literal>xml.fragment()</literal> - aggregate</title>
+<synopsis>
+xml.fragment(node) returns xml.node
+</synopsis>
+   <para>
+    Aggregate function to turn group of nodes into a single node - a document fragment.
+    (What document fragment means is explained in <xref linkend="types_node"/>.)
+    The function can be combined with <link linkend="chapter_template">XNT templates</link>,
+    to turn relational data into XML. See <xref linkend="template_example_agg"/> for an example. 
+   </para>
+  </sect2>
+ 
+  <sect2 id="functions_node">
+   <title><literal>xml.node()</literal></title>
+<synopsis>
+xml.node(xml.xnt template, text[] paramNames, record paramValues)
+returns xml.node
+</synopsis>
+   <para>
+	Constructs a new <link linkend="types_node"><literal>node</literal></link> out of
+	<link linkend="types_template"><literal>template</literal></link> by substituting parameters.
+   </para>
+   <para>
+    <literal>paramNames</literal> is an array of all parameter names that the template contains, while
+    <literal>paramValues</literal> is a row containing the corresponding values.
+    Ordering is crucial to associate values and parameters correctly. For example, the first column in
+    <literal>paramValues</literal> is understood to be the value of the parameter whose name is the first
+    item of <literal>paramNames</literal> array.
+   </para>
+   <para>
+   	Each parameter value is cast to the most suitable XPath data type. For example <literal>varchar</literal>
+   	SQL type is converted to <literal>string</literal> XPath type, <literal>integer</literal> SQL type is
+   	converted to <literal>number</literal> XPath type, etc.
+   </para>
+   <para>
+    See <xref linkend="chapter_template"/> for examples.
+   </para>
+  </sect2>
+ 
   <sect2>
    <title><literal>xml.node_debug_print()</literal></title>
 <synopsis>
@@ -454,6 +514,207 @@ xml.path_debug_print(xml.path xpath) returns text
    </para>
   </sect2>
  </sect1>
+ 
+ <sect1 id="chapter_template">
+  <title>XML Node Template (XNT)</title>
+  <para>
+   XML Node Template (XNT) is a means to turn a table row (i.e. instance of <literal>record</literal> PostgreSQL
+   type) into a node of XML document tree (i.e. instance of <link linkend="types_node"><literal>node</literal></link>).
+   If acompanied with <link linkend="functions_fragment"><literal>fragment()</literal></link> function, the template
+   can be used to create a single XML node or document out of many table rows.
+  </para>
+  <para>
+   The XNT syntax and its tags strongly resemble template (stylesheet) for
+   <ulink url="http://http://www.w3.org/TR/xslt">XSL Transformations</ulink>, however there is one
+   fundamental difference: there's no <literal>select</literal> attribute in XNT.
+   The reason is that XNT processing function
+   (i.e. <link linkend="functions_node"><literal>node()</literal></link>) does not receive
+   any input XML document to browse in and to modify (by applying various templates).
+   The only thing the XNT processing function does is to substitute particular values for the
+   template parameters. Another significant difference is that XSLT template may define many
+   templates, whereas XNT template only has one - located in the root of the tree.
+  </para>
+  
+  <sect2 id="template_expressions">
+   <title>Expressions and Parameters</title>
+   <para>
+    XNT template uses (XPath) expressions in the same way as XSLT template does. There's however difference
+    in the expression itself: XNT template does not accept location paths, whether
+    absolute or relative. The reason is that - as mentioned above - there's no source XML
+    document the location path could reference. 
+   </para>
+   
+   <para>
+    Besides string or numeric literals, expression can contain parameters. Parameter starts with
+    dollar sign and its usage is identical to that in XSLT templates. 
+   </para>
+   
+   <para>
+    Examples of expressions accepted by XNT:
+    <programlisting>
+2 * $pi * $r
+count($nodes)
+contains($sentence, $word)
+    </programlisting>
+    Expressions NOT accepted by XNT:
+    <programlisting>
+contains(/article/sect1/title/text, $word)
+name(/article/sect1/@id)
+    </programlisting>
+   </para>
+   
+   <para>
+    Expression in XNT template also corresponds to XSLT in the way it's used
+    to construct attribute value: it has to be enclosed in curly braces. For example:
+    <programlisting>
+&lt;ticket price="{$p}" destination="{$d}" departure="{$month}/{$day}/{$year}"/&gt;
+    </programlisting>
+   </para>
+  </sect2>
+  
+  <sect2 id="template_tags">
+   <title>XNT Tags</title>
+   <para>
+   Besides complete nodes or nodes where just attribute value is parametrized, the XNT template
+   may contain some of the following special tags. As mentioned earlier in this chapter, 
+   the XNT tags are in general similar to XSLT tags and sometimes even identical. However
+   they never have <literal>select</literal> attribute to get XML node (node-set) from input
+   XML document (because XNT does not know the concept of input XML document).
+   Instead, if XNT tag needs an XML node to work with, it must always receive it as template
+   parameter. 
+   </para>
+    <sect3>
+     <title><literal>xnt:copy-of</literal></title>
+     <para>
+      This tag has a single attribute <literal>expr</literal>.
+      <link linkend="template_expressions">XNT expression</link> is expected as the attribute value. 
+     </para>
+     <para>
+      If the expression evaluates to boolean, number or string XPath type
+      (see <xref linkend="types_pathval"/>), then the value is cast to string and a text node
+      containing is substituted for the <literal>xnt:copy-of</literal> node.
+      If the expresion evaluates to node, the resulting node itself is used for the substitution.
+      (Special case is that document fragment is the result. In such a case only child nodes of
+      the fragment node are inserted.)
+     </para>
+     <para>
+      Example:
+<programlisting>
+<![CDATA[
+select xml.node(
+'<xnt:template xmlns:xnt="http://www.pg-xnode.org/xnt">
+   <chapter>
+     <xnt:copy-of expr="$paragraphs"/>
+   </chapter>
+</xnt:template>',
+'{paragraphs}',
+ROW('<para>Just a few words.</para><para>The end.</para>'::xml.node)
+);
+]]>
+</programlisting>
+<screen>
+<![CDATA[
+                                     node                                     
+------------------------------------------------------------------------
+ <chapter><para>Just a few words.</para><para>The end.</para></chapter>
+(1 row)
+]]>
+</screen>
+     </para>
+    </sect3>
+    
+    <sect3 id="template_tags_element">
+     <title><literal>xnt:element</literal> and <literal>xnt:attribute</literal></title>
+     <para>
+      <literal>xnt:element</literal> has a single attribute <literal>name</literal>. String
+      (possibly containg string-returning expression(s)) is expected as the value. If the string
+      represents a valid XML name, a new XML element having this name is substituted for the
+      <literal>xnt:element</literal> node. 
+     </para>
+
+     <para>
+      <literal>xnt:attribute</literal> has 2 attributes:  <literal>name</literal> and
+      <literal>value</literal>. Both expect string value and these values are used as
+      name and value of a new XML attribute respectively. (Similar to <literal>xnt:element</literal>,
+      value of <literal>name</literal> must be a valid XML name.) The new XML attribute
+      is substituted for the <literal>xnt:attribute</literal> tag.
+     </para>
+ 
+     <para>
+      Example:
+<programlisting>
+TABLE trees;
+</programlisting>
+<screen>
+  name   | height 
+---------+--------
+ sequoia |  115.5
+ palm    |     60
+ ash     |   99.6
+(3 rows)
+</screen>
+
+<programlisting>
+<![CDATA[
+INSERT INTO trees_xml
+select xml.node(
+'<xnt:template xmlns:xnt="http://www.pg-xnode.org/xnt">
+   <xnt:element name="{$name}">
+     <xnt:attribute name="height" value="{$height}"/>
+   </xnt:element>
+</xnt:template>',
+'{name, height}',
+ROW(name, height))
+FROM trees;
+]]>
+
+TABLE trees_xml;
+</programlisting>
+<screen>
+<![CDATA[
+                node                
+---------------------------
+ <sequoia height="115.5"/>
+ <palm height="60"/>
+ <ash height="99.6"/>
+(3 rows)
+]]>
+</screen>
+     </para>
+    </sect3>
+  </sect2>
+  
+  <sect2 id="template_example_agg">
+   <title>Example: Aggregate Multiple Rows Into a Single XML Node</title>
+   <para>
+    The example in <xref linkend="template_tags_element"/> shows how to generate one
+    XML node per table row. Sometimes it may be desired to create a single XML node
+    out of multiple rows (and possibly cast it to XML document). This is the typical use case
+    for <link linkend="functions_fragment"><literal>xml.fragment()</literal></link> function.
+<programlisting>
+<![CDATA[
+SELECT xml.node(
+'<xnt:template xmlns:xnt="http://www.pg-xnode.org/xnt">
+   <forest>
+     <xnt:copy-of expr="$trees"/>
+   </forest>
+</xnt:template>',
+'{trees}',
+ROW(xml.fragment(tree)))
+FROM trees_xml;
+]]>
+</programlisting>
+<screen>
+<![CDATA[
+                                                 node                                                  
+-----------------------------------------------------------------------------------
+ <forest><sequoia height="115.5"/><palm height="60"/><ash height="99.6"/></forest>
+ ]]>
+</screen>
+   </para>
+  </sect2>
+ </sect1>
+ 
  <appendix id="release">
  <title>Release Notes</title>
   <sect1>
