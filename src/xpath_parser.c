@@ -1166,6 +1166,7 @@ readExpressionOperand(XPathExpression exprTop, XPathParserState state, unsigned 
 							if (*c != XNODE_CHAR_RBRKT_RND)
 							{
 								bool		found = false;
+								char	   *funcName = func->name;
 
 								/*
 								 * The same function may exist having non-zero
@@ -1185,7 +1186,7 @@ readExpressionOperand(XPathExpression exprTop, XPathParserState state, unsigned 
 								}
 								if (!found)
 								{
-									elog(ERROR, "no arguments expected for function %s()", func->name);
+									elog(ERROR, "no arguments expected for function %s()", funcName);
 								}
 							}
 							else
