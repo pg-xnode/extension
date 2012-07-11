@@ -164,8 +164,10 @@ extern void finalizeXMLParserState(XMLParserState state);
 extern void xmlnodeParseDoc(XMLParserState state);
 extern void xmlnodeParseNode(XMLParserState state);
 extern void readXMLName(XMLParserState state, bool whitespace, bool checkColons, bool separate, unsigned int *firstColPos);
+extern bool isValidXMLName(char *str);
 extern char *readXMLAttValue(XMLParserState state, bool output, bool *refs);
 extern bool xmlAttrValueIsNumber(char *value);
+extern uint8 getXMLAttributeFlags(char *attrValue, bool refs, bool quotApostr);
 
 extern void xmlnodeDumpNode(char *input, XMLNodeOffset nodeOff, char **output, unsigned int *pos, char **paramNames);
 extern char *dumpXMLDecl(XMLDecl decl);

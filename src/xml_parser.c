@@ -593,6 +593,26 @@ readXMLName(XMLParserState state, bool whitespace, bool checkColons, bool separa
 	}
 }
 
+bool
+isValidXMLName(char *str)
+{
+	if (!XNODE_VALID_NAME_START(str))
+	{
+		return false;
+	}
+
+	str += pg_utf_mblen((unsigned char *) str);
+
+	while (*str != '\0')
+	{
+		if (!XNODE_VALID_NAME_CHAR(str))
+		{
+			return false;
+		}
+		str += pg_utf_mblen((unsigned char *) str);
+	}
+	return true;
+}
 
 /*
  * http://www.w3.org/TR/2008/REC-xml-20081126/#NT-AttValue
@@ -757,7 +777,25 @@ xmlAttrValueIsNumber(char *value)
 	return (*end == '\0');
 }
 
+uint8
+getXMLAttributeFlags(char *attrValue, bool refs, bool quotApostr)
+{
+	uint8		flags = 0;
 
+	if (refs)
+	{
+		flags |= XNODE_ATTR_CONTAINS_REF;
+	}
+	if (quotApostr)
+	{
+		flags |= XNODE_ATTR_APOSTROPHE;
+	}
+	if (strlen(attrValue) > 0 && xmlAttrValueIsNumber(attrValue))
+	{
+		flags |= XNODE_ATTR_NUMBER;
+	}
+	return flags;
+}
 
 /*
  * Returns the last token processed. In case we start at STag, ETag is
@@ -1935,18 +1973,7 @@ processTag(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowed,
 					elog(ERROR, "attribute '%s' is not allowed to have empty value", attrName);
 				}
 
-				if (refsInValue)
-				{
-					attrNode->flags |= XNODE_ATTR_CONTAINS_REF;
-				}
-				if (quotMark == XNODE_CHAR_APOSTR)
-				{
-					attrNode->flags |= XNODE_ATTR_APOSTROPHE;
-				}
-				if (strlen(attrValue) > 0 && xmlAttrValueIsNumber(attrValue))
-				{
-					attrNode->flags |= XNODE_ATTR_NUMBER;
-				}
+				attrNode->flags |= getXMLAttributeFlags(attrValue, refsInValue, quotMark == XNODE_CHAR_APOSTR);
 				attributes++;
 				nextChar(state, false);
 			}

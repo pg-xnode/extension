@@ -25,6 +25,7 @@ XNTAttrNames xntAttributeInfo[] = {
 };
 
 static int	paramNameComparator(const void *left, const void *right);
+static int	attrNameComparator(const void *left, const void *right);
 static XPathExpression getXPathExpression(char *src, unsigned int termFlags, XMLNodeContainer paramNames,
 				   unsigned short *endPos);
 static char *getAttrValueTokenized(char *attrValue, unsigned int *valueSize, XMLNodeContainer paramNames);
@@ -32,6 +33,7 @@ static void visitXMLNodeForValidation(XMLNodeHdr *stack, unsigned int depth, voi
 static Datum castParameterValue(Datum value, Oid sourceType, Oid targetType);
 static void buildNewNodeTree(XMLNodeHdr node, XNodeInternal parent, unsigned int *storageSize,
 				 XPathExprOperandValue paramValues, unsigned short *paramMap, XPathExprState exprState);
+static XMLNodeHdr getNewAttribute(char *name, uint8 flags, char *value, char decideOnDelim, unsigned int *size);
 static XNodeInternal getInternalNode(XMLNodeHdr node, bool copy);
 static void freeTemplateTree(XNodeInternal root);
 static XMLCompNodeHdr getTemplateFromDoc(XMLCompNodeHdr docRoot);
@@ -631,6 +633,12 @@ paramNameComparator(const void *left, const void *right)
 	return strcmp(((XNTParamNameSorted *) left)->name, ((XNTParamNameSorted *) right)->name);
 }
 
+static int
+attrNameComparator(const void *left, const void *right)
+{
+	return strcmp((char *) left, (char *) right);
+}
+
 static XPathExpression
 getXPathExpression(char *src, unsigned int termFlags, XMLNodeContainer paramNames,
 				   unsigned short *endPos)
@@ -1154,7 +1162,7 @@ xnode_from_template(PG_FUNCTION_ARGS)
 						if (strchr(valStr, XNODE_CHAR_LARROW) || strchr(valStr, XNODE_CHAR_RARROW) ||
 							strchr(valStr, XNODE_CHAR_AMPERSAND))
 						{
-							elog(ERROR, "neither '<' nor '>' allowed in text parameter");
+							elog(ERROR, "the following characters are is not allowed in text parameter: '<', '>', '&'.");
 						}
 						parValue->v.stringId = getXPathOperandId(exprState, (void *) valStr, XPATH_VAR_STRING);
 						parValue->type = XPATH_VAL_STRING;
@@ -1461,7 +1469,6 @@ buildNewNodeTree(XMLNodeHdr node, XNodeInternal parent, unsigned int *storageSiz
 								strcpy(content, strValue);
 
 								nodeInternal = getInternalNode(resultNode, true);
-
 								*storageSize += resultNodeSize + sizeof(XMLNodeOffset);
 							}
 						}
@@ -1488,15 +1495,26 @@ buildNewNodeTree(XMLNodeHdr node, XNodeInternal parent, unsigned int *storageSiz
 						Assert(attrNode->kind == XMLNODE_ATTRIBUTE);
 
 						elName = XNODE_CONTENT(attrNode);
+
 						if (attrNode->flags & XNODE_ATTR_VALUE_BINARY)
 						{
 							elName = dumpBinaryAttrValue(elName, NULL, paramValues, paramMap, exprState);
 							elNameCopy = true;
 						}
+						if (!isValidXMLName(elName))
+						{
+							elog(ERROR, "'%s' is not a valid element name", elName);
+						}
 
 						resultNodeSize = sizeof(XMLCompNodeHdrData) + strlen(elName) +1;
 						resultNode = (XMLNodeHdr) palloc(resultNodeSize);
 						resultNode->kind = XMLNODE_ELEMENT;
+
+						/*
+						 * This won't be effective anyway. The flag values
+						 * will be determined when the template is going to be
+						 * written to storage.
+						 */
 						resultNode->flags = 0;
 
 						/*
@@ -1555,10 +1573,6 @@ buildNewNodeTree(XMLNodeHdr node, XNodeInternal parent, unsigned int *storageSiz
 						 * being constructed)
 						 */
 
-						/*
-						 * TODO if 'xnt:attribute' nodes are there, make sure
-						 * the names are unique.
-						 */
 						for (; i < xntNode->children; i++)
 						{
 							offRel = readXMLNodeOffset(&refPtr, bwidth, true);
@@ -1569,6 +1583,7 @@ buildNewNodeTree(XMLNodeHdr node, XNodeInternal parent, unsigned int *storageSiz
 							{
 								continue;
 							}
+
 							buildNewNodeTree(childNode, nodeInternal, storageSize, paramValues, paramMap, exprState);
 						}
 
@@ -1602,10 +1617,10 @@ buildNewNodeTree(XMLNodeHdr node, XNodeInternal parent, unsigned int *storageSiz
 							attrName = dumpBinaryAttrValue(attrName, NULL, paramValues, paramMap, exprState);
 							attrNameCopy = true;
 						}
-
-						/*
-						 * TODO check validity
-						 */
+						if (!isValidXMLName(attrName))
+						{
+							elog(ERROR, "'%s' is not a valid attribute name", attrName);
+						}
 
 						offRel = readXMLNodeOffset(&refPtr, bwidth, true);
 						attrNode = (XMLNodeHdr) ((char *) xntNode - offRel);
@@ -1614,26 +1629,27 @@ buildNewNodeTree(XMLNodeHdr node, XNodeInternal parent, unsigned int *storageSiz
 						if (attrNode->flags & XNODE_ATTR_VALUE_BINARY)
 						{
 							attrValue = dumpBinaryAttrValue(attrValue, NULL, paramValues, paramMap, exprState);
+							resultNodeSize = 0;
+							resultNode = getNewAttribute(attrName, 0, attrValue, true, &resultNodeSize);
 							attrValueCopy = true;
 						}
+						else
+						{
+							/*
+							 * No validation of the value required in this
+							 * case: parser must have done it when parsing the
+							 * template.
+							 */
+							resultNodeSize = sizeof(XMLNodeHdrData) + strlen(attrName) +strlen(attrValue) + 2;
+							resultNode = (XMLNodeHdr) palloc(resultNodeSize);
+							resultNode->kind = XMLNODE_ATTRIBUTE;
+							resultNode->flags = attrNode->flags;
 
-						/*
-						 * TODO check validity
-						 */
-
-						resultNodeSize = sizeof(XMLNodeHdrData) + strlen(attrName) +strlen(attrValue) + 2;
-						resultNode = (XMLNodeHdr) palloc(resultNodeSize);
-						resultNode->kind = XMLNODE_ATTRIBUTE;
-
-						/*
-						 * TODO set the flags as appropriate
-						 */
-						resultNode->flags = 0;
-
-						cnt = XNODE_CONTENT(resultNode);
-						strcpy(cnt, attrName);
-						cnt += strlen(attrName) + 1;
-						strcpy(cnt, attrValue);
+							cnt = XNODE_CONTENT(resultNode);
+							strcpy(cnt, attrName);
+							cnt += strlen(attrName) + 1;
+							strcpy(cnt, attrValue);
+						}
 
 						if (attrNameCopy)
 						{
@@ -1645,7 +1661,6 @@ buildNewNodeTree(XMLNodeHdr node, XNodeInternal parent, unsigned int *storageSiz
 						}
 
 						nodeInternal = getInternalNode(resultNode, true);
-
 						*storageSize += resultNodeSize + sizeof(XMLNodeOffset);
 					}
 					break;
@@ -1676,36 +1691,22 @@ buildNewNodeTree(XMLNodeHdr node, XNodeInternal parent, unsigned int *storageSiz
 						attrNew;
 			char	   *name,
 					   *valueOrig,
-					   *valueNew,
-					   *c;
-			unsigned int sizeNew;
+					   *valueNew;
+			unsigned int sizeNew = 0;
 
 			/* Construct attribute as 2 NULL-terminated strings (name, value). */
 			attrOrig = node;
 			name = XNODE_CONTENT(attrOrig);
 			valueOrig = name + strlen(name) + 1;
 			valueNew = dumpBinaryAttrValue(valueOrig, NULL, paramValues, paramMap, exprState);
-			sizeNew = sizeof(XMLNodeHdr) + strlen(name) +strlen(valueNew) + 2;
-			attrNew = (XMLNodeHdr) palloc(sizeNew);
-			attrNew->kind = XMLNODE_ATTRIBUTE;
-
-			/*
-			 * TODO copy the original header and (un)set the appropriate flags
-			 */
-			attrNew->flags = 0;
-			c = XNODE_CONTENT(attrNew);
-			strcpy(c, name);
-			c += strlen(name) + 1;
-			strcpy(c, valueNew);
-
+			attrNew = getNewAttribute(name, attrOrig->flags, valueNew, false, &sizeNew);
 			nodeInternal = getInternalNode(attrNew, true);
-
+			pfree(valueNew);
 			*storageSize += sizeNew;
 		}
 		else
 		{
 			nodeInternal = getInternalNode(node, false);
-
 			*storageSize += getXMLNodeSize(node, false);
 		}
 
@@ -1716,6 +1717,111 @@ buildNewNodeTree(XMLNodeHdr node, XNodeInternal parent, unsigned int *storageSiz
 	{
 		xmlnodePushSinglePtr(&parent->children, nodeInternal);
 	}
+}
+
+/*
+ * Returns a new attribute node where the value has been validated and flags set as appropriate.
+ */
+static XMLNodeHdr
+getNewAttribute(char *name, uint8 flags, char *value, char decideOnDelim, unsigned int *size)
+{
+	XMLNodeParserStateData state;
+	char	   *valueValidated;
+	bool		refs = false;
+	XMLNodeHdr	result;
+	char	   *c;
+	char		delimiter;
+	bool		seenApostrophe = false;
+	bool		mixture = false;
+
+	if (decideOnDelim)
+	{
+		delimiter = XNODE_CHAR_QUOTMARK;
+	}
+	else
+	{
+		delimiter = ((flags & XNODE_ATTR_APOSTROPHE) == 0) ? XNODE_CHAR_QUOTMARK : XNODE_CHAR_APOSTR;
+	}
+
+	initXMLParserState(&state, value, XMLNODE_ATTRIBUTE, NULL);
+
+	/*
+	 * If the value contains character references then the binary value will
+	 * be different. That's why use 'valueNewChecked' in the next steps.
+	 */
+	valueValidated = readXMLAttValue(&state, true, &refs);
+	c = valueValidated;
+
+	while (*c != '\0')
+	{
+		if (decideOnDelim)
+		{
+			/*
+			 * Check for mixture of apostrophes and quotation marks is not
+			 * necessary, readXMLName() shouldn't accept it. However it's not
+			 * a significant overhead to cross-check for such mixtures while
+			 * determining the delimiter.
+			 */
+			if (*c == XNODE_CHAR_APOSTR)
+			{
+				if (delimiter == XNODE_CHAR_APOSTR)
+				{
+					/*
+					 * We already switched the delimiter from quotation mark
+					 * to apostrophe, so the quot. mark is there too.
+					 */
+					mixture = true;
+					break;
+				}
+				seenApostrophe = true;
+			}
+			else if (*c == XNODE_CHAR_QUOTMARK)
+			{
+				/* Try to change the delimiter to apostrophe. */
+				if (!seenApostrophe)
+				{
+					delimiter = XNODE_CHAR_APOSTR;
+				}
+				else
+				{
+					mixture = true;
+					break;
+				}
+			}
+
+		}
+		else
+		{
+			/*
+			 * If apostrophe is used as delimiter in the template, then it
+			 * must not be inserted via parameter. The same is valid for
+			 * quotation mark.
+			 */
+			if ((*c == XNODE_CHAR_QUOTMARK && ((flags & XNODE_ATTR_APOSTROPHE) == 0)) ||
+				(*c == XNODE_CHAR_APOSTR && (flags & XNODE_ATTR_APOSTROPHE)))
+			{
+				elog(ERROR, "attribute value delimiter must not be used within the value");
+			}
+		}
+		c += pg_utf_mblen((unsigned char *) c);
+	}
+
+	if (mixture)
+	{
+		elog(ERROR, "attribute value must not contain both quotation mark and apostrophe.");
+	}
+
+	*size = sizeof(XMLNodeHdr) + strlen(name) +strlen(valueValidated) + 2;
+	result = (XMLNodeHdr) palloc(*size);
+	result->kind = XMLNODE_ATTRIBUTE;
+	c = XNODE_CONTENT(result);
+	strcpy(c, name);
+	c += strlen(name) + 1;
+	strcpy(c, valueValidated);
+
+	result->flags = getXMLAttributeFlags(valueValidated, refs, delimiter == XNODE_CHAR_APOSTR);
+	finalizeXMLParserState(&state);
+	return result;
 }
 
 static XNodeInternal
@@ -1800,6 +1906,7 @@ writeXNodeInternal(XNodeInternal node, char **output, XMLNodeOffset *root)
 	XNodeListItem *childItem = NULL;
 	XNodeInternal *childrenTmp = NULL;
 	bool		mustReorder = false;
+	bool		hasNonAttr = false;
 
 	if (node->node->kind == XMLNODE_ELEMENT || node->node->kind == XNTNODE_TEMPLATE)
 	{
@@ -1814,8 +1921,6 @@ writeXNodeInternal(XNodeInternal node, char **output, XMLNodeOffset *root)
 
 		if (node->node->kind == XMLNODE_ELEMENT)
 		{
-			bool		seenNonAttr = false;
-
 			childrenTmp = (XNodeInternal *) palloc(childCount * sizeof(XNodeInternal));
 			childItem = (XNodeListItem *) (&node->children)->content;
 
@@ -1825,10 +1930,10 @@ writeXNodeInternal(XNodeInternal node, char **output, XMLNodeOffset *root)
 
 				if (child->node->kind != XMLNODE_ATTRIBUTE)
 				{
-					seenNonAttr = true;
+					hasNonAttr = true;
 				}
 
-				if (!mustReorder && seenNonAttr && child->node->kind == XMLNODE_ATTRIBUTE)
+				if (!mustReorder && hasNonAttr && child->node->kind == XMLNODE_ATTRIBUTE)
 				{
 					mustReorder = true;
 				}
@@ -1860,7 +1965,7 @@ writeXNodeInternal(XNodeInternal node, char **output, XMLNodeOffset *root)
 		nonAttr = i++;
 
 		/*
-		 * If attribute is found anywhere after that, move to position
+		 * If attribute is found anywhere after that, move it to position
 		 * immediately following the last correctly located (i.e. near the
 		 * reference array beginning) attribute.
 		 */
@@ -1878,7 +1983,6 @@ writeXNodeInternal(XNodeInternal node, char **output, XMLNodeOffset *root)
 				dst = src + 1;
 				memmove(dst, src, size);
 				childrenTmp[nonAttr] = attr;
-
 				nonAttr++;
 			}
 		}
@@ -1891,6 +1995,42 @@ writeXNodeInternal(XNodeInternal node, char **output, XMLNodeOffset *root)
 		 * first time.
 		 */
 		childItem = (XNodeListItem *) (&node->children)->content;
+	}
+
+	/* Make sure that attributes are unique. */
+
+	if (node->node->kind == XMLNODE_ELEMENT && childCount > 0)
+	{
+		unsigned int attrCount = 0;
+		char	  **attrNames = (char **) palloc(childCount * sizeof(char *));
+
+		for (i = 0; i < childCount; i++)
+		{
+			if (childrenTmp[i]->node->kind == XMLNODE_ATTRIBUTE)
+			{
+				XMLNodeHdr	attrNode = childrenTmp[i]->node;
+
+				attrNames[attrCount++] = XNODE_CONTENT(attrNode);
+			}
+			else
+			{
+				break;
+			}
+		}
+
+		if (attrCount > 1)
+		{
+			qsort(attrNames, attrCount, sizeof(char *), attrNameComparator);
+
+			for (i = 0; i < (attrCount - 1); i++)
+			{
+				if (strcmp(attrNames[i], attrNames[i + 1]) == 0)
+				{
+					elog(ERROR, "attribute name '%s' is not unique", attrNames[i]);
+				}
+			}
+		}
+		pfree(attrNames);
 	}
 
 	for (i = 0; i < childCount; i++)
@@ -1924,22 +2064,20 @@ writeXNodeInternal(XNodeInternal node, char **output, XMLNodeOffset *root)
 		char	   *name;
 
 		/* The header */
+		compNode->common.flags = 0;
 		if (node->node->kind == XMLNODE_ELEMENT)
 		{
-			memcpy(*output, node->node, sizeof(XMLCompNodeHdr));
+			compNode->common.kind = XMLNODE_ELEMENT;
+			if (!hasNonAttr)
+			{
+				compNode->common.flags |= XNODE_EMPTY;
+			}
 		}
 		else
 		{
 			compNode->common.kind = XMLNODE_DOC_FRAGMENT;
-			compNode->common.flags = 0;
 		}
 		compNode->children = childCount;
-
-		/*
-		 * TODO adjust flags if appropriate. 'empty element' flag shouldn't be
-		 * the case. Valid value is expected in the header just copied.
-		 */
-
 		*output += sizeof(XMLCompNodeHdrData);
 
 		/* References */
@@ -1954,6 +2092,7 @@ writeXNodeInternal(XNodeInternal node, char **output, XMLNodeOffset *root)
 
 				writeXMLNodeOffset(offRel, output, bwidth, true);
 			}
+			XNODE_SET_REF_BWIDTH(compNode, bwidth);
 		}
 
 		if (node->node->kind == XMLNODE_ELEMENT)
