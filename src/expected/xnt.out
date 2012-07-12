@@ -70,15 +70,10 @@ ORDER BY p.id;
  <point_2 x_2="3.15" y_3.15="0.01"/>
 (3 rows)
 
--- use CTE to ensure that order of nodes within the fragment is always the same 
-WITH point_nodes_ordered(p) AS (
-	SELECT p
+WITH fragments(f) AS (
+	-- order the rows so that the fragment is never different from the expected test output.  
+	SELECT xml.fragment(p ORDER BY id)
 	FROM point_nodes
-	ORDER BY id
-), 
-fragments(f) AS (
-	SELECT xml.fragment(p)
-	FROM point_nodes_ordered
 )
 SELECT xml.node(t.template, '{p1}', ROW(f))
 FROM fragments f,
