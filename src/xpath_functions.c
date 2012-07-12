@@ -5,6 +5,7 @@
 #include "postgres.h"
 
 #include "xpath.h"
+#include "xmlnode_util.h"
 
 static char *getEmptyString(void);
 
@@ -400,8 +401,7 @@ xpathConcat(XPathExprState exprState, unsigned short nargs, XPathExprOperandValu
 
 	Assert(nargs > 1);
 
-	out.maxlen = 32;
-	initStringInfo(&out);
+	xnodeInitStringInfo(&out, 32);
 
 	for (i = 0; i < nargs; i++)
 	{

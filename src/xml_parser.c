@@ -3730,9 +3730,7 @@ dumpAttributes(XMLCompNodeHdr element, char *input,
 					XPathExpression xpExpr = (XPathExpression) attrValue;
 					StringInfoData output;
 
-					output.maxlen = 32;
-					output.data = (char *) palloc(output.maxlen);
-					resetStringInfo(&output);
+					xnodeInitStringInfo(&output, 32);
 					dumpXPathExpression(xpExpr, NULL, &output, true, paramNames, false);
 					attrValue = output.data;
 					valueCopy = true;
@@ -3979,10 +3977,7 @@ dumpXMLDecl(XMLDecl decl)
 	unsigned short i = 0;
 	StringInfoData outDecl;
 
-	outDecl.maxlen = 16;
-	outDecl.data = (char *) palloc(outDecl.maxlen);
-	resetStringInfo(&outDecl);
-
+	xnodeInitStringInfo(&outDecl, 16);
 	qMark = XMLDECL_GET_QUOT_MARK(decl, i);
 	appendStringInfoString(&outDecl, specStrings[XNODE_STR_XDECL_START]);
 	appendStringInfo(&outDecl, " %s=%c%s%c", xmldeclAttNames[XNODE_XDECL_ATNAME_VERSION],

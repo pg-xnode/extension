@@ -74,6 +74,8 @@ extern void collectXMLNamespaceDeclarations(XMLCompNodeHdr currentNode, unsigned
 								unsigned int *nmspDeclCount, XMLNodeContainer declarations, bool declsOnly, XMLNodeHdr **attrsPrefixed,
 								unsigned int *attrsPrefixedCount);
 
+extern void xnodeInitStringInfo(StringInfo stringInfo, int len);
+
 typedef struct XMLNamespaceCheckState
 {
 	XMLNodeContainerData declarations;

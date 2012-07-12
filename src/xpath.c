@@ -230,7 +230,7 @@ xpath_out(PG_FUNCTION_ARGS)
 		paramNamesArray = getXPathParameterArray(&dataTmp, storageHdr->paramCount);
 	}
 
-	initStringInfo(&output);
+	xnodeInitStringInfo(&output, 64);
 	dumpXPathExpression(expr, xpHdr, &output, true, paramNamesArray, false);
 
 	if (paramNamesArray != NULL)
@@ -1203,9 +1203,8 @@ getBoolValueString(bool value)
 {
 	StringInfoData out;
 
-	out.maxlen = 6;				/* 'false' + '\0' */
-	out.data = (char *) palloc(out.maxlen);
-	initStringInfo(&out);
+	/* lenth of 6 chars: 'false' + '\0' */
+	xnodeInitStringInfo(&out, 6);
 	if (value)
 	{
 		appendStringInfo(&out, "%s", "true");

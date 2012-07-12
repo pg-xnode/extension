@@ -121,7 +121,7 @@ getXNTNodeName(XMLNodeKind kind)
 	StringInfoData out;
 	char	   *name;
 
-	initStringInfo(&out);
+	xnodeInitStringInfo(&out, 32);
 	appendStringInfo(&out, "%s:", XNTNODE_NAMESPACE_PREFIX);
 
 	switch (kind)
@@ -573,9 +573,7 @@ dumpBinaryAttrValue(char *binValue, char **paramNames, XPathExprOperandValue par
 
 	tokenCount = *((uint8 *) cursor);
 	Assert(tokenCount > 0);
-	output.maxlen = 32;
-	output.data = (char *) palloc(output.maxlen);
-	resetStringInfo(&output);
+	xnodeInitStringInfo(&output, 32);
 
 	cursor++;
 	for (i = 0; i < tokenCount; i++)

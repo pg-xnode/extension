@@ -193,9 +193,7 @@ getXMLNodeKindStr(XMLNodeKind k)
 {
 	StringInfoData result;
 
-	result.maxlen = 32;
-	result.data = (char *) palloc(result.maxlen);
-	resetStringInfo(&result);
+	xnodeInitStringInfo(&result, 32);
 
 	switch (k)
 	{
@@ -603,13 +601,7 @@ getElementNodeStr(XMLCompNodeHdr element)
 	StringInfoData si;
 
 	initScanForTextNodes(&textScan, element);
-
-	/*
-	 * Set the size to something smaller than what 'initStringInfo()' does
-	 */
-	si.maxlen = 32;
-	si.data = (char *) palloc(si.maxlen);
-	resetStringInfo(&si);
+	xnodeInitStringInfo(&si, 32);
 
 	while ((textNode = getNextXMLNode(&textScan, false)) != NULL)
 	{
@@ -1192,4 +1184,16 @@ addUniqueNamespace(XMLNodeContainer result, char *nmspName)
 
 	/* Not in the container yet, so add it. */
 	xmlnodePushSinglePtr(result, (void *) nmspName);
+}
+
+/*
+ * Convenience function to allow allocation of small chunk where the default
+ * initial size seems to be unnecessary.
+ */
+void
+xnodeInitStringInfo(StringInfo stringInfo, int len)
+{
+	stringInfo->maxlen = len;
+	stringInfo->data = (char *) palloc(stringInfo->maxlen);
+	resetStringInfo(stringInfo);
 }
