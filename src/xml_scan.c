@@ -826,10 +826,13 @@ evaluateXPathFunction(XPathExprState exprState, XPathExpression funcExpr, unsign
 	XPathFunctionId funcId;
 	XPathFunction function;
 	XpathFuncImpl funcImpl;
+	XPathValueType *argTypesReceived,
+			   *argTypes;
 
 	result->negative = funcExpr->negative;
 
 	argsTmp = args = (XPathExprOperandValue) palloc(funcExpr->members * sizeof(XPathExprOperandValueData));
+	argTypesReceived = (XPathValueType *) palloc(funcExpr->members * sizeof(XPathValueType));
 
 	for (i = 0; i < funcExpr->members; i++)
 	{
@@ -860,15 +863,37 @@ evaluateXPathFunction(XPathExprState exprState, XPathExpression funcExpr, unsign
 														XPATH_VAR_STRING);
 			}
 		}
+		argTypesReceived[i] = argsTmp->type;
+
 		c += opnd->common.size;
 		argsTmp++;
 	}
 
 	funcId = funcExpr->funcId;
 	function = &xpathFunctions[funcId];
+
+	/*
+	 * Parser has already checked for such cast, but incompatible argument
+	 * might sneak-in as parameter (parameter type is unknown at parse time).
+	 *
+	 * Even if we check here, the check at parse time is not redundant. It
+	 * makes sense for expressions that have no parameters and yet break this
+	 * condition to be excluded from parsing because such would always cause
+	 * error here.
+	 */
+	argTypes = function->argTypes;
+	for (i = 0; i < function->nargs; i++)
+	{
+		if (argTypes[i] == XPATH_VAL_NODESET && argTypesReceived[i] != XPATH_VAL_NODESET)
+		{
+			elog(ERROR, "argument %u of function '%s'() cannot be cast to nodeset", i + 1, function->name);
+		}
+	}
+
 	funcImpl = function->impl.args;
 	funcImpl(exprState, funcExpr->members, args, result);
 	pfree(args);
+	pfree(argTypesReceived);
 }
 
 /*
