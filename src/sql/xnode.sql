@@ -72,7 +72,6 @@ from states
 order by id;
 
 
--- Common table expression can be used to avoid parsing the xpath expression for each row
 with paths(name, area, population)
 as (select '/state/@name'::xml.path, '/state/@area'::xml.path, '/state/@population'::xml.path)
 select  id, path(p.name, data) as name, path(p.area, data) as area,
