@@ -717,6 +717,10 @@ FROM trees_xml;
  
  <appendix id="release">
  <title>Release Notes</title>
+  <para>
+   The following is a summary of new features each version brought. Particular bug fixes are not listed here
+   until stable release is approached.
+  </para>
   <sect1>
    <title>Release 0.6.0</title>
    <para>
@@ -744,11 +748,6 @@ FROM trees_xml;
       Added casts from <literal>xml.pathval</literal> to Postgres types.
      </para>
     </listitem>
-    <listitem>
-     <para>
-      Fixed several bugs and eliminated some inefficiencies
-     </para>
-    </listitem>
    </itemizedlist>
   </sect1>
   
@@ -771,9 +770,25 @@ FROM trees_xml;
       (both binary and unary), <literal>*</literal>, <literal>div</literal>, <literal>mod</literal>.
      </para>
     </listitem>
+   </itemizedlist>
+  </sect1>
+  
+  <sect1>
+   <title>Release 0.6.1</title>
+   <itemizedlist>
     <listitem>
      <para>
-      Bug fixes, refactoring, comments.
+     Namespace validation.
+     </para>
+    </listitem>
+    <listitem>
+     <para>
+     XML Node Template (XNT)
+     </para>
+    </listitem>
+    <listitem>
+     <para>
+      <literal>xml.fragment()</literal> aggregate function.
      </para>
     </listitem>
    </itemizedlist>
