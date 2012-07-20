@@ -443,6 +443,7 @@ xmlnode_children(PG_FUNCTION_ARGS)
 	 */
 
 	Assert(fcinfo->flinfo != NULL);
+
 	initXNodeTypeInfo(fcinfo->flinfo->fn_oid, 0, &nodeType);
 
 	if (node->kind == XMLNODE_DOC || node->kind == XMLNODE_ELEMENT || node->kind == XMLNODE_DOC_FRAGMENT)
@@ -450,8 +451,9 @@ xmlnode_children(PG_FUNCTION_ARGS)
 		XMLCompNodeHdr root = (XMLCompNodeHdr) node;
 		unsigned short children = root->children;
 		Datum	   *elems;
-		char	   *childOffPtr;
-		unsigned short i;
+		unsigned short i = 0;
+		XMLNodeIteratorData iterator;
+		XMLNodeHdr	childNode;
 
 		if (children == 0)
 		{
@@ -461,14 +463,12 @@ xmlnode_children(PG_FUNCTION_ARGS)
 
 		elems = (Datum *) palloc(children * sizeof(Datum));
 
-		childOffPtr = XNODE_FIRST_REF(root);
-		for (i = 0; i < children; i++)
+		initXMLNodeIterator(&iterator, root, true);
+		while ((childNode = getNextXMLNodeChild(&iterator)) != NULL)
 		{
-			XMLNodeOffset childOff = readXMLNodeOffset(&childOffPtr, XNODE_GET_REF_BWIDTH(root), true);
-			XMLNodeHdr	childNode = (XMLNodeHdr) (data + rootNdOff - childOff);
 			char	   *childNodeCopy = copyXMLNode(childNode, NULL, true, NULL);
 
-			elems[i] = PointerGetDatum(childNodeCopy);
+			elems[i++] = PointerGetDatum(childNodeCopy);
 		}
 
 		result = construct_array(elems, children, nodeType.oid, nodeType.elmlen, nodeType.elmbyval,
@@ -872,9 +872,8 @@ collectXMLNamespaceDeclarations(XMLCompNodeHdr currentNode, unsigned int *attrCo
 {
 
 	unsigned int defNmspLen = strlen(XNODE_NAMESPACE_DEF_PREFIX);
-	unsigned int i;
-	char	   *childOffPtr = XNODE_FIRST_REF(currentNode);
-	char		bwidth = XNODE_GET_REF_BWIDTH(currentNode);
+	XMLNodeIteratorData iterator;
+	XMLNodeHdr	childNode;
 
 	if (!declsOnly)
 	{
@@ -882,10 +881,10 @@ collectXMLNamespaceDeclarations(XMLCompNodeHdr currentNode, unsigned int *attrCo
 		*attrsPrefixedCount = 0;
 	}
 
-	for (i = 0; i < currentNode->children; i++)
+	initXMLNodeIterator(&iterator, currentNode, true);
+
+	while ((childNode = getNextXMLNodeChild(&iterator)) != NULL)
 	{
-		XMLNodeOffset childOff = readXMLNodeOffset(&childOffPtr, bwidth, true);
-		XMLNodeHdr	childNode = (XMLNodeHdr) ((char *) currentNode - childOff);
 
 		if (childNode->kind != XMLNODE_ATTRIBUTE)
 		{

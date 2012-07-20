@@ -16,6 +16,8 @@ XMLNodeHdr
 XMLNodeHdrData
 XMLNodeInternal
 XMLNodeInternalData
+XMLNodeIterator
+XMLNodeIteratorData
 XMLNodeKind
 XMLNodeOffset
 XMLNodeParserStateData

@@ -124,19 +124,19 @@ getXMLNodeSize(XMLNodeHdr node, bool subtree)
 		case XMLNODE_ELEMENT:
 		case XMLNODE_DOC_FRAGMENT:
 			{
-				char	   *childOffPtr = XNODE_FIRST_REF((XMLCompNodeHdr) node);
 				unsigned int children = ((XMLCompNodeHdr) node)->children;
 				char		bwidth = XNODE_GET_REF_BWIDTH((XMLCompNodeHdr) node);
-				unsigned int i;
 
 				result = sizeof(XMLCompNodeHdrData);
 				if (subtree)
 				{
-					for (i = 0; i < children; i++)
-					{
-						XMLNodeOffset childOff = readXMLNodeOffset(&childOffPtr, bwidth, true);
-						XMLNodeHdr	childNode = (XMLNodeHdr) ((char *) node - childOff);
+					XMLNodeIteratorData iterator;
+					XMLNodeHdr	childNode;
 
+					initXMLNodeIterator(&iterator, (XMLCompNodeHdr) node, true);
+
+					while ((childNode = getNextXMLNodeChild(&iterator)) != NULL)
+					{
 						result += getXMLNodeSize(childNode, true);
 					}
 				}
@@ -367,11 +367,11 @@ copyXMLNode(XMLNodeHdr node, char *target, bool xmlnode, XMLNodeOffset *root)
 char	  **
 copyXMLDocFragment(XMLCompNodeHdr fragNode, char **resCursorPtr)
 {
-	char	   *refs = XNODE_FIRST_REF(fragNode);
-	char		bwidth = XNODE_GET_REF_BWIDTH(fragNode);
-	unsigned short int i;
+	unsigned short int i = 0;
 	char	  **newNdRoots;
 	char	   *resCursor = *resCursorPtr;
+	XMLNodeIteratorData iterator;
+	XMLNodeHdr	newNdPart;
 
 	if (fragNode->common.kind != XMLNODE_DOC_FRAGMENT)
 	{
@@ -379,13 +379,15 @@ copyXMLDocFragment(XMLCompNodeHdr fragNode, char **resCursorPtr)
 			 getXMLNodeKindStr(fragNode->common.kind));
 	}
 	newNdRoots = (char **) palloc(fragNode->children * sizeof(char *));
-	for (i = 0; i < fragNode->children; i++)
+
+	initXMLNodeIterator(&iterator, fragNode, true);
+
+	while ((newNdPart = getNextXMLNodeChild(&iterator)) != NULL)
 	{
-		XMLNodeHdr	newNdPart = (XMLNodeHdr) ((char *) fragNode - readXMLNodeOffset(&refs, bwidth, true));
 		XMLNodeOffset newNdPartOff;
 
 		copyXMLNode(newNdPart, resCursor, false, &newNdPartOff);
-		newNdRoots[i] = resCursor + newNdPartOff;
+		newNdRoots[i++] = resCursor + newNdPartOff;
 		resCursor += getXMLNodeSize(newNdPart, true);
 	}
 	*resCursorPtr = resCursor;
@@ -430,7 +432,7 @@ getFirstXMLNodeLeaf(XMLCompNodeHdr compNode)
 	else
 	{
 		char	   *firstRef = XNODE_FIRST_REF(compNode);
-		XMLNodeHdr	childNode = (XMLNodeHdr) ((char *) (compNode) - readXMLNodeOffset(&firstRef,
+		XMLNodeHdr	childNode = (XMLNodeHdr) ((char *) compNode - readXMLNodeOffset(&firstRef,
 									 XNODE_GET_REF_BWIDTH(compNode), false));
 
 		if (childNode->kind == XMLNODE_ELEMENT || childNode->kind == XMLNODE_DOC ||
@@ -457,9 +459,10 @@ checkXMLWellFormedness(XMLCompNodeHdr root)
 	unsigned short int i,
 				elIndex,
 				dtdIndex;
-	char	   *refStream = XNODE_FIRST_REF(root);
 	unsigned short int elements = 0;
 	unsigned short int dtds = 0;
+	XMLNodeIteratorData iterator;
+	XMLNodeHdr	currNode;
 
 	if (root->common.kind != XMLNODE_DOC && root->common.kind != XMLNODE_DOC_FRAGMENT)
 	{
@@ -467,11 +470,11 @@ checkXMLWellFormedness(XMLCompNodeHdr root)
 	}
 	elIndex = 0;
 	dtdIndex = 0;
-	for (i = 0; i < root->children; i++)
-	{
-		XMLNodeOffset ref = readXMLNodeOffset(&refStream, XNODE_GET_REF_BWIDTH(root), true);
-		XMLNodeHdr	currNode = (XMLNodeHdr) ((char *) root - ref);
 
+	initXMLNodeIterator(&iterator, root, true);
+
+	while ((currNode = getNextXMLNodeChild(&iterator)) != NULL)
+	{
 		if (currNode->kind == XMLNODE_ELEMENT)
 		{
 			elements++;
@@ -729,17 +732,15 @@ xmlStringIsNumber(char *str, double *numValue, char **end, bool skipWhitespace)
 bool
 checkFragmentForAttributes(XMLCompNodeHdr fragment)
 {
-	unsigned char bwidth;
-	char	   *refPtr;
 	XMLNodeHdr	child;
-	unsigned short i;
+	XMLNodeIteratorData iterator;
 
 	Assert(fragment->common.kind == XMLNODE_DOC_FRAGMENT);
-	bwidth = XNODE_GET_REF_BWIDTH(fragment);
-	refPtr = XNODE_FIRST_REF(fragment);
-	for (i = 0; i < fragment->children; i++)
+
+	initXMLNodeIterator(&iterator, fragment, true);
+
+	while ((child = getNextXMLNodeChild(&iterator)) != NULL)
 	{
-		child = (XMLNodeHdr) ((char *) fragment - readXMLNodeOffset(&refPtr, bwidth, true));
 		if (child->kind == XMLNODE_ATTRIBUTE)
 		{
 			return true;
@@ -760,9 +761,8 @@ xmlTreeWalker(XMLTreeWalkerContext *context)
 	{
 
 		XMLCompNodeHdr compNode = (XMLCompNodeHdr) node;
-		unsigned char bwidth = XNODE_GET_REF_BWIDTH(compNode);
-		unsigned short i;
-		char	   *refPtr = XNODE_FIRST_REF(compNode);
+		XMLNodeIteratorData iterator;
+		XMLNodeHdr	child;
 
 		context->depth++;
 		if (context->depth == XMLTREE_WALKER_MAX_DEPTH)
@@ -776,10 +776,10 @@ xmlTreeWalker(XMLTreeWalkerContext *context)
 			context->stack = (XMLNodeHdr *) repalloc(context->stack, context->stackSize);
 		}
 
-		for (i = 0; i < compNode->children; i++)
-		{
-			XMLNodeHdr	child = (XMLNodeHdr) ((char *) compNode - readXMLNodeOffset(&refPtr, bwidth, true));
+		initXMLNodeIterator(&iterator, compNode, true);
 
+		while ((child = getNextXMLNodeChild(&iterator)) != NULL)
+		{
 			if (child->kind == XMLNODE_ATTRIBUTE && !context->attributes)
 			{
 				continue;
@@ -1196,4 +1196,59 @@ xnodeInitStringInfo(StringInfo stringInfo, int len)
 	stringInfo->maxlen = len;
 	stringInfo->data = (char *) palloc(stringInfo->maxlen);
 	resetStringInfo(stringInfo);
+}
+
+void
+initXMLNodeIterator(XMLNodeIterator iterator, XMLCompNodeHdr node, bool attributes)
+{
+	if (node->common.kind != XMLNODE_ELEMENT && node->common.kind != XMLNODE_DOC &&
+		node->common.kind != XMLNODE_DOC_FRAGMENT && node->common.kind < XNTNODE_ROOT)
+	{
+		elog(ERROR, "iterator can only be used for compound node. node kind %u was not recognized", node->common.kind);
+	}
+	iterator->node = node;
+	iterator->bwidth = XNODE_GET_REF_BWIDTH(node);
+	iterator->childrenLeft = node->children;
+	iterator->childOffPtr = XNODE_FIRST_REF(node);
+	iterator->attributes = attributes;
+}
+
+/*
+ * Return the next child of XML element (next in the document order) or NULL if the iteration is finished.
+ *
+ * IMPORTANT
+ *
+ * Node returned by this function may only be used as *read-only*.
+ * The data is typically located in shared buffer and any change lead to unforeseen effects.
+ *
+ */
+XMLNodeHdr
+getNextXMLNodeChild(XMLNodeIterator iterator)
+{
+	XMLNodeHdr	childNode;
+	XMLNodeOffset childOff;
+
+	if (iterator->childrenLeft == 0)
+	{
+		return NULL;
+	}
+	childOff = readXMLNodeOffset(&iterator->childOffPtr, iterator->bwidth, true);
+	childNode = (XMLNodeHdr) ((char *) iterator->node - childOff);
+
+	if (childNode->kind == XMLNODE_ATTRIBUTE && !iterator->attributes)
+	{
+		bool		attrOrig;
+
+		/* Skip attribute nodes. */
+		attrOrig = iterator->attributes;
+		iterator->attributes = true;
+
+		while (childNode != NULL && childNode->kind == XMLNODE_ATTRIBUTE)
+		{
+			childNode = getNextXMLNodeChild(iterator);
+		}
+		iterator->attributes = attrOrig;
+	}
+	iterator->childrenLeft--;
+	return childNode;
 }

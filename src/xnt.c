@@ -1311,26 +1311,18 @@ buildNewNodeTree(XMLNodeHdr node, XNodeInternal parent, unsigned int *storageSiz
 	/* Process children if the node has some. */
 	if (node->kind == XMLNODE_ELEMENT || node->kind == XNTNODE_TEMPLATE)
 	{
-		char	   *childOffPtr;
-		unsigned char bwidth;
-		XMLNodeOffset offRel;
-		unsigned short i;
 		XMLCompNodeHdr compNode = (XMLCompNodeHdr) node;
+		XMLNodeIteratorData iterator;
+		XMLNodeHdr	childNode;
 
 		nodeInternal = getInternalNode(node, false);
 
 		xmlnodeContainerInit(&nodeInternal->children);
 
-		childOffPtr = XNODE_FIRST_REF(compNode);
-		bwidth = XNODE_GET_REF_BWIDTH(compNode);
+		initXMLNodeIterator(&iterator, compNode, true);
 
-		for (i = 0; i < compNode->children; i++)
+		while ((childNode = getNextXMLNodeChild(&iterator)) != NULL)
 		{
-			XMLNodeHdr	childNode;
-
-			offRel = readXMLNodeOffset(&childOffPtr, bwidth, true);
-			childNode = (XMLNodeHdr) ((char *) node - offRel);
-
 			/*
 			 * The template can currently have no other attribute than
 			 * 'xmlns:...'. For other (non-root) special nodes such cases will
@@ -1867,19 +1859,15 @@ freeTemplateTree(XNodeInternal root)
 static XMLCompNodeHdr
 getTemplateFromDoc(XMLCompNodeHdr docRoot)
 {
-	char	   *childOffPtr;
-	unsigned char bwidth;
-	unsigned short i;
-	XMLNodeHdr	child = NULL;
+	XMLNodeIteratorData iterator;
+	XMLNodeHdr	child;
 
 	Assert(docRoot->common.kind == XNTNODE_ROOT);
 
-	childOffPtr = XNODE_FIRST_REF(docRoot);
-	bwidth = XNODE_GET_REF_BWIDTH(docRoot);
-	for (i = 0; i < docRoot->children; i++)
-	{
-		child = (XMLNodeHdr) ((char *) docRoot - readXMLNodeOffset(&childOffPtr, bwidth, true));
+	initXMLNodeIterator(&iterator, docRoot, true);
 
+	while ((child = getNextXMLNodeChild(&iterator)) != NULL)
+	{
 		if (child->kind == XNTNODE_TEMPLATE)
 		{
 			break;
@@ -2174,23 +2162,22 @@ substituteParameters(XPathExprState exprState, XPathExpression expression, XPath
 			if (fragment != NULL)
 			{
 				XPathNodeSet ns = &valDst->nodeSet;
-				char	   *refPtr = XNODE_FIRST_REF(fragment);
-				char		bwidth = XNODE_GET_REF_BWIDTH(fragment);
-				unsigned short j;
+				unsigned short j = 0;
 				XMLNodeHdr *children;
+				XMLNodeIteratorData iterator;
+				XMLNodeHdr	child;
 
 				Assert(fragment->children > 1);
+
 				children = (XMLNodeHdr *) palloc(fragment->children * sizeof(XMLNodeHdr));
 				ns->isDocument = false;
 				ns->count = fragment->children;
-				for (j = 0; j < fragment->children; j++)
-				{
-					XMLNodeOffset offRel;
-					XMLNodeHdr	child;
 
-					offRel = readXMLNodeOffset(&refPtr, bwidth, true);
-					child = (XMLNodeHdr) ((char *) fragment - offRel);
-					children[j] = child;
+				initXMLNodeIterator(&iterator, fragment, true);
+
+				while ((child = getNextXMLNodeChild(&iterator)) != NULL)
+				{
+					children[j++] = child;
 				}
 				ns->nodes.arrayId = getXPathOperandId(exprState, (void *) children, XPATH_VAR_NODE_ARRAY);
 			}

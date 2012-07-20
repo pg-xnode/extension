@@ -96,4 +96,20 @@ typedef struct XMLNamespaceCheckState
 	XMLNodeContainerData result;
 } XMLNamespaceCheckState;
 
+typedef struct XMLNodeIteratorData
+{
+	XMLCompNodeHdr node;
+	char		bwidth;
+	unsigned short childrenLeft;
+	char	   *childOffPtr;
+	/* Is attribute considered a child? */
+	bool		attributes;
+
+} XMLNodeIteratorData;
+
+typedef struct XMLNodeIteratorData *XMLNodeIterator;
+
+extern void initXMLNodeIterator(XMLNodeIterator iterator, XMLCompNodeHdr node, bool attributes);
+extern XMLNodeHdr getNextXMLNodeChild(XMLNodeIterator iterator);
+
 #endif   /* XMLNODE_UTIL_H_ */

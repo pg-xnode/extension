@@ -1260,21 +1260,18 @@ addNodeToIgnoreList(XMLNodeHdr node, XMLScan scan)
 static void
 substituteAttributes(XPathExprState exprState, XMLCompNodeHdr element)
 {
-	unsigned short childrenLeft = element->children;
-	char	   *childFirst = XNODE_FIRST_REF(element);
-	char		bwidth = XNODE_GET_REF_BWIDTH(element);
-	char	   *chldOffPtr = childFirst;
 	unsigned short attrNr = 0;
 	unsigned short attrCount = 0;
 	XMLNodeHdr *attributes = NULL;
 	unsigned int attrId = 0;
 	unsigned int attrsArrayId = 0;
+	XMLNodeIteratorData iterator;
+	XMLNodeHdr	child;
 
-	while (childrenLeft > 0)
+	initXMLNodeIterator(&iterator, element, true);
+
+	while ((child = getNextXMLNodeChild(&iterator)) != NULL)
 	{
-		XMLNodeHdr	child = (XMLNodeHdr) ((char *) element -
-							   readXMLNodeOffset(&chldOffPtr, bwidth, true));
-
 		if (child->kind == XMLNODE_ATTRIBUTE)
 		{
 			char	   *attrName = XNODE_CONTENT(child);
@@ -1308,22 +1305,22 @@ substituteAttributes(XPathExprState exprState, XMLCompNodeHdr element)
 					{
 						if (attributes == NULL)
 						{
-							char	   *attrOffPtr = childFirst;
-							unsigned short j;
+							unsigned short j = 0;
 							unsigned int size = element->children * sizeof(XMLNodeHdr);
+							XMLNodeIteratorData iterAttr;
+							XMLNodeHdr	attrNode;
 
+							initXMLNodeIterator(&iterAttr, element, true);
 							attributes = (XMLNodeHdr *) palloc(size);
 							MemSet(attributes, 0, size);
-							for (j = 0; j < element->children; j++)
-							{
-								XMLNodeHdr	attrNode = (XMLNodeHdr) ((char *) element -
-								readXMLNodeOffset(&attrOffPtr, bwidth, true));
 
+							while ((attrNode = getNextXMLNodeChild(&iterAttr)) != NULL)
+							{
 								if (attrNode->kind != XMLNODE_ATTRIBUTE)
 								{
 									break;
 								}
-								attributes[j] = attrNode;
+								attributes[j++] = attrNode;
 								attrCount++;
 							}
 							Assert(j > 0);
@@ -1417,7 +1414,6 @@ substituteAttributes(XPathExprState exprState, XMLCompNodeHdr element)
 			 */
 			break;
 		}
-		childrenLeft--;
 	}
 	exprState->count[XPATH_VAR_NODE_SINGLE] += attrNr;
 }
