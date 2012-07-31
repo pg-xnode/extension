@@ -241,12 +241,14 @@ typedef enum XPathFunctionId
 	XPATH_FUNC_POSITION,
 	XPATH_FUNC_LAST,
 	XPATH_FUNC_NAME_NOARG,
+	XPATH_FUNC_LOCAL_NAME_NOARG,
 	XPATH_FUNC_CONTAINS,
 
 	XPATH_FUNC_BOOLEAN,
 	XPATH_FUNC_NUMBER,
 	XPATH_FUNC_STRING,
 	XPATH_FUNC_NAME,
+	XPATH_FUNC_LOCAL_NAME,
 	XPATH_FUNC_STARTS_WITH,
 
 	XPATH_FUNC_COUNT,
@@ -733,7 +735,7 @@ typedef struct XPathFunctionData
 typedef struct XPathFunctionData *XPathFunction;
 
 /* Total number of XPath functions the parser can recognize. */
-#define XPATH_FUNCTIONS			13
+#define XPATH_FUNCTIONS			15
 
 XPathFunctionData xpathFunctions[XPATH_FUNCTIONS];
 
@@ -745,7 +747,7 @@ extern void xpathFalse(XMLScan xscan, XPathExprState exprState, XPathExprOperand
 extern void xpathPosition(XMLScan xscan, XPathExprState exprState, XPathExprOperandValue result);
 extern void xpathLast(XMLScan xscan, XPathExprState exprState, XPathExprOperandValue result);
 extern void xpathNameNoArgs(XMLScan xscan, XPathExprState exprState, XPathExprOperandValue result);
-
+extern void xpathLocalNameNoArgs(XMLScan xscan, XPathExprState exprState, XPathExprOperandValue result);
 
 /*
  * And then those with non-empty argument list.
@@ -758,6 +760,8 @@ extern void xpathString(XPathExprState exprState, unsigned short nargs, XPathExp
 			XPathExprOperandValue result);
 extern void xpathName(XPathExprState exprState, unsigned short nargs, XPathExprOperandValue args,
 		  XPathExprOperandValue result);
+extern void xpathLocalName(XPathExprState exprState, unsigned short nargs, XPathExprOperandValue args,
+			   XPathExprOperandValue result);
 extern void xpathStartsWith(XPathExprState exprState, unsigned short nargs, XPathExprOperandValue args,
 				XPathExprOperandValue result);
 

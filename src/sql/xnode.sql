@@ -565,6 +565,7 @@ select path('/root[contains(a, b)]', '<root><a>xy</a><a>z</a></root>');
 select path('/root[contains(b, c)]', '<root><a>xy</a><a>z</a></root>');
 select path('contains("c", /root/a)', '<root><a/><a/></root>');
 select path('/state[contains(@name, "rep") and (@area<=100000 or @population>11000000)]', '{@name, @area, @population}', data) 
+
 from states
 order by id;
 
@@ -590,6 +591,9 @@ select xml.path('/a[name(/)!="b"]', '<a/>');
 select xml.path('/a[name()!="b"]', '<a/>');
 select xml.path('/a[name()=""]', '<a/>');
 select xml.path('/a[name()!=""]', '<a/>');
+select path('local-name(/a/node())', '<a xmlns:ns_1="namespace"><ns_1:b/><c/></a>');
+select path('/a/b[local-name()="b"]', '<a xmlns:ns_1="namespace"><b/><c/></a>');
+select path('/a/b[local-name()!="b"]', '<a xmlns:ns_1="namespace"><b/><c/></a>');
 
 -- Nested functions. In addition, result has to be implicitly cast.
 select xml.path('concat(count(/root/a), /root)', '<root><b>50</b></root>');
