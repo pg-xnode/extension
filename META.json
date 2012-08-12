@@ -18,11 +18,11 @@
    },
    "resources": {
       "bugtracker": {
-         "web": "https://github.com/ahouska/pg_xnode/issues/"
+         "web": "https://github.com/pg-xnode/extension/issues/"
       },
       "repository": {
-        "url": "git://github.com/ahouska/pg_xnode.git",
-        "web": "http://github.com/ahouska/pg_xnode/",
+        "url": "git://github.com/pg-xnode/extension.git",
+        "web": "https://github.com/pg-xnode/extension.git",
         "type": "git"
       }
    },

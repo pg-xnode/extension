@@ -8,12 +8,12 @@ Document Object Model (DOM) concept is used to access parts of XML documents and
 
 User information:
 
-https://github.com/downloads/ahouska/pg_xnode/pg_xnode_0.7.1.pdf
+https://github.com/downloads/pg-xnode/extension/pg_xnode_0.7.1.pdf
 
 
 Development information:
 
-https://github.com/ahouska/pg_xnode/wiki/pg_xnode
+https://github.com/pg-xnode/extension/wiki
 
 
 Mailing list (use also to report bugs):
