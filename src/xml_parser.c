@@ -50,7 +50,7 @@ typedef enum XMLNodeToken
 static char specStrings[][XNODE_SPEC_STR_MAX_LEN] =
 {
 	"<?xml", "?>",
-	"<!DOCTYPE", "]>",
+	"<!DOCTYPE", ">",
 	"<!--", "-->",
 	"<![CDATA[", "]]>",
 	"<?", "?>",
@@ -1045,7 +1045,7 @@ processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowe
 			nodeInfo->cntSrc = state->srcPos;
 			nodeInfo->nodeOut = state->dstPos;
 			readDTD(state);
-			nodeInfo->cntLength = state->srcPos - nodeInfo->cntSrc - 1;
+			nodeInfo->cntLength = state->srcPos - nodeInfo->cntSrc;
 			nodeInfo->tokenType = TOKEN_DTD;
 			saveNodeHeader(state, nodeInfo, 0);
 			saveContent(state, nodeInfo);
