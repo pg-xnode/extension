@@ -734,24 +734,10 @@ xmlnodeAdd(xmldoc doc, XMLScan xscan, XMLNodeHdr targNode, XMLNodeHdr newNode,
 		 */
 		unsigned int i = 0;
 		unsigned short int refSrcCount = 1;
+		XMLNodeOffset refTargMax;
 
 		bwidthSrc = XNODE_GET_REF_BWIDTH(parentSrc);
 		refSrc = readXMLNodeOffset(&srcCursor, bwidthSrc, false);
-
-		/*
-		 * TODO if the new node will have index 0, only its header size should
-		 * be added to the maximum reference range and not the whole
-		 * 'newNdSize'
-		 */
-		if (mode != XMLADD_REPLACE)
-		{
-			bwidthTarg = getXMLNodeOffsetByteWidth(refSrc + newNdSize);
-		}
-		else
-		{
-			bwidthTarg = getXMLNodeOffsetByteWidth(refSrc + newNdSize - targNdSize);
-		}
-
 
 		/*
 		 * Determine index (order) of the new node. If document fragment is
@@ -773,6 +759,63 @@ xmlnodeAdd(xmldoc doc, XMLScan xscan, XMLNodeHdr targNode, XMLNodeHdr newNode,
 				elog(ERROR, "unknown addition mode: %u", mode);
 				break;
 		}
+
+		/*
+		 * When new child is added, the maximum child offset of the new parent
+		 * will always be greater than that of the 'source parent'.
+		 */
+		refTargMax = refSrc;
+
+		/*
+		 * 'newNdSize' may be too high value to add in case the new node is
+		 * going to be the first child and at the same time it has a subtree.
+		 * In this case the offset does not span the subtree, so we could
+		 * compute the subtree's size and subtract it. However the risk of
+		 * using too many bytes due to this corner case is not critical.
+		 *
+		 * Other than that it wouldn't not be clear what to subtract in case
+		 * the new node is document fragment.
+		 */
+		refTargMax += newNdSize;
+
+		if (mode == XMLADD_BEFORE)
+		{
+			/*
+			 * Only size of the target node's subtree is the actual required
+			 * addition to the distance between the parent node and its (new)
+			 * first child.
+			 *
+			 * However 'targNdSize' also contains size of the target node
+			 * itself, which might make estimate of the maximum offset
+			 * exaggerated. To avoid this we could compute size of the target
+			 * node itself and subtract it, but the extra size computation
+			 * does not seem to be worthwhile (the node itself is typically
+			 * small: just header and element name).
+			 */
+			refTargMax += targNdSize;
+		}
+		else
+		{
+			if (mode == XMLADD_REPLACE)
+			{
+				/*
+				 * Unlike the simplified additions above, we must be tentative
+				 * when subtracting. If the target node is the first child of
+				 * its parent, we must not subtract size of the subtree
+				 * because its not included in 'refSrc'.
+				 */
+				if (newNdIndex == 0)
+				{
+					refTargMax -= getXMLNodeSize(targNode, false);
+				}
+				else
+				{
+					refTargMax -= targNdSize;
+				}
+			}
+		}
+
+		bwidthTarg = getXMLNodeOffsetByteWidth(refTargMax);
 
 		parentTarg->children = parentSrc->children;
 
@@ -837,6 +880,7 @@ xmlnodeAdd(xmldoc doc, XMLScan xscan, XMLNodeHdr targNode, XMLNodeHdr newNode,
 						}
 					}
 				}
+
 				writeXMLNodeOffset(refTarg, &resCursor, bwidthTarg, true);
 
 				if (mode == XMLADD_REPLACE && i == newNdIndex)

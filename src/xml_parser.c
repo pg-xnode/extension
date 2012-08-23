@@ -3926,6 +3926,8 @@ writeXMLNodeOffset(XMLNodeOffset ref, char **outPtr, unsigned char bytes, bool s
 	unsigned char i;
 	char	   *out = *outPtr;
 
+	Assert(bytes > 0);
+
 	for (i = 0; i < bytes; i++)
 	{
 		unsigned int d = (ref & mask);
@@ -3940,6 +3942,12 @@ writeXMLNodeOffset(XMLNodeOffset ref, char **outPtr, unsigned char bytes, bool s
 	{
 		*outPtr += bytes;
 	}
+
+	/*
+	 * If byte with was not sufficient, some bits will remain at higher
+	 * positions and this test will fail.
+	 */
+	Assert((ref >> shift) == 0);
 }
 
 /*
