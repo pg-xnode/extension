@@ -482,6 +482,10 @@ checkXMLWellFormedness(XMLCompNodeHdr root)
 		}
 		else if (currNode->kind == XMLNODE_DTD)
 		{
+			if (elements > 0)
+			{
+				elog(ERROR, "DTD node is not expected after root element");
+			}
 			dtds++;
 			dtdIndex = i;
 		}
