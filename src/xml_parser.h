@@ -53,6 +53,11 @@ typedef enum XNodeSpecString
 	XNODE_STR_PI_END
 } XNodeSpecString;
 
+extern char specXMLStrings[][XNODE_SPEC_STR_MAX_LEN];
+
+#define CHAR_INTERVALS		3
+extern UTF8Interval charIntervals[CHAR_INTERVALS];
+
 typedef enum XNodeSpecStringDTD
 {
 	XNODE_STR_DTD_ELEMENT = 0,
@@ -80,7 +85,8 @@ typedef enum XNodeXDeclAttNames
 /*
  * Only XNODE_STR_CDATA_END or XNODE_STR_CMT_END expected as 'i'
  */
-#define XNODE_SPEC_TEXT_END(i)	((state->srcPos + 2 < state->sizeIn) && strncmp(state->c, specStrings[i],	strlen(specStrings[i])) == 0)
+#define XNODE_SPEC_TEXT_END(i)	((state->srcPos + 2 < state->sizeIn) && \
+		strncmp(state->c, specXMLStrings[i], strlen(specXMLStrings[i])) == 0)
 
 typedef XMLNodeKind (*GetSpecialXNodeKindFunc) (char *name);
 
@@ -163,11 +169,21 @@ extern void finalizeXMLParserState(XMLParserState state);
 
 extern void xmlnodeParseDoc(XMLParserState state);
 extern void xmlnodeParseNode(XMLParserState state);
+extern void xmlnodeParseDTD(XMLParserState state);
 extern void readXMLName(XMLParserState state, bool whitespace, bool checkColons, bool separate, unsigned int *firstColPos);
 extern bool isValidXMLName(char *str);
 extern char *readXMLAttValue(XMLParserState state, bool output, bool *refs);
 extern bool xmlAttrValueIsNumber(char *value);
 extern uint8 getXMLAttributeFlags(char *attrValue, bool refs, bool quotApostr);
+extern void nextXMLChar(XMLParserState state, bool endAllowed);
+extern unsigned int readXMLPI(XMLParserState state);
+extern bool readSpecialXMLStringPart(char specStrings[][XNODE_SPEC_STR_MAX_LEN], XNodeSpecString strIndex,
+						 XMLParserState state, char offset);
+extern bool readSpecialXMLString(char specStrings[][XNODE_SPEC_STR_MAX_LEN], XNodeSpecString strIndex,
+					 XMLParserState state);
+extern void readXMLWhitespace(XMLParserState state, bool optional);
+extern unsigned int readXMLComment(XMLParserState state);
+extern bool readXMLReference(XMLParserState state, pg_wchar *value);
 
 extern void xmlnodeDumpNode(char *input, XMLNodeOffset nodeOff, char **output, unsigned int *pos, char **paramNames);
 extern char *dumpXMLDecl(XMLDecl decl);

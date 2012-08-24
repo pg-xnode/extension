@@ -47,7 +47,7 @@ typedef enum XMLNodeToken
  * Order of these strings must follow the order of items enumerated in
  * 'XNodeSpecString'
  */
-static char specStrings[][XNODE_SPEC_STR_MAX_LEN] =
+char		specXMLStrings[][XNODE_SPEC_STR_MAX_LEN] =
 {
 	"<?xml", "?>",
 	"<!DOCTYPE", ">",
@@ -57,20 +57,15 @@ static char specStrings[][XNODE_SPEC_STR_MAX_LEN] =
 };
 
 /*
- * Likewise, order of the DTD keywords must follow the order of
- * 'XNodeSpecStringDTD' items.
+ * http://www.w3.org/TR/2008/REC-xml-20081126/#NT-Char
  */
-static char specStringsDTD[][XNODE_SPEC_STR_MAX_LEN] =
+UTF8Interval charIntervals[CHAR_INTERVALS] =
 {
-	"ELEMENT", "ATTLIST", "ENTITY",
-	"NOTATION", "SYSTEM", "PUBLIC",
-	"EMPTY", "ANY", "#PCDATA",
-	"NDATA", "#REQUIRED", "#IMPLIED", "#FIXED"
+	{{0x21, 0x0, 0x0, 0x0}, {0xed, 0x9f, 0xbf, 0x0}},
+	{{0xee, 0x80, 0x80, 0x0}, {0xef, 0xbf, 0xbd, 0x0}},
+	{{0xf0, 0x90, 0x80, 0x80}, {0xf4, 0x8f, 0xbf, 0xbf}}
 };
 
-static char dtdAttTypes[][XNODE_SPEC_STR_MAX_LEN] = {
-	"CDATA", "ID", "IDREF", "IDREFS", "ENTITY", "ENTITIES", "NMTOKEN", "NMTOKENS"
-};
 
 static const char *xmldeclAttNames[XNODE_XDECL_MAX_ATTRS] = {
 	"version", "encoding", "standalone"
@@ -123,24 +118,9 @@ static XMLNodeToken processTag(XMLParserState state, XMLNodeInternal nodeInfo, X
 		   XMLNodeHdr *declAttrs, unsigned short *declAttrNum, unsigned int *nmspDecls, unsigned int *attrsPrefixed);
 static void checkXMLDeclaration(XMLNodeHdr *declAttrs, unsigned int attCount, XMLDecl decl);
 static char *getEncodingSimplified(const char *original);
-static unsigned int readComment(XMLParserState state);
-static unsigned int readPI(XMLParserState state);
-static inline void readWhitespace(XMLParserState state, bool optional);
-static void readDTD_CP(XMLParserState state);
-static void readDTD_ChoiceOrSeq(XMLParserState state, bool started);
-static void readDTDExternalID(XMLParserState state);
-static void readDTDEntityValue(XMLParserState state);
-static bool readReference(XMLParserState state, pg_wchar *value);
 static bool isPredefinedEntity(char *refStart, char *value);
-static void readDTD(XMLParserState state);
-static void processDTDNode(XMLParserState state);
-static void processLiteral(XMLParserState state, bool public);
-static bool readSpecialStringPart(char specStrings[][XNODE_SPEC_STR_MAX_LEN], XNodeSpecString strIndex,
-					  XMLParserState state, char offset);
-static bool readSpecialString(char specStrings[][XNODE_SPEC_STR_MAX_LEN], XNodeSpecString strIndex,
-				  XMLParserState state);
+
 static void evaluateWhitespace(XMLParserState state);
-static void nextChar(XMLParserState state, bool endAllowed);
 static void ensureSpace(unsigned int size, XMLParserState state);
 static void saveNodeHeader(XMLParserState state, XMLNodeInternal nodeInfo, char flags);
 static void saveContent(XMLParserState state, XMLNodeInternal nodeInfo);
@@ -176,26 +156,6 @@ static PredefinedEntity predefEntities[XNODE_PREDEFINED_ENTITIES] = {
 	{"quot;", XNODE_CHAR_QUOTMARK}
 };
 
-/*
- * http://www.w3.org/TR/2008/REC-xml-20081126/#NT-Char
- */
-#define CHAR_INTERVALS		3
-
-static UTF8Interval charIntervals[CHAR_INTERVALS] =
-{
-	{{0x21, 0x0, 0x0, 0x0}, {0xed, 0x9f, 0xbf, 0x0}},
-	{{0xee, 0x80, 0x80, 0x0}, {0xef, 0xbf, 0xbd, 0x0}},
-	{{0xf0, 0x90, 0x80, 0x80}, {0xf4, 0x8f, 0xbf, 0xbf}}
-};
-
-/*
- * http://www.w3.org/TR/2008/REC-xml-20081126/#NT-PubidChar (Except for
- * intervals)
- */
-static char pubIdChars[] = {0x20, 0xd, 0xa, 0x2d, 0x27, 0x28, 0x29, 0x2b, 0x2c, 0x2e, 0x2f,
-0x3a, 0x3d, 0x3f, 0x3b, 0x21, 0x2a, 0x23, 0x40, 0x24, 0x5f, 0x25};
-static bool isPubIdChar(char c);
-
 void
 xmlnodeParseDoc(XMLParserState state)
 {
@@ -220,7 +180,7 @@ xmlnodeParseDoc(XMLParserState state)
 	{
 		do
 		{
-			nextChar(state, false);
+			nextXMLChar(state, false);
 			tagRow = state->srcRow;
 			tagCol = state->srcCol;
 			processToken(state, &nodeInfo, TOKEN_MISC | TOKEN_DTD | TOKEN_STAG);
@@ -234,7 +194,7 @@ xmlnodeParseDoc(XMLParserState state)
 	{
 		do
 		{
-			nextChar(state, false);
+			nextXMLChar(state, false);
 			tagRow = state->srcRow;
 			tagCol = state->srcCol;
 			processToken(state, &nodeInfo, TOKEN_MISC | TOKEN_DTD | TOKEN_STAG);
@@ -258,7 +218,7 @@ xmlnodeParseDoc(XMLParserState state)
 	/*
 	 * Now that the root element is processed, document end is legal.
 	 */
-	nextChar(state, true);
+	nextXMLChar(state, true);
 	if (XNODE_INPUT_END(state))
 	{
 		saveRootNodeHeader(state, state->targetKind);
@@ -283,7 +243,7 @@ xmlnodeParseDoc(XMLParserState state)
 		{
 			xmlnodePushSingleNode(&(state->stack), nodeInfo.nodeOut);
 		}
-		nextChar(state, true);
+		nextXMLChar(state, true);
 	} while (!XNODE_INPUT_END(state));
 
 	saveRootNodeHeader(state, state->targetKind);
@@ -300,7 +260,7 @@ xmlnodeParseNode(XMLParserState state)
 	nodeInfo.entPredef = false;
 	processToken(state, &nodeInfo, maskAll);
 	xmlnodePushSingleNode(&state->stack, nodeInfo.nodeOut);
-	nextChar(state, true);
+	nextXMLChar(state, true);
 
 	while (!XNODE_INPUT_END(state))
 	{
@@ -339,7 +299,7 @@ xmlnodeParseNode(XMLParserState state)
 				{
 					entPredef = true;
 				}
-				nextChar(state, true);
+				nextXMLChar(state, true);
 			} while (!XNODE_INPUT_END(state) &&
 					 (nodeInfo.tokenType & (TOKEN_TEXT | TOKEN_REFERENCE)));
 
@@ -370,7 +330,7 @@ xmlnodeParseNode(XMLParserState state)
 			 */
 			processToken(state, &nodeInfo, maskAll);
 			xmlnodePushSingleNode(&state->stack, nodeInfo.nodeOut);
-			nextChar(state, true);
+			nextXMLChar(state, true);
 
 			/*
 			 * 'stand-alone' entity reference (i.e. neither preceded nor
@@ -549,7 +509,7 @@ readXMLName(XMLParserState state, bool whitespace, bool checkColons, bool separa
 
 	do
 	{
-		nextChar(state, separate);
+		nextXMLChar(state, separate);
 		if (checkColons && *state->c == XNODE_CHAR_COLON)
 		{
 			/*
@@ -588,7 +548,7 @@ readXMLName(XMLParserState state, bool whitespace, bool checkColons, bool separa
 		}
 		else
 		{
-			nextChar(state, separate);
+			nextXMLChar(state, separate);
 		}
 	}
 }
@@ -641,7 +601,7 @@ readXMLAttValue(XMLParserState state, bool output, bool *refs)
 				 state->srcRow, state->srcCol);
 		}
 		term = *state->c;
-		nextChar(state, false);
+		nextXMLChar(state, false);
 	}
 	else
 	{
@@ -680,7 +640,7 @@ readXMLAttValue(XMLParserState state, bool output, bool *refs)
 			char	   *refStart = state->c;
 
 			*refs = true;
-			if (readReference(state, &value))
+			if (readXMLReference(state, &value))
 			{
 				char		utf8char[5];
 
@@ -752,7 +712,7 @@ readXMLAttValue(XMLParserState state, bool output, bool *refs)
 			}
 		}
 
-		nextChar(state, state->targetKind == XMLNODE_ATTRIBUTE);
+		nextXMLChar(state, state->targetKind == XMLNODE_ATTRIBUTE);
 	}
 
 	if (output)
@@ -798,6 +758,278 @@ getXMLAttributeFlags(char *attrValue, bool refs, bool quotApostr)
 }
 
 /*
+ * The state variables are incremented by values retrieved during the
+ * previous call. The reason is that sometimes we need to have the current
+ * character width at hand (in order to check the next character).
+ */
+void
+nextXMLChar(XMLParserState state, bool endAllowed)
+{
+	state->srcPos += state->cWidth;
+	state->c += state->cWidth;
+	state->srcRow += state->srcRowIncr;
+	if (state->srcRowIncr == 0)
+	{
+		state->srcCol++;
+	}
+	else
+	{
+		state->srcCol = 0;
+	}
+
+	if (XNODE_INPUT_END(state))
+	{
+		if (!endAllowed)
+		{
+			elog(ERROR, "Unexpected end of XML document");
+		}
+		else
+		{
+			return;
+		}
+	}
+	if (XNODE_WHITESPACE(state->c))
+	{
+		evaluateWhitespace(state);
+	}
+	else
+	{
+		state->cWidth = pg_utf_mblen((unsigned char *) state->c);
+		state->srcRowIncr = 0;
+	}
+}
+
+unsigned int
+readXMLPI(XMLParserState state)
+{
+	unsigned int len,
+				i;
+	unsigned int startPos = state->srcPos;
+	char	   *targName = state->c;
+
+	if (!XNODE_VALID_NAME_START(state->c))
+	{
+		UNEXPECTED_CHARACTER;
+	}
+	while (XNODE_VALID_NAME_CHAR(state->c))
+	{
+		nextXMLChar(state, false);
+	}
+	if (state->srcPos - startPos >= 3)
+	{
+		char	   *targNameRef = specXMLStrings[XNODE_STR_XDECL_START] + 2;
+		bool		found = true;
+
+		for (i = 0; i < 3; i++)
+		{
+			if (*targName != *targNameRef && *targName != toupper(*targNameRef))
+			{
+				found = false;
+				break;
+			}
+			else
+			{
+				targName++;
+				targNameRef++;
+			}
+		}
+		if (found && XNODE_WHITESPACE(targName))
+		{
+			elog(ERROR, "reserved PI target name found on row %u, column %u",
+				 state->srcRow, state->srcCol);
+		}
+	}
+	if (XNODE_WHITESPACE(state->c))
+	{
+		nextXMLChar(state, false);
+		while (*state->c != XNODE_CHAR_QUESTMARK)
+		{
+			if (!XNODE_VALID_CHAR(state->c))
+			{
+				elog(ERROR, "Invalid XML character at row %u, column %u",
+					 state->srcRow, state->srcCol);
+			}
+			nextXMLChar(state, false);
+		}
+	}
+	len = state->srcPos - startPos;
+	if (*state->c != XNODE_CHAR_QUESTMARK)
+	{
+		UNEXPECTED_CHARACTER;
+	}
+	nextXMLChar(state, false);
+	if (*state->c != XNODE_CHAR_RARROW)
+	{
+		UNEXPECTED_CHARACTER;
+	}
+	return len;
+}
+
+/*
+ * 'offset' - how many characters of the (possible) special string have been
+ * processed before this function was called.
+ */
+bool
+readSpecialXMLStringPart(char specXMLStrings[][XNODE_SPEC_STR_MAX_LEN],
+				 XNodeSpecString strIndex, XMLParserState state, char offset)
+{
+	char	   *specString = specXMLStrings[strIndex] + offset;
+	unsigned int len = strlen(specString);
+
+	if (state->srcPos + len <= state->sizeIn &&
+		strncmp(state->c, specString, len) == 0)
+	{
+
+		unsigned int i;
+
+		for (i = 0; i < len; i++)
+		{
+			nextXMLChar(state, false);
+		}
+		return true;
+	}
+	else
+	{
+		return false;
+	}
+}
+
+bool
+readSpecialXMLString(char specStrings[][XNODE_SPEC_STR_MAX_LEN], XNodeSpecString strIndex,
+					 XMLParserState state)
+{
+	return readSpecialXMLStringPart(specStrings, strIndex, state, 0);
+}
+
+void
+readXMLWhitespace(XMLParserState state, bool optional)
+{
+	if (XNODE_WHITESPACE(state->c))
+	{
+		nextXMLChar(state, false);
+	}
+	else if (!optional)
+	{
+		elog(ERROR, "whitespace expected at row %u, column %u", state->srcRow, state->srcCol);
+	}
+}
+
+unsigned int
+readXMLComment(XMLParserState state)
+{
+	unsigned int len;
+	unsigned short int i;
+	unsigned int startPos = state->srcPos;
+	char		prev = 0x00;
+
+	while (!XNODE_SPEC_TEXT_END(XNODE_STR_CMT_END))
+	{
+		if (!XNODE_VALID_CHAR(state->c))
+		{
+			elog(ERROR, "Invalid XML character at row %u, column %u", state->srcRow, state->srcCol);
+		}
+		prev = *state->c;
+		nextXMLChar(state, false);
+	}
+
+	if (prev == XNODE_CHAR_DASH)
+	{
+		elog(ERROR, "Comment must not end with %c%s", XNODE_CHAR_DASH,
+			 specXMLStrings[XNODE_STR_CMT_END]);
+	}
+	len = state->srcPos - startPos;
+
+	/*
+	 * The convention is to end up tag processing when '>' is the current
+	 * character.
+	 */
+	for (i = 0; i < strlen(specXMLStrings[XNODE_STR_CDATA_END]) - 1; i++)
+	{
+		nextXMLChar(state, false);
+	}
+	return len;
+}
+
+/*
+ * http://www.w3.org/TR/2008/REC-xml-20081126/#NT-Reference
+ *
+ * Reads (entity or character) reference.
+ * At return time 'state' points to terminating semicolon.
+ */
+bool
+readXMLReference(XMLParserState state, pg_wchar *value)
+{
+	bool		charRef = false;
+
+	nextXMLChar(state, false);
+	if (*state->c == XNODE_CHAR_HASH)
+	{
+		/*
+		 * http://www.w3.org/TR/2008/REC-xml-20081126/#NT-CharRef
+		 */
+		bool		hex = false;
+		unsigned int digits = 0;
+		char	   *valueStart;
+
+		charRef = true;
+
+		nextXMLChar(state, false);
+		if (*state->c == 'x')
+		{
+			hex = true;
+			nextXMLChar(state, false);
+		}
+		valueStart = state->c;
+		while ((hex && isxdigit(*state->c)) || (!hex && isdigit(*state->c)))
+		{
+			nextXMLChar(state, false);
+			digits++;
+		}
+		if (digits == 0)
+		{
+			if (state->targetKind == XMLNODE_ATTRIBUTE)
+			{
+				elog(ERROR, "decimal or hexadecimal value expected in reference");
+			}
+			else
+			{
+				elog(ERROR, "decimal or hexadecimal value expected at row %u, column %u.",
+					 state->srcRow, state->srcCol);
+			}
+		}
+		if (hex)
+		{
+			sscanf(valueStart, "%x", value);
+		}
+		else
+		{
+			sscanf(valueStart, "%d", value);
+		}
+	}
+	else
+	{
+		/*
+		 * http://www.w3.org/TR/2008/REC-xml-20081126/#NT-EntityRef
+		 */
+		readXMLName(state, false, false, false, NULL);
+	}
+
+	if (*state->c != XNODE_CHAR_SEMICOLON)
+	{
+		if (state->targetKind == XMLNODE_ATTRIBUTE)
+		{
+			elog(ERROR, "'%c' expected in reference", XNODE_CHAR_SEMICOLON);
+		}
+		else
+		{
+			elog(ERROR, "'%c' expected at row %u, column %u.", XNODE_CHAR_SEMICOLON,
+				 state->srcRow, state->srcCol);
+		}
+	}
+	return charRef;
+}
+
+/*
  * Returns the last token processed. In case we start at STag, ETag is
  * returned.
  *
@@ -833,7 +1065,7 @@ processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowe
 					 state->srcCol);
 			}
 			nodeInfo->tokenType = TOKEN_REFERENCE;
-			if (readReference(state, &value))
+			if (readXMLReference(state, &value))
 			{
 				char		refChar[5];
 
@@ -904,14 +1136,14 @@ processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowe
 					if (XNODE_SPEC_TEXT_END(XNODE_STR_CDATA_END))
 					{
 						elog(ERROR, "Sequence '%s' not allowed in character data.",
-							 specStrings[XNODE_STR_CDATA_END]);
+							 specXMLStrings[XNODE_STR_CDATA_END]);
 					}
 				}
 				if (!XNODE_VALID_CHAR(state->c))
 				{
 					elog(ERROR, "invalid XML character at row %u, column %u", state->srcRow, state->srcCol);
 				}
-				nextChar(state, false);
+				nextXMLChar(state, false);
 			}
 			nodeInfo->cntLength = state->srcPos - nodeInfo->cntSrc + state->cWidth;
 			nodeInfo->tokenType = TOKEN_TEXT;
@@ -943,12 +1175,12 @@ processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowe
 			UNEXPECTED_CHARACTER;
 		}
 	}
-	nextChar(state, false);
+	nextXMLChar(state, false);
 	if (*state->c == XNODE_CHAR_QUESTMARK)
 	{
-		char	   *declStart = specStrings[XNODE_STR_XDECL_START];
+		char	   *declStart = specXMLStrings[XNODE_STR_XDECL_START];
 
-		nextChar(state, false);
+		nextXMLChar(state, false);
 		if (strncmp(state->c, declStart + 2, strlen(declStart + 2)) == 0 &&
 			XNODE_WHITESPACE(state->c + strlen(declStart + 2)))
 		{
@@ -985,7 +1217,7 @@ processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowe
 			nodeInfo->tokenType = TOKEN_PI;
 			saveNodeHeader(state, nodeInfo, 0);
 
-			cntLen = readPI(state);
+			cntLen = readXMLPI(state);
 			piCnt = state->inputText + nodeInfo->cntSrc;
 			cPtr = piCnt;
 			for (i = 0; i < cntLen; i++)
@@ -1029,14 +1261,14 @@ processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowe
 	{
 		unsigned char charsProcessed;
 
-		nextChar(state, false);
+		nextXMLChar(state, false);
 
 		/*
 		 * Left arrow followed by exclamation mark
 		 */
 		charsProcessed = 2;
 
-		if (readSpecialStringPart(specStrings, XNODE_STR_DTD_START, state, charsProcessed))
+		if (readSpecialXMLStringPart(specXMLStrings, XNODE_STR_DTD_START, state, charsProcessed))
 		{
 			if (!(allowed & TOKEN_DTD))
 			{
@@ -1044,14 +1276,14 @@ processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowe
 			}
 			nodeInfo->cntSrc = state->srcPos;
 			nodeInfo->nodeOut = state->dstPos;
-			readDTD(state);
+			xmlnodeParseDTD(state);
 			nodeInfo->cntLength = state->srcPos - nodeInfo->cntSrc;
 			nodeInfo->tokenType = TOKEN_DTD;
 			saveNodeHeader(state, nodeInfo, 0);
 			saveContent(state, nodeInfo);
 			return;
 		}
-		else if (readSpecialStringPart(specStrings, XNODE_STR_CMT_START, state, charsProcessed))
+		else if (readSpecialXMLStringPart(specXMLStrings, XNODE_STR_CMT_START, state, charsProcessed))
 		{
 			if (!(allowed & TOKEN_COMMENT))
 			{
@@ -1059,13 +1291,13 @@ processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowe
 			}
 			nodeInfo->cntSrc = state->srcPos;
 			nodeInfo->nodeOut = state->dstPos;
-			nodeInfo->cntLength = readComment(state);
+			nodeInfo->cntLength = readXMLComment(state);
 			nodeInfo->tokenType = TOKEN_COMMENT;
 			saveNodeHeader(state, nodeInfo, 0);
 			saveContent(state, nodeInfo);
 			return;
 		}
-		else if (readSpecialStringPart(specStrings, XNODE_STR_CDATA_START, state, charsProcessed))
+		else if (readSpecialXMLStringPart(specXMLStrings, XNODE_STR_CDATA_START, state, charsProcessed))
 		{
 			unsigned int i;
 			unsigned char flags = 0;
@@ -1089,12 +1321,12 @@ processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowe
 				{
 					flags |= XNODE_TEXT_SPEC_CHARS;
 				}
-				nextChar(state, false);
+				nextXMLChar(state, false);
 			}
 			nodeInfo->cntLength = state->srcPos - nodeInfo->cntSrc;
-			for (i = 0; i < strlen(specStrings[XNODE_STR_CDATA_END]) - 1; i++)
+			for (i = 0; i < strlen(specXMLStrings[XNODE_STR_CDATA_END]) - 1; i++)
 			{
-				nextChar(state, false);
+				nextXMLChar(state, false);
 			}
 			nodeInfo->tokenType = TOKEN_CDATA;
 			saveNodeHeader(state, nodeInfo, flags);
@@ -1112,7 +1344,7 @@ processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowe
 		{
 			elog(ERROR, "End tag not allowed at row %u, column %u", tagRow, tagCol);
 		}
-		nextChar(state, false);
+		nextXMLChar(state, false);
 		if (!XNODE_VALID_NAME_START(state->c))
 		{
 			elog(ERROR, "Invalid tag name at row %u, column %u.", tagRow, tagCol);
@@ -1388,7 +1620,7 @@ processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowe
 			 */
 			do
 			{
-				nextChar(state, false);
+				nextXMLChar(state, false);
 				processToken(state, &childTag, TOKEN_STAG | TOKEN_ETAG | TOKEN_EMPTY_ELEMENT
 							 | TOKEN_TEXT | TOKEN_CDATA | TOKEN_COMMENT | TOKEN_PI | TOKEN_REFERENCE);
 
@@ -1736,7 +1968,7 @@ processTag(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowed,
 				{
 					UNEXPECTED_CHARACTER;
 				}
-				nextChar(state, false);
+				nextXMLChar(state, false);
 				if (*state->c == XNODE_CHAR_RARROW)
 				{
 					return TOKEN_EMPTY_ELEMENT;
@@ -1752,7 +1984,7 @@ processTag(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowed,
 				{
 					UNEXPECTED_CHARACTER;
 				}
-				nextChar(state, false);
+				nextXMLChar(state, false);
 				if (*state->c == XNODE_CHAR_RARROW)
 				{
 					if (attributes > 0)
@@ -1793,7 +2025,7 @@ processTag(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowed,
 		{
 			char		quotMark;
 
-			nextChar(state, false);
+			nextXMLChar(state, false);
 
 			/*
 			 * Process a single attribute
@@ -1857,7 +2089,7 @@ processTag(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowed,
 
 				if (XNODE_WHITESPACE(state->c))
 				{
-					nextChar(state, false);
+					nextXMLChar(state, false);
 				}
 				if (*state->c != XNODE_CHAR_EQ)
 				{
@@ -1866,11 +2098,11 @@ processTag(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowed,
 				}
 				else
 				{
-					nextChar(state, false);
+					nextXMLChar(state, false);
 				}
 				if (XNODE_WHITESPACE(state->c))
 				{
-					nextChar(state, false);
+					nextXMLChar(state, false);
 				}
 
 				/*
@@ -1975,7 +2207,7 @@ processTag(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowed,
 
 				attrNode->flags |= getXMLAttributeFlags(attrValue, refsInValue, quotMark == XNODE_CHAR_APOSTR);
 				attributes++;
-				nextChar(state, false);
+				nextXMLChar(state, false);
 			}
 			else
 			{
@@ -2110,342 +2342,6 @@ getEncodingSimplified(const char *original)
 	return result;
 }
 
-static unsigned int
-readComment(XMLParserState state)
-{
-	unsigned int len;
-	unsigned short int i;
-	unsigned int startPos = state->srcPos;
-	char		prev = 0x00;
-
-	while (!XNODE_SPEC_TEXT_END(XNODE_STR_CMT_END))
-	{
-		if (!XNODE_VALID_CHAR(state->c))
-		{
-			elog(ERROR, "Invalid XML character at row %u, column %u", state->srcRow, state->srcCol);
-		}
-		prev = *state->c;
-		nextChar(state, false);
-	}
-
-	if (prev == XNODE_CHAR_DASH)
-	{
-		elog(ERROR, "Comment must not end with %c%s", XNODE_CHAR_DASH,
-			 specStrings[XNODE_STR_CMT_END]);
-	}
-	len = state->srcPos - startPos;
-
-	/*
-	 * The convention is to end up tag processing when '>' is the current
-	 * character.
-	 */
-	for (i = 0; i < strlen(specStrings[XNODE_STR_CDATA_END]) - 1; i++)
-	{
-		nextChar(state, false);
-	}
-	return len;
-}
-
-static unsigned int
-readPI(XMLParserState state)
-{
-	unsigned int len,
-				i;
-	unsigned int startPos = state->srcPos;
-	char	   *targName = state->c;
-
-	if (!XNODE_VALID_NAME_START(state->c))
-	{
-		UNEXPECTED_CHARACTER;
-	}
-	while (XNODE_VALID_NAME_CHAR(state->c))
-	{
-		nextChar(state, false);
-	}
-	if (state->srcPos - startPos >= 3)
-	{
-		char	   *targNameRef = specStrings[XNODE_STR_XDECL_START] + 2;
-		bool		found = true;
-
-		for (i = 0; i < 3; i++)
-		{
-			if (*targName != *targNameRef && *targName != toupper(*targNameRef))
-			{
-				found = false;
-				break;
-			}
-			else
-			{
-				targName++;
-				targNameRef++;
-			}
-		}
-		if (found && XNODE_WHITESPACE(targName))
-		{
-			elog(ERROR, "reserved PI target name found on row %u, column %u",
-				 state->srcRow, state->srcCol);
-		}
-	}
-	if (XNODE_WHITESPACE(state->c))
-	{
-		nextChar(state, false);
-		while (*state->c != XNODE_CHAR_QUESTMARK)
-		{
-			if (!XNODE_VALID_CHAR(state->c))
-			{
-				elog(ERROR, "Invalid XML character at row %u, column %u",
-					 state->srcRow, state->srcCol);
-			}
-			nextChar(state, false);
-		}
-	}
-	len = state->srcPos - startPos;
-	if (*state->c != XNODE_CHAR_QUESTMARK)
-	{
-		UNEXPECTED_CHARACTER;
-	}
-	nextChar(state, false);
-	if (*state->c != XNODE_CHAR_RARROW)
-	{
-		UNEXPECTED_CHARACTER;
-	}
-	return len;
-}
-
-/*
- * TODO Reuse this code where possible
- */
-static inline void
-readWhitespace(XMLParserState state, bool optional)
-{
-	if (XNODE_WHITESPACE(state->c))
-	{
-		nextChar(state, false);
-	}
-	else if (!optional)
-	{
-		elog(ERROR, "whitespace expected at row %u, column %u", state->srcRow, state->srcCol);
-	}
-}
-
-/*
- * http://www.w3.org/TR/2008/REC-xml-20081126/#NT-cp
- */
-static void
-readDTD_CP(XMLParserState state)
-{
-	if (XNODE_VALID_NAME_START(state->c))
-	{
-		readXMLName(state, false, false, false, NULL);
-	}
-	else
-	{
-		readDTD_ChoiceOrSeq(state, false);
-	}
-	if (*state->c == XNODE_CHAR_QUESTMARK || *state->c == XNODE_CHAR_ASTERISK ||
-		*state->c == XNODE_CHAR_PLUS)
-	{
-		nextChar(state, false);
-	}
-}
-
-/*
- * http://www.w3.org/TR/2008/REC-xml-20081126/#NT-choice or
- * http://www.w3.org/TR/2008/REC-xml-20081126/#NT-seq
- */
-static void
-readDTD_ChoiceOrSeq(XMLParserState state, bool started)
-{
-	unsigned int i = 0;
-	char		delim = 0x0;
-
-	if (!started)
-	{
-		if (*state->c != XNODE_CHAR_LBRKT_RND)
-		{
-			UNEXPECTED_CHARACTER;
-		}
-		nextChar(state, false);
-		readWhitespace(state, true);
-	}
-	readDTD_CP(state);
-	readWhitespace(state, true);
-	while (*state->c != XNODE_CHAR_RBRKT_RND)
-	{
-		if (i == 0)
-		{
-			if (*state->c != XNODE_CHAR_PIPE && *state->c != XNODE_CHAR_COMMA)
-			{
-				elog(ERROR, "'%c' or '%c' expected at row %u, column %u", XNODE_CHAR_PIPE, XNODE_CHAR_COMMA,
-					 state->srcRow, state->srcCol);
-			}
-			delim = *state->c;
-		}
-		else
-		{
-			if (*state->c != delim)
-			{
-				elog(ERROR, "'%c' or '%c' expected at row %u, column %u", delim, XNODE_CHAR_RBRKT_RND,
-					 state->srcRow, state->srcCol);
-			}
-		}
-		nextChar(state, false);
-		readWhitespace(state, true);
-		readDTD_CP(state);
-		readWhitespace(state, true);
-		i++;
-	}
-	nextChar(state, false);
-}
-
-/*
- * http://www.w3.org/TR/2008/REC-xml-20081126/#NT-ExternalID
- */
-static void
-readDTDExternalID(XMLParserState state)
-{
-	if (readSpecialString(specStringsDTD, XNODE_STR_DTD_SYSTEM, state))
-	{
-		if (!XNODE_WHITESPACE(state->c))
-		{
-			UNEXPECTED_CHARACTER;
-		}
-		nextChar(state, false);
-		processLiteral(state, false);
-		nextChar(state, false);
-	}
-	else if (readSpecialString(specStringsDTD, XNODE_STR_DTD_PUBLIC, state))
-	{
-		if (!XNODE_WHITESPACE(state->c))
-		{
-			UNEXPECTED_CHARACTER;
-		}
-		nextChar(state, false);
-		processLiteral(state, true);
-		nextChar(state, false);
-		if (!XNODE_WHITESPACE(state->c))
-		{
-			UNEXPECTED_CHARACTER;
-		}
-		nextChar(state, false);
-		processLiteral(state, false);
-		nextChar(state, false);
-	}
-}
-
-
-/*
- * http://www.w3.org/TR/2008/REC-xml-20081126/#NT-EntityValue
- */
-static void
-readDTDEntityValue(XMLParserState state)
-{
-	char		qMark = *state->c;
-
-	nextChar(state, false);
-	while (*state->c != qMark)
-	{
-		if (*state->c == XNODE_CHAR_PCT)
-		{
-			/*
-			 * http://www.w3.org/TR/2008/REC-xml-20081126/#NT-PERef erence
-			 */
-			nextChar(state, false);
-			readXMLName(state, false, false, false, NULL);
-			if (*state->c != XNODE_CHAR_SEMICOLON)
-			{
-				UNEXPECTED_CHARACTER;
-			}
-		}
-		else if (*state->c == XNODE_CHAR_AMPERSAND)
-		{
-			pg_wchar	value;
-
-			readReference(state, &value);
-		}
-		nextChar(state, false);
-	}
-	nextChar(state, false);
-}
-
-/*
- * http://www.w3.org/TR/2008/REC-xml-20081126/#NT-Reference
- *
- * Reads (entity or character) reference.
- * At return time 'state' points to terminating semicolon.
- */
-static bool
-readReference(XMLParserState state, pg_wchar *value)
-{
-	bool		charRef = false;
-
-	nextChar(state, false);
-	if (*state->c == XNODE_CHAR_HASH)
-	{
-		/*
-		 * http://www.w3.org/TR/2008/REC-xml-20081126/#NT-CharRef
-		 */
-		bool		hex = false;
-		unsigned int digits = 0;
-		char	   *valueStart;
-
-		charRef = true;
-
-		nextChar(state, false);
-		if (*state->c == 'x')
-		{
-			hex = true;
-			nextChar(state, false);
-		}
-		valueStart = state->c;
-		while ((hex && isxdigit(*state->c)) || (!hex && isdigit(*state->c)))
-		{
-			nextChar(state, false);
-			digits++;
-		}
-		if (digits == 0)
-		{
-			if (state->targetKind == XMLNODE_ATTRIBUTE)
-			{
-				elog(ERROR, "decimal or hexadecimal value expected in reference");
-			}
-			else
-			{
-				elog(ERROR, "decimal or hexadecimal value expected at row %u, column %u.",
-					 state->srcRow, state->srcCol);
-			}
-		}
-		if (hex)
-		{
-			sscanf(valueStart, "%x", value);
-		}
-		else
-		{
-			sscanf(valueStart, "%d", value);
-		}
-	}
-	else
-	{
-		/*
-		 * http://www.w3.org/TR/2008/REC-xml-20081126/#NT-EntityRef
-		 */
-		readXMLName(state, false, false, false, NULL);
-	}
-
-	if (*state->c != XNODE_CHAR_SEMICOLON)
-	{
-		if (state->targetKind == XMLNODE_ATTRIBUTE)
-		{
-			elog(ERROR, "'%c' expected in reference", XNODE_CHAR_SEMICOLON);
-		}
-		else
-		{
-			elog(ERROR, "'%c' expected at row %u, column %u.", XNODE_CHAR_SEMICOLON,
-				 state->srcRow, state->srcCol);
-		}
-	}
-	return charRef;
-}
 
 static bool
 isPredefinedEntity(char *refStart, char *value)
@@ -2461,490 +2357,6 @@ isPredefinedEntity(char *refStart, char *value)
 		}
 	}
 	return false;
-}
-
-static void
-readDTD(XMLParserState state)
-{
-	if (!XNODE_WHITESPACE(state->c))
-	{
-		UNEXPECTED_CHARACTER;
-	}
-	else
-	{
-		nextChar(state, false);
-	}
-	if (!XNODE_VALID_NAME_START(state->c))
-	{
-		UNEXPECTED_CHARACTER;
-	}
-	nextChar(state, false);
-	while (XNODE_VALID_NAME_CHAR(state->c))
-	{
-		nextChar(state, false);
-	}
-	if (XNODE_WHITESPACE(state->c))
-	{
-		nextChar(state, false);
-	}
-	readDTDExternalID(state);
-
-	if (XNODE_WHITESPACE(state->c))
-	{
-		nextChar(state, false);
-	}
-	if (*state->c == XNODE_CHAR_LBRACKET)
-	{
-		/*
-		 * http://www.w3.org/TR/xml/#NT-intSubset Including the right bracket
-		 * and optional white space
-		 */
-		nextChar(state, false);
-		while (*state->c != XNODE_CHAR_RBRACKET)
-		{
-			if (*state->c == XNODE_CHAR_PCT)
-			{
-				/*
-				 * http://www.w3.org/TR/2008/REC-xml-20081126/# NT-PEReference
-				 */
-				nextChar(state, false);
-				if (!XNODE_VALID_NAME_START(state->c))
-				{
-					UNEXPECTED_CHARACTER;
-				}
-				nextChar(state, false);
-				while (XNODE_VALID_NAME_CHAR(state->c))
-				{
-					nextChar(state, false);
-				}
-				if (*state->c != XNODE_CHAR_SEMICOLON)
-				{
-					UNEXPECTED_CHARACTER;
-				}
-			}
-			else if (*state->c == XNODE_CHAR_LARROW)
-			{
-				processDTDNode(state);
-			}
-			else if (!XNODE_WHITESPACE(state->c))
-			{
-				UNEXPECTED_CHARACTER;
-			}
-			nextChar(state, false);
-		}
-		nextChar(state, false);
-		if (XNODE_WHITESPACE(state->c))
-		{
-			nextChar(state, false);
-		}
-	}
-	if (*state->c != XNODE_CHAR_RARROW)
-	{
-		UNEXPECTED_CHARACTER;
-	}
-}
-
-static void
-processDTDNode(XMLParserState state)
-{
-	nextChar(state, false);
-	if (*state->c == XNODE_CHAR_QUESTMARK)
-	{
-		nextChar(state, false);
-		readPI(state);
-	}
-	else if (*state->c == XNODE_CHAR_EXCLMARK)
-	{
-		nextChar(state, false);
-		if (readSpecialStringPart(specStrings, XNODE_STR_CMT_START, state, 2))
-		{
-			readComment(state);
-		}
-		else if (readSpecialString(specStringsDTD, XNODE_STR_DTD_ELEMENT, state))
-		{
-			readWhitespace(state, false);
-			readXMLName(state, false, false, false, NULL);
-			nextChar(state, false);
-			if (!readSpecialString(specStringsDTD, XNODE_STR_DTD_EMPTY, state) &&
-				!readSpecialString(specStringsDTD, XNODE_STR_DTD_ANY, state))
-			{
-
-				if (*state->c == XNODE_CHAR_LBRKT_RND)
-				{
-					nextChar(state, false);
-					readWhitespace(state, true);
-					if (readSpecialString(specStringsDTD, XNODE_STR_DTD_PCDATA, state))
-					{
-						/*
-						 * http://www.w3.org/TR/2008/RE
-						 * C-xml-20081126/#NT-Mixed
-						 */
-						unsigned int names = 0;
-
-						readWhitespace(state, true);
-						while (*state->c == XNODE_CHAR_PIPE)
-						{
-							readWhitespace(state, true);
-							nextChar(state, false);
-							readXMLName(state, false, false, false, NULL);
-							names++;
-							readWhitespace(state, true);
-						}
-						if (*state->c != XNODE_CHAR_RBRKT_RND)
-						{
-							UNEXPECTED_CHARACTER;
-						}
-						nextChar(state, false);
-						if (*state->c == XNODE_CHAR_ASTERISK)
-						{
-							if (names == 0)
-							{
-								UNEXPECTED_CHARACTER;
-							}
-							else
-							{
-								nextChar(state, false);
-							}
-						}
-					}
-					else
-					{
-						/*
-						 * http://www.w3.org/TR/2008/RE
-						 * C-xml-20081126/#NT-children
-						 */
-						readDTD_ChoiceOrSeq(state, true);
-						if (*state->c == XNODE_CHAR_QUESTMARK || *state->c == XNODE_CHAR_ASTERISK ||
-							*state->c == XNODE_CHAR_PLUS)
-						{
-							nextChar(state, false);
-						}
-					}
-				}
-				else
-				{
-					UNEXPECTED_CHARACTER;
-				}
-
-			}
-			if (XNODE_WHITESPACE(state->c))
-			{
-				nextChar(state, false);
-			}
-			if (*state->c != XNODE_CHAR_RARROW)
-			{
-				UNEXPECTED_CHARACTER;
-			}
-		}
-		else if (readSpecialString(specStringsDTD, XNODE_STR_DTD_ATTLIST, state))
-		{
-			if (!XNODE_WHITESPACE(state->c))
-			{
-				UNEXPECTED_CHARACTER;
-			}
-			readWhitespace(state, false);
-			readXMLName(state, false, false, false, NULL);
-			while (XNODE_WHITESPACE(state->c))
-			{
-				nextChar(state, false);
-				if (XNODE_VALID_NAME_START(state->c))
-				{
-					/*
-					 * http://www.w3.org/TR/2008/REC-xml-20 081126/#NT-AttDef
-					 */
-					unsigned int i,
-								j,
-								len;
-					char	   *type;
-					bool		found = false;
-
-					readXMLName(state, true, false, false, NULL);
-					for (i = 0; i < XNODE_DTD_ATTR_TYPES; i++)
-					{
-						type = dtdAttTypes[i];
-						len = strlen(type);
-						if (strncmp(type, state->c, len) == 0)
-						{
-							for (j = 0; i < len; j++)
-							{
-								nextChar(state, false);
-							}
-							found = true;
-							break;
-						}
-					}
-					if (!found)
-					{
-						if (readSpecialString(specStringsDTD, XNODE_STR_DTD_NOTATION, state))
-						{
-							/*
-							 * http://www.w3.org/TR /2008/REC-xml-20081
-							 * 126/#NT-NotationTyp e
-							 */
-							readWhitespace(state, false);
-							if (*state->c != XNODE_CHAR_LBRKT_RND)
-							{
-								UNEXPECTED_CHARACTER;
-							}
-							nextChar(state, false);
-							readWhitespace(state, true);
-							readXMLName(state, false, false, false, NULL);
-							readWhitespace(state, true);
-							while (*state->c != XNODE_CHAR_RBRKT_RND)
-							{
-								if (*state->c != XNODE_CHAR_PIPE)
-								{
-									UNEXPECTED_CHARACTER;
-								}
-								nextChar(state, false);
-								readWhitespace(state, true);
-								readXMLName(state, false, false, false, NULL);
-								readWhitespace(state, true);
-							}
-							nextChar(state, false);
-
-						}
-						else if (*state->c == XNODE_CHAR_LBRKT_RND)
-						{
-							/*
-							 * http://www.w3.org/TR /2008/REC-xml-20081
-							 * 126/#NT-Enumeration
-							 */
-							unsigned int cnt;
-
-							nextChar(state, false);
-							do
-							{
-								readWhitespace(state, true);
-								cnt = 0;
-								while (XNODE_VALID_NAME_CHAR(state->c))
-								{
-									nextChar(state, false);
-									cnt++;
-								}
-								if (cnt == 0)
-								{
-									elog(ERROR, "name token expected at row %u, column %u", state->srcRow, state->srcCol);
-								}
-								readWhitespace(state, true);
-							} while (*state->c != XNODE_CHAR_PIPE);
-							if (*state->c != XNODE_CHAR_RBRKT_RND)
-							{
-								UNEXPECTED_CHARACTER;
-							}
-							nextChar(state, false);
-						}
-						else
-						{
-							UNEXPECTED_CHARACTER;
-						}
-					}
-					readWhitespace(state, false);
-
-					/*
-					 * http://www.w3.org/TR/2008/REC-xml-20
-					 * 081126/#NT-DefaultDecl
-					 */
-					if (!readSpecialString(specStringsDTD, XNODE_STR_DTD_REQUIRED, state) &&
-						!readSpecialString(specStringsDTD, XNODE_STR_DTD_IMPLIED, state))
-					{
-						bool		refs;
-
-						if (readSpecialString(specStringsDTD, XNODE_STR_DTD_FIXED, state))
-						{
-							readWhitespace(state, false);
-						}
-						readXMLAttValue(state, false, &refs);
-						nextChar(state, false);
-					}
-				}
-			}
-			if (*state->c != XNODE_CHAR_RARROW)
-			{
-				UNEXPECTED_CHARACTER;
-			}
-		}
-		else if (readSpecialString(specStringsDTD, XNODE_STR_DTD_ENTITY, state))
-		{
-			readWhitespace(state, false);
-			if (*state->c == XNODE_CHAR_PCT)
-			{
-				/*
-				 * http://www.w3.org/TR/2008/REC-xml-20081126/# NT-PEDecl
-				 */
-				nextChar(state, false);
-				readWhitespace(state, false);
-				readXMLName(state, true, false, false, NULL);
-				if (*state->c == XNODE_CHAR_QUOTMARK || *state->c == XNODE_CHAR_APOSTR)
-				{
-					readDTDEntityValue(state);
-				}
-				else
-				{
-					unsigned int pos = state->srcPos;
-
-					readDTDExternalID(state);
-					if (pos == state->srcPos)
-					{
-						elog(ERROR, "failed to read entity value or external id at row %u, column %u.",
-							 state->srcRow, state->srcCol);
-					}
-				}
-			}
-			else
-			{
-				readXMLName(state, true, false, false, NULL);
-
-				/*
-				 * http://www.w3.org/TR/2008/REC-xml-20081126/# NT-EntityDef
-				 */
-				if (*state->c == XNODE_CHAR_QUOTMARK || *state->c == XNODE_CHAR_APOSTR)
-				{
-					readDTDEntityValue(state);
-				}
-				else
-				{
-					unsigned int pos = state->srcPos;
-
-					readDTDExternalID(state);
-					if (pos == state->srcPos)
-					{
-						elog(ERROR, "failed to read entity value or external id at row %u, column %u.",
-							 state->srcRow, state->srcCol);
-					}
-					if (XNODE_WHITESPACE(state->c))
-					{
-						nextChar(state, false);
-						if (readSpecialString(specStringsDTD, XNODE_STR_DTD_NDATA, state))
-						{
-							readWhitespace(state, false);
-							readXMLName(state, false, false, false, NULL);
-						}
-					}
-				}
-			}
-			readWhitespace(state, true);
-			if (*state->c != XNODE_CHAR_RARROW)
-			{
-				UNEXPECTED_CHARACTER;
-			}
-		}
-		else if (readSpecialString(specStringsDTD, XNODE_STR_DTD_NOTATION, state))
-		{
-			readWhitespace(state, false);
-			nextChar(state, false);
-			readXMLName(state, true, false, false, NULL);
-			if (readSpecialString(specStringsDTD, XNODE_STR_DTD_PUBLIC, state))
-			{
-				readWhitespace(state, false);
-				processLiteral(state, true);
-				nextChar(state, false);
-				if (!XNODE_WHITESPACE(state->c))
-				{
-					nextChar(state, false);
-					if (*state->c == XNODE_CHAR_AMPERSAND || *state->c == XNODE_CHAR_QUOTMARK)
-					{
-						processLiteral(state, false);
-						nextChar(state, false);
-					}
-				}
-			}
-			else if (readSpecialString(specStringsDTD, XNODE_STR_DTD_SYSTEM, state))
-			{
-				readWhitespace(state, false);
-				processLiteral(state, false);
-				nextChar(state, false);
-			}
-			else
-			{
-				UNEXPECTED_CHARACTER;
-			}
-			readWhitespace(state, true);
-			if (*state->c != XNODE_CHAR_RARROW)
-			{
-				UNEXPECTED_CHARACTER;
-			}
-		}
-		else
-		{
-			elog(ERROR, "unrecognized string (keyword) at row %u, column %u", state->srcRow, state->srcCol);
-		}
-	}
-	else
-	{
-		UNEXPECTED_CHARACTER;
-	}
-}
-
-
-/*
- * http://www.w3.org/TR/2008/REC-xml-20081126/#NT-PubidLiteral or
- * http://www.w3.org/TR/2008/REC-xml-20081126/#NT-SystemLiteral depending on
- * whether 'public' parameter is true or false
- */
-
-static void
-processLiteral(XMLParserState state, bool public)
-{
-	char		qMark;
-
-	if (*state->c != XNODE_CHAR_APOSTR && *state->c != XNODE_CHAR_QUOTMARK)
-	{
-		UNEXPECTED_CHARACTER;
-	}
-	qMark = *state->c;
-	do
-	{
-		nextChar(state, false);
-		if (!XNODE_VALID_CHAR(state->c))
-		{
-			elog(ERROR, "invalid XML character at row %u, column %u",
-				 state->srcRow, state->srcCol);
-		}
-		if ((*state->c != qMark) && public)
-		{
-			if (!isPubIdChar(*state->c))
-			{
-				UNEXPECTED_CHARACTER;
-			}
-		}
-	} while (*state->c != qMark);
-}
-
-/*
- * 'offset' - how many characters of the (possible) special string have been
- * processed before this function was called.
- */
-static bool
-readSpecialStringPart(char specStrings[][XNODE_SPEC_STR_MAX_LEN],
-				 XNodeSpecString strIndex, XMLParserState state, char offset)
-{
-	char	   *specString = specStrings[strIndex] + offset;
-	unsigned int len = strlen(specString);
-
-	if (state->srcPos + len <= state->sizeIn &&
-		strncmp(state->c, specString, len) == 0)
-	{
-
-		unsigned int i;
-
-		for (i = 0; i < len; i++)
-		{
-			nextChar(state, false);
-		}
-		return true;
-	}
-	else
-	{
-		return false;
-	}
-}
-
-static bool
-readSpecialString(char specStrings[][XNODE_SPEC_STR_MAX_LEN], XNodeSpecString strIndex,
-				  XMLParserState state)
-{
-	return readSpecialStringPart(specStrings, strIndex, state, 0);
 }
 
 /*
@@ -2978,48 +2390,6 @@ evaluateWhitespace(XMLParserState state)
 			state->srcRowIncr++;
 		}
 	} while (XNODE_WHITESPACE(cTmp) && *cTmp != 0x00);
-}
-
-/*
- * The state variables are incremented by values retrieved during the
- * previous call. The reason is that sometimes we need to have the current
- * character width at hand (in order to check the next character).
- */
-static void
-nextChar(XMLParserState state, bool endAllowed)
-{
-	state->srcPos += state->cWidth;
-	state->c += state->cWidth;
-	state->srcRow += state->srcRowIncr;
-	if (state->srcRowIncr == 0)
-	{
-		state->srcCol++;
-	}
-	else
-	{
-		state->srcCol = 0;
-	}
-
-	if (XNODE_INPUT_END(state))
-	{
-		if (!endAllowed)
-		{
-			elog(ERROR, "Unexpected end of XML document");
-		}
-		else
-		{
-			return;
-		}
-	}
-	if (XNODE_WHITESPACE(state->c))
-	{
-		evaluateWhitespace(state);
-	}
-	else
-	{
-		state->cWidth = pg_utf_mblen((unsigned char *) state->c);
-		state->srcRowIncr = 0;
-	}
 }
 
 static void
@@ -3523,17 +2893,17 @@ xmlnodeDumpNode(char *input, XMLNodeOffset nodeOff, char **output, unsigned int 
 			{
 				unsigned int incr;
 
-				memcpy(*output, specStrings[XNODE_STR_DTD_START], incr
-					   = strlen(specStrings[XNODE_STR_DTD_START]));
+				memcpy(*output, specXMLStrings[XNODE_STR_DTD_START], incr
+					   = strlen(specXMLStrings[XNODE_STR_DTD_START]));
 				(*output) += incr;
 				memcpy(*output, content, cntLen);
 				(*output) += cntLen;
-				memcpy(*output, specStrings[XNODE_STR_DTD_END], incr
-					   = strlen(specStrings[XNODE_STR_DTD_END]));
+				memcpy(*output, specXMLStrings[XNODE_STR_DTD_END], incr
+					   = strlen(specXMLStrings[XNODE_STR_DTD_END]));
 				(*output) += incr;
 			}
-			cntLen += strlen(specStrings[XNODE_STR_DTD_START]) + strlen(
-											 specStrings[XNODE_STR_DTD_END]);
+			cntLen += strlen(specXMLStrings[XNODE_STR_DTD_START]) + strlen(
+										  specXMLStrings[XNODE_STR_DTD_END]);
 			*pos += cntLen;
 			break;
 
@@ -3560,28 +2930,28 @@ xmlnodeDumpNode(char *input, XMLNodeOffset nodeOff, char **output, unsigned int 
 			{
 				unsigned int incr;
 
-				memcpy(*output, specStrings[XNODE_STR_CMT_START], incr
-					   = strlen(specStrings[XNODE_STR_CMT_START]));
+				memcpy(*output, specXMLStrings[XNODE_STR_CMT_START], incr
+					   = strlen(specXMLStrings[XNODE_STR_CMT_START]));
 				(*output) += incr;
 				memcpy(*output, content, cntLen);
 				(*output) += cntLen;
-				memcpy(*output, specStrings[XNODE_STR_CMT_END], incr
-					   = strlen(specStrings[XNODE_STR_CMT_END]));
+				memcpy(*output, specXMLStrings[XNODE_STR_CMT_END], incr
+					   = strlen(specXMLStrings[XNODE_STR_CMT_END]));
 				(*output) += incr;
 			}
-			cntLen += strlen(specStrings[XNODE_STR_CMT_START]) + strlen(
-											 specStrings[XNODE_STR_CMT_END]);
+			cntLen += strlen(specXMLStrings[XNODE_STR_CMT_START]) + strlen(
+										  specXMLStrings[XNODE_STR_CMT_END]);
 			*pos += cntLen;
 			break;
 
 		case XMLNODE_PI:
 			content = XNODE_CONTENT(node);
 			cntLen = strlen(content);
-			incr = strlen(specStrings[XNODE_STR_PI_START]);
+			incr = strlen(specXMLStrings[XNODE_STR_PI_START]);
 
 			if (*output != NULL)
 			{
-				memcpy(*output, specStrings[XNODE_STR_PI_START], incr);
+				memcpy(*output, specXMLStrings[XNODE_STR_PI_START], incr);
 				(*output) += incr;
 				memcpy(*output, content, cntLen);
 				(*output) += cntLen;
@@ -3601,10 +2971,10 @@ xmlnodeDumpNode(char *input, XMLNodeOffset nodeOff, char **output, unsigned int 
 				}
 				*pos += cntLen + 1;
 			}
-			incr = strlen(specStrings[XNODE_STR_PI_END]);
+			incr = strlen(specXMLStrings[XNODE_STR_PI_END]);
 			if (*output != NULL)
 			{
-				memcpy(*output, specStrings[XNODE_STR_PI_END], incr);
+				memcpy(*output, specXMLStrings[XNODE_STR_PI_END], incr);
 				(*output) += incr;
 			}
 			*pos += incr;
@@ -3793,28 +3163,6 @@ dumpAttributes(XMLCompNodeHdr element, char *input,
 	return i;
 }
 
-static bool
-isPubIdChar(char c)
-{
-	if ((c >= 0x61 && c <= 0x7a) || (c >= 0x41 && c <= 0x5a) || (c >= 0x30 && c <= 0x39))
-	{
-		return true;
-	}
-	else
-	{
-		unsigned short int i;
-
-		for (i = 0; i < sizeof(pubIdChars); i++)
-		{
-			if (c == pubIdChars[i])
-			{
-				return true;
-			}
-		}
-		return false;
-	}
-}
-
 static void
 dumpContentEscaped(XMLNodeKind kind, char **output, char *input, unsigned int inputLen,
 				   unsigned int *outPos)
@@ -3987,7 +3335,7 @@ dumpXMLDecl(XMLDecl decl)
 
 	xnodeInitStringInfo(&outDecl, 16);
 	qMark = XMLDECL_GET_QUOT_MARK(decl, i);
-	appendStringInfoString(&outDecl, specStrings[XNODE_STR_XDECL_START]);
+	appendStringInfoString(&outDecl, specXMLStrings[XNODE_STR_XDECL_START]);
 	appendStringInfo(&outDecl, " %s=%c%s%c", xmldeclAttNames[XNODE_XDECL_ATNAME_VERSION],
 					 qMark, xmldeclVersions[decl->version], qMark);
 	if (decl->flags & XMLDECL_HAS_ENC)
@@ -4004,7 +3352,7 @@ dumpXMLDecl(XMLDecl decl)
 		appendStringInfo(&outDecl, " %s=%c%s%c", xmldeclAttNames[XNODE_XDECL_ATNAME_STANDALONE],
 						 qMark, XMLDECL_STANDALONE_YES, qMark);
 	}
-	appendStringInfoString(&outDecl, specStrings[XNODE_STR_XDECL_END]);
+	appendStringInfoString(&outDecl, specXMLStrings[XNODE_STR_XDECL_END]);
 	appendStringInfoChar(&outDecl, '\0');
 	return outDecl.data;
 }
