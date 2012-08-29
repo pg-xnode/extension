@@ -82,7 +82,7 @@ select xml.add(
 '<a><!--Special case to test addition of a new node to first position. The target nodes subtree must not be ignored when 
 estimating the maxium child offset (and thus the byte width). --></a>',
 '/a',
-'<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">',
+'<!--xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx-->',
 'b'
 );
 

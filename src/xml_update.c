@@ -347,6 +347,19 @@ xmlnodeAdd(xmldoc doc, XMLScan xscan, XMLNodeHdr targNode, XMLNodeHdr newNode,
 	}
 
 	/*
+	 * Strictly, checkXMLWellFormedness() should recognize invalid location of
+	 * the DTD node in the resulting document. However it doesn't seem to be
+	 * worth letting the function search through the whole tree recursively
+	 * just for the sake of this (very) special case. (The current version of
+	 * checkXMLWellFormedness only checks the first level of the document
+	 * tree.)
+	 */
+	if (newNode->kind == XMLNODE_DTD)
+	{
+		elog(ERROR, "DTD node can't be added to an existing document.");
+	}
+
+	/*
 	 * If document fragment is passed as the new node, it must not contain any
 	 * attribute. Specific requirements have to be maintained for attributes
 	 * (e.g. uniqueness or position in the tree). That's a reason to use a

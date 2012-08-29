@@ -456,7 +456,7 @@ getFirstXMLNodeLeaf(XMLCompNodeHdr compNode)
 void
 checkXMLWellFormedness(XMLCompNodeHdr root)
 {
-	unsigned short int i,
+	int			i,
 				elIndex,
 				dtdIndex;
 	unsigned short int elements = 0;
@@ -468,8 +468,8 @@ checkXMLWellFormedness(XMLCompNodeHdr root)
 	{
 		elog(ERROR, "well-formedness  can't be checked for node type %u", root->common.kind);
 	}
-	elIndex = 0;
-	dtdIndex = 0;
+	elIndex = dtdIndex = -1;
+	i = 0;
 
 	initXMLNodeIterator(&iterator, root, true);
 
@@ -482,10 +482,6 @@ checkXMLWellFormedness(XMLCompNodeHdr root)
 		}
 		else if (currNode->kind == XMLNODE_DTD)
 		{
-			if (elements > 0)
-			{
-				elog(ERROR, "DTD node is not expected after root element");
-			}
 			dtds++;
 			dtdIndex = i;
 		}
@@ -496,16 +492,20 @@ checkXMLWellFormedness(XMLCompNodeHdr root)
 			elog(ERROR, "%s must not be a direct child of the root",
 				 getXMLNodeKindStr(currNode->kind));
 		}
+
+		i++;
 	}
+
 	if (elements != 1)
 	{
 		elog(ERROR, "well-formed document must contain exactly one root element");
 	}
+
 	if (dtds > 1)
 	{
 		elog(ERROR, "well-formed document must not contain more than one DTD node");
 	}
-	if (dtds > 0 && dtdIndex > elIndex)
+	else if (dtds > 0 && dtdIndex > elIndex)
 	{
 		elog(ERROR, "element must not be located before DTD");
 	}
