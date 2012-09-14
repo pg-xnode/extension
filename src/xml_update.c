@@ -129,9 +129,9 @@ updateXMLDocument(XMLScan xscan, xmldoc doc, XMLNodeAction action, XMLNodeHdr ne
 {
 
 	XMLNodeHdr	targNode;
-	unsigned int unresolvedNmspCount,
-				i;
-	char	  **unresolvedNamespaces;
+	unsigned int i,
+				unresolvedNmspCount = 0;
+	char	  **unresolvedNamespaces = NULL;
 	XMLNodeContainerData targNodes;
 	XMLNodeHdr *targNdArray;
 	XNodeListItem *listItem;
@@ -214,16 +214,7 @@ updateXMLDocument(XMLScan xscan, xmldoc doc, XMLNodeAction action, XMLNodeHdr ne
 
 		if (action == XMLNODE_ACTION_ADD && unresolvedNmspCount > 0)
 		{
-			unsigned int j;
-
 			checkUnresolvedNamespaces(xscan, targNode, addMode, unresolvedNamespaces, unresolvedNmspCount);
-
-			/* Cleanup. */
-			for (j = 0; j < unresolvedNmspCount; j++)
-			{
-				pfree(unresolvedNamespaces[j]);
-			}
-			pfree(unresolvedNamespaces);
 		}
 
 		/*
@@ -233,6 +224,18 @@ updateXMLDocument(XMLScan xscan, xmldoc doc, XMLNodeAction action, XMLNodeHdr ne
 
 		xmlnodePushSinglePtr(&targNodes, targNode);
 	} while ((targNode = getNextXMLNode(xscan)) != NULL);
+
+	if (unresolvedNmspCount > 0)
+	{
+		unsigned int j;
+
+		/* Cleanup. */
+		for (j = 0; j < unresolvedNmspCount; j++)
+		{
+			pfree(unresolvedNamespaces[j]);
+		}
+		pfree(unresolvedNamespaces);
+	}
 
 	targNdArray = (XMLNodeHdr *) palloc(targNodes.position * sizeof(XMLNodeHdr));
 	listItem = targNodes.content;
