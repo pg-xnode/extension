@@ -83,7 +83,6 @@ initXMLScan(XMLScan xscan, XMLScan parent, XPath xpath, XPathHeader xpHdr, XMLCo
 
 	xscan->depth = 0;
 	xscan->skip = false;
-	xscan->subtreeDone = false;
 	xscan->document = document;
 
 	xscan->parent = parent;
@@ -137,20 +136,18 @@ finalizeXMLScan(XMLScan xscan)
  * scan status and - if some exist - state of any sub-scan. In addition, 'xscan->document' of the scan and
  * sub-scans has to point to the new (modified) document.
  *
- * 'removed' indicates that requires special behaviour is required: when the previous call returned
- * a valid node for removal, scan has to stay at the same position when it resumes, as opposed to moving
- * forward. Due to the removal, another node appears at the position of the removed one.
  *
  * Returns a pointer to the matching node. This points to inside 'xscan->document' and therefore
  * must not be pfree'd.
  */
 XMLNodeHdr
-getNextXMLNode(XMLScan xscan, bool removed)
+getNextXMLNode(XMLScan xscan)
 {
 	if (xscan->state == NULL)
 	{
 		elog(ERROR, "XML scan state is not well initialized");
 	}
+
 	while (true)
 	{
 		XMLScanOneLevel scanLevel = XMLSCAN_CURRENT_LEVEL(xscan);
@@ -169,28 +166,22 @@ getNextXMLNode(XMLScan xscan, bool removed)
 
 			if (scanLevel->nodeRefPtr == NULL)
 			{
-				/*
-				 * When this function is called from xmlnodeRemove(), the node
-				 * pointed to by 'childRef' might have been removed. If that
-				 * was the only child, NULL is there when the scan resumes.
-				 */
+
 				if (scanLevel->siblingsLeft != 1)
 				{
-					elog(ERROR, "unexpected state of xml scan");
-				}
-				else
-				{
-					scanLevel->siblingsLeft--;
-					break;
+					elog(ERROR, "undefined state of xml scan");
 				}
 
+				/* Done for the current level. */
+				scanLevel->siblingsLeft--;
+				break;
 			}
 
 			xpEl = XPATH_CURRENT_LEVEL(xscan);
 
 			if (xscan->subScan != NULL)
 			{
-				XMLNodeHdr	subNode = getNextXMLNode(xscan->subScan, removed);
+				XMLNodeHdr	subNode = getNextXMLNode(xscan->subScan);
 
 				/*
 				 * isOnIgnoreList() is not used here on return because the
@@ -212,6 +203,7 @@ getNextXMLNode(XMLScan xscan, bool removed)
 					subScanDone = true;
 				}
 			}
+
 			currentNode = (XMLNodeHdr) ((char *) eh -
 										readXMLNodeOffset(&scanLevel->nodeRefPtr, XNODE_GET_REF_BWIDTH(eh), false));
 
@@ -225,37 +217,19 @@ getNextXMLNode(XMLScan xscan, bool removed)
 				 * possible to call it just once, at the beginning. But thus
 				 * the descendants would be returned before the element
 				 * itself.
-				 *
-				 * If 'removed' is true, sub-scan makes no sense because the
-				 * node the last scan ended at no longer exists.
 				 */
-				if (!removed)
+				if (considerSubScan(xpEl, currentNode, xscan, subScanDone))
 				{
-					if (considerSubScan(xpEl, currentNode, xscan, subScanDone))
-					{
-						continue;
-					}
+					continue;
 				}
 
 				xscan->skip = false;
 
 				/*
-				 * If the node we found last time has been removed, then the
-				 * scan points to the next node at the same level.
-				 * 'subScanDone' indicates that sub-scan had to be used and
-				 * therefore a node could only have been removed from lower
-				 * level. In this case we do need to move forward.
+				 * The current node is processed and no subscan is needed, so
+				 * just move ahead.
 				 */
-
-				if (!removed || (removed && (subScanDone || xscan->subtreeDone)))
-				{
-					scanLevel->nodeRefPtr = XNODE_NEXT_REF(scanLevel->nodeRefPtr, eh);
-
-					if (xscan->subtreeDone)
-					{
-						xscan->subtreeDone = false;
-					}
-				}
+				scanLevel->nodeRefPtr = XNODE_NEXT_REF(scanLevel->nodeRefPtr, eh);
 				scanLevel->siblingsLeft--;
 				continue;
 			}
@@ -374,15 +348,7 @@ getNextXMLNode(XMLScan xscan, bool removed)
 							break;
 						}
 					}
-					else if (XPATH_LAST_LEVEL(xscan) &&
-
-						/*
-						 * Uniqueness is only checked if the last qualifying
-						 * node hasn't been deleted. If that has been deleted,
-						 * the current match means it's a different node that
-						 * just moved to the offset of the original one.
-						 */
-							 (removed || !isOnIgnoreList(currentNode, xscan)))
+					else if (XPATH_LAST_LEVEL(xscan) && !isOnIgnoreList(currentNode, xscan))
 					{
 						/*
 						 * We're at the end of the xpath.
@@ -496,8 +462,7 @@ getNextXMLNode(XMLScan xscan, bool removed)
 			else
 			{
 				xscan->skip = true;
-				(xscan->depth)--;
-				xscan->subtreeDone = true;
+				xscan->depth--;
 				continue;
 			}
 		}
@@ -1469,7 +1434,7 @@ substitutePaths(XPathExpression expression, XPathExprState exprState, XMLCompNod
 				XMLCompNodeHdr parent = (subPath->relative) ? element : (XMLCompNodeHdr) XNODE_ROOT(document);
 
 				initXMLScan(&xscanSub, NULL, subPath, xpHdr, parent, document, subPath->descendants > 0);
-				while ((matching = getNextXMLNode(&xscanSub, false)) != NULL)
+				while ((matching = getNextXMLNode(&xscanSub)) != NULL)
 				{
 					XMLNodeHdr *array = NULL;
 
@@ -1792,8 +1757,8 @@ compareElements(XMLCompNodeHdr elLeft, XMLCompNodeHdr elRight)
 	initScanForTextNodes(&scanLeft, elLeft);
 	initScanForTextNodes(&scanRight, elRight);
 
-	nodeLeft = getNextXMLNode(&scanLeft, false);
-	nodeRight = getNextXMLNode(&scanRight, false);
+	nodeLeft = getNextXMLNode(&scanLeft);
+	nodeRight = getNextXMLNode(&scanRight);
 	done = false;
 
 	if (nodeLeft == NULL && nodeRight == NULL)
@@ -1830,7 +1795,7 @@ compareElements(XMLCompNodeHdr elLeft, XMLCompNodeHdr elRight)
 		}
 		if (lengthLeft < lengthRight)
 		{
-			nodeLeft = getNextXMLNode(&scanLeft, false);
+			nodeLeft = getNextXMLNode(&scanLeft);
 			if (nodeLeft == NULL)
 			{
 				break;
@@ -1840,7 +1805,7 @@ compareElements(XMLCompNodeHdr elLeft, XMLCompNodeHdr elRight)
 		}
 		else if (lengthLeft > lengthRight)
 		{
-			nodeRight = getNextXMLNode(&scanRight, false);
+			nodeRight = getNextXMLNode(&scanRight);
 			if (nodeRight == NULL)
 			{
 				break;
@@ -1851,8 +1816,8 @@ compareElements(XMLCompNodeHdr elLeft, XMLCompNodeHdr elRight)
 		else
 		{
 			/* shift the 'cursor' on both left and right side */
-			nodeLeft = getNextXMLNode(&scanLeft, false);
-			nodeRight = getNextXMLNode(&scanRight, false);
+			nodeLeft = getNextXMLNode(&scanLeft);
+			nodeRight = getNextXMLNode(&scanRight);
 			if (nodeLeft == NULL && nodeRight == NULL)
 			{
 				match = true;
@@ -1905,7 +1870,7 @@ compareValueToNode(XPathExprState exprState, XPathExprOperandValue value, XMLNod
 			strLen = strlen(cStr);
 			initScanForTextNodes(&textScan, (XMLCompNodeHdr) node);
 
-			while ((textNode = getNextXMLNode(&textScan, false)) != NULL)
+			while ((textNode = getNextXMLNode(&textScan)) != NULL)
 			{
 				char	   *cntPart = XNODE_CONTENT(textNode);
 				unsigned int cntPartLen = strlen(cntPart);

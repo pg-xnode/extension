@@ -80,25 +80,6 @@ typedef struct XNTParamNameSorted
 	char	   *name;
 } XNTParamNameSorted;
 
-/*
- * In-memory structure to represent a single node of the tree.
- */
-typedef struct XNodeInternalData *XNodeInternal;
-
-typedef struct XNodeInternalData
-{
-	/* Pointer to node or subtree of the storage tree. */
-	XMLNodeHdr	node;
-
-	/*
-	 * 'true' if 'node' points to a palloc'd copy instead of storage. It
-	 * indicates that 'node' has to be freed when the template is no longer
-	 * needed.
-	 */
-	bool		copy;
-
-	XMLNodeContainerData children;
-} XNodeInternalData;
 
 typedef struct varlena xnttype;
 typedef xnttype *xnt;

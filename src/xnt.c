@@ -25,7 +25,6 @@ XNTAttrNames xntAttributeInfo[] = {
 };
 
 static int	paramNameComparator(const void *left, const void *right);
-static int	attrNameComparator(const void *left, const void *right);
 static XPathExpression getXPathExpression(char *src, unsigned int termFlags, XMLNodeContainer paramNames,
 				   unsigned short *endPos);
 static char *getAttrValueTokenized(char *attrValue, unsigned int *valueSize, XMLNodeContainer paramNames);
@@ -37,7 +36,6 @@ static XMLNodeHdr getNewAttribute(char *name, uint8 flags, char *value, char dec
 static XNodeInternal getInternalNode(XMLNodeHdr node, bool copy);
 static void freeTemplateTree(XNodeInternal root);
 static XMLCompNodeHdr getTemplateFromDoc(XMLCompNodeHdr docRoot);
-static void writeXNodeInternal(XNodeInternal node, char **output, XMLNodeOffset *root);
 static XPathExpression substituteParameters(XPathExprState exprState, XPathExpression expression,
 				XPathExprOperandValue paramValues, unsigned short *paramMap);
 static bool whitespacesOnly(char *str);
@@ -631,12 +629,6 @@ paramNameComparator(const void *left, const void *right)
 	return strcmp(((XNTParamNameSorted *) left)->name, ((XNTParamNameSorted *) right)->name);
 }
 
-static int
-attrNameComparator(const void *left, const void *right)
-{
-	return strcmp((char *) left, (char *) right);
-}
-
 static XPathExpression
 getXPathExpression(char *src, unsigned int termFlags, XMLNodeContainer paramNames,
 				   unsigned short *endPos)
@@ -1214,11 +1206,11 @@ xnode_from_template(PG_FUNCTION_ARGS)
 
 		if (templRootInternal->children.position == 1)
 		{
-			writeXNodeInternal(templRootInternal->children.content->value.singlePtr, &resTmp, &offRoot);
+			writeXMLNodeInternal(templRootInternal->children.content->value.singlePtr, &resTmp, &offRoot);
 		}
 		else
 		{
-			writeXNodeInternal(templRootInternal, &resTmp, &offRoot);
+			writeXMLNodeInternal(templRootInternal, &resTmp, &offRoot);
 		}
 		offRootPtr = (XMLNodeOffset *) resTmp;
 		*offRootPtr = offRoot;
@@ -1511,7 +1503,7 @@ buildNewNodeTree(XMLNodeHdr node, XNodeInternal parent, unsigned int *storageSiz
 						 * 'resultNode' is just temporary. As such it does not
 						 * have to store references. 'nodeInternal->children'
 						 * will hold them instead, until the 'real' storage is
-						 * created. by writeXNodeInternal().
+						 * created. by writeXMLNodeInternal().
 						 *
 						 * 'children' is set to 0 regardless the actual number
 						 * of children. The consequence is that
@@ -1876,235 +1868,6 @@ getTemplateFromDoc(XMLCompNodeHdr docRoot)
 
 	Assert(child != NULL && child->kind == XNTNODE_TEMPLATE);
 	return (XMLCompNodeHdr) child;
-}
-
-/*
- * Write 'node' and it's descendants to storage, starting at '*output'.
- * When finished, '*output' points to the first byte following the storage.
- */
-static void
-writeXNodeInternal(XNodeInternal node, char **output, XMLNodeOffset *root)
-{
-	XMLNodeOffset *offs = NULL;
-	char	   *start = *output;
-	unsigned short i;
-	unsigned int childCount = 0;
-	XNodeListItem *childItem = NULL;
-	XNodeInternal *childrenTmp = NULL;
-	bool		mustReorder = false;
-	bool		hasNonAttr = false;
-
-	if (node->node->kind == XMLNODE_ELEMENT || node->node->kind == XNTNODE_TEMPLATE)
-	{
-		childCount = node->children.position;
-	}
-
-	if (childCount > 0)
-	{
-		Assert(node->node->kind == XMLNODE_ELEMENT || node->node->kind == XNTNODE_TEMPLATE);
-
-		offs = (XMLNodeOffset *) palloc(childCount * sizeof(XMLNodeOffset));
-
-		if (node->node->kind == XMLNODE_ELEMENT)
-		{
-			childrenTmp = (XNodeInternal *) palloc(childCount * sizeof(XNodeInternal));
-			childItem = (XNodeListItem *) (&node->children)->content;
-
-			for (i = 0; i < childCount; i++)
-			{
-				XNodeInternal child = (XNodeInternal) childItem->value.singlePtr;
-
-				if (child->node->kind != XMLNODE_ATTRIBUTE)
-				{
-					hasNonAttr = true;
-				}
-
-				if (!mustReorder && hasNonAttr && child->node->kind == XMLNODE_ATTRIBUTE)
-				{
-					mustReorder = true;
-				}
-
-				childrenTmp[i] = child;
-				childItem++;
-			}
-		}
-	}
-
-	if (mustReorder)
-	{
-		unsigned short i,
-					nonAttr;
-
-		/*
-		 * Ensure that attributes are at the lowest positions in the reference
-		 * list.
-		 */
-
-		/* Start with finding the first non-attribute node. */
-		for (i = 0; i < childCount; i++)
-		{
-			if (childrenTmp[i]->node->kind != XMLNODE_ATTRIBUTE)
-			{
-				break;
-			}
-		}
-		nonAttr = i++;
-
-		/*
-		 * If attribute is found anywhere after that, move it to position
-		 * immediately following the last correctly located (i.e. near the
-		 * reference array beginning) attribute.
-		 */
-		for (; i < childCount; i++)
-		{
-			if (childrenTmp[i]->node->kind == XMLNODE_ATTRIBUTE)
-			{
-				XNodeInternal attr;
-				XNodeInternal *src,
-						   *dst;
-				unsigned int size = (i - nonAttr) * sizeof(XNodeInternal);
-
-				attr = childrenTmp[i];
-				src = childrenTmp + nonAttr;
-				dst = src + 1;
-				memmove(dst, src, size);
-				childrenTmp[nonAttr] = attr;
-				nonAttr++;
-			}
-		}
-	}
-
-	if (node->node->kind != XMLNODE_ELEMENT)
-	{
-		/*
-		 * 'childrenTmp' is not initialized, we're iterating the children
-		 * first time.
-		 */
-		childItem = (XNodeListItem *) (&node->children)->content;
-	}
-
-	/* Make sure that attributes are unique. */
-
-	if (node->node->kind == XMLNODE_ELEMENT && childCount > 0)
-	{
-		unsigned int attrCount = 0;
-		char	  **attrNames = (char **) palloc(childCount * sizeof(char *));
-
-		for (i = 0; i < childCount; i++)
-		{
-			if (childrenTmp[i]->node->kind == XMLNODE_ATTRIBUTE)
-			{
-				XMLNodeHdr	attrNode = childrenTmp[i]->node;
-
-				attrNames[attrCount++] = XNODE_CONTENT(attrNode);
-			}
-			else
-			{
-				break;
-			}
-		}
-
-		if (attrCount > 1)
-		{
-			qsort(attrNames, attrCount, sizeof(char *), attrNameComparator);
-
-			for (i = 0; i < (attrCount - 1); i++)
-			{
-				if (strcmp(attrNames[i], attrNames[i + 1]) == 0)
-				{
-					elog(ERROR, "attribute name '%s' is not unique", attrNames[i]);
-				}
-			}
-		}
-		pfree(attrNames);
-	}
-
-	for (i = 0; i < childCount; i++)
-	{
-		XNodeInternal child;
-		XMLNodeOffset root = 0;
-
-		if (childrenTmp != NULL)
-		{
-			child = childrenTmp[i];
-		}
-		else
-		{
-			child = (XNodeInternal) childItem->value.singlePtr;
-			childItem++;
-		}
-
-		offs[i] = *output - start;
-		writeXNodeInternal(child, output, &root);
-		offs[i] += root;
-	}
-
-	if (childrenTmp != NULL)
-	{
-		pfree(childrenTmp);
-	}
-
-	if (node->node->kind == XMLNODE_ELEMENT || node->node->kind == XNTNODE_TEMPLATE)
-	{
-		XMLCompNodeHdr compNode = (XMLCompNodeHdr) *output;
-		char	   *name;
-
-		/* The header */
-		compNode->common.flags = 0;
-		if (node->node->kind == XMLNODE_ELEMENT)
-		{
-			compNode->common.kind = XMLNODE_ELEMENT;
-			if (!hasNonAttr)
-			{
-				compNode->common.flags |= XNODE_EMPTY;
-			}
-		}
-		else
-		{
-			compNode->common.kind = XMLNODE_DOC_FRAGMENT;
-		}
-		compNode->children = childCount;
-		*output += sizeof(XMLCompNodeHdrData);
-
-		/* References */
-		if (childCount > 0)
-		{
-			XMLNodeOffset relOffMax = (char *) compNode - (start + offs[0]);
-			char		bwidth = getXMLNodeOffsetByteWidth(relOffMax);
-
-			for (i = 0; i < childCount; i++)
-			{
-				XMLNodeOffset offRel = (char *) compNode - (start + offs[i]);
-
-				writeXMLNodeOffset(offRel, output, bwidth, true);
-			}
-			XNODE_SET_REF_BWIDTH(compNode, bwidth);
-		}
-
-		if (node->node->kind == XMLNODE_ELEMENT)
-		{
-			XMLCompNodeHdr elNode = (XMLCompNodeHdr) node->node;
-
-			/* Element name */
-			name = XNODE_ELEMENT_NAME(elNode);
-			strcpy(*output, name);
-			*output += strlen(name) + 1;
-		}
-		*root = (char *) compNode - start;
-	}
-	else
-	{
-		unsigned int size = getXMLNodeSize(node->node, false);
-
-		memcpy(*output, node->node, size);
-		*output += size;
-		*root = 0;
-	}
-
-	if (offs != NULL)
-	{
-		pfree(offs);
-	}
 }
 
 static XPathExpression

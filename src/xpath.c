@@ -474,7 +474,7 @@ xpath_array(PG_FUNCTION_ARGS)
 	}
 	if (!baseScan->done)
 	{
-		baseNode = getNextXMLNode(baseScan, false);
+		baseNode = getNextXMLNode(baseScan);
 		if (baseNode != NULL)
 		{
 			XMLNodeOffset baseNdOff = (char *) baseNode - VARDATA(xScanCtx->baseScan->document);

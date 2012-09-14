@@ -209,6 +209,7 @@ extern Datum xmldoc_to_xmlnode(PG_FUNCTION_ARGS);
 extern XMLNodeOffset readXMLNodeOffset(char **input, unsigned char bytes, bool step);
 extern void writeXMLNodeOffset(XMLNodeOffset ref, char **output, unsigned char bytes, bool step);
 
+
 #define XNODE_CONTAINER_CHUNK	16
 
 typedef enum XNodeListItemKind
@@ -332,7 +333,6 @@ extern bool isXMLCharInInterval(char *c, UTF8Interval *intervals, unsigned short
 
 typedef enum XMLAddMode
 {
-	XMLADD_INVALID = 0,
 	XMLADD_AFTER = 'a',
 	XMLADD_BEFORE = 'b',
 	XMLADD_INTO = 'i',
@@ -346,6 +346,29 @@ typedef enum XMLNodeAction
 	XMLNODE_ACTION_ADD,
 	XMLNODE_ACTION_REMOVE
 } XMLNodeAction;
+
+/*
+ * In-memory structure to represent a single node of the tree.
+ */
+
+typedef struct XNodeInternalData
+{
+	/* Pointer to node or subtree of the storage tree. */
+	XMLNodeHdr	node;
+
+	/*
+	 * 'true' if 'node' points to a palloc'd copy instead of storage. It
+	 * indicates that 'node' has to be freed when the template is no longer
+	 * needed.
+	 */
+	bool		copy;
+
+	XMLNodeContainerData children;
+} XNodeInternalData;
+
+typedef struct XNodeInternalData *XNodeInternal;
+
+extern void writeXMLNodeInternal(XNodeInternal node, char **output, XMLNodeOffset *root);
 
 /*
  * DOM functions

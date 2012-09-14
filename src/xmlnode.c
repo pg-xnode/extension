@@ -57,6 +57,7 @@ UTF8Interval nameCharIntervals[XNODE_NAME_CHAR_INTERVALS] =
 };
 
 static void getDocFragmentInfo(XMLNodeHdr node, unsigned int *size, unsigned short *count);
+static int	attrNameComparator(const void *left, const void *right);
 
 typedef struct TypeInfo
 {
@@ -401,6 +402,258 @@ dumpXMLNode(char *data, XMLNodeOffset rootNdOff)
 	}
 	result[resultPos] = '\0';
 	return result;
+}
+
+/*
+ * Write 'node' and it's descendants to storage, starting at '*output'.
+ * When finished, '*output' points to the first byte following the storage.
+ */
+void
+writeXMLNodeInternal(XNodeInternal node, char **output, XMLNodeOffset *root)
+{
+	XMLNodeOffset *offs = NULL;
+	char	   *start = *output;
+	unsigned short i;
+	unsigned int childCount = 0;
+	XNodeListItem *childItem = NULL;
+	XNodeInternal *childrenTmp = NULL;
+	bool		mustReorder = false;
+	bool		hasNonAttr = false;
+	XMLNodeKind nodeKind = node->node->kind;
+
+
+	if ((nodeKind == XMLNODE_DOC || nodeKind == XMLNODE_ELEMENT || nodeKind == XNTNODE_TEMPLATE) &&
+		node->children.content != NULL)
+	{
+		childCount = node->children.position;
+	}
+
+	if (childCount > 0)
+	{
+		Assert(node->node->kind == XMLNODE_ELEMENT || node->node->kind == XMLNODE_DOC ||
+			   node->node->kind == XNTNODE_TEMPLATE);
+
+		offs = (XMLNodeOffset *) palloc(childCount * sizeof(XMLNodeOffset));
+
+		if (node->node->kind == XMLNODE_ELEMENT)
+		{
+			childrenTmp = (XNodeInternal *) palloc(childCount * sizeof(XNodeInternal));
+			childItem = (XNodeListItem *) (&node->children)->content;
+
+			for (i = 0; i < childCount; i++)
+			{
+				XNodeInternal child = (XNodeInternal) childItem->value.singlePtr;
+
+				if (child->node->kind != XMLNODE_ATTRIBUTE)
+				{
+					hasNonAttr = true;
+				}
+
+				if (!mustReorder && hasNonAttr && child->node->kind == XMLNODE_ATTRIBUTE)
+				{
+					mustReorder = true;
+				}
+
+				childrenTmp[i] = child;
+				childItem++;
+			}
+		}
+	}
+
+	if (mustReorder)
+	{
+		unsigned short i,
+					nonAttr;
+
+		/*
+		 * Ensure that attributes are at the lowest positions in the reference
+		 * list.
+		 */
+
+		/* Start with finding the first non-attribute node. */
+		for (i = 0; i < childCount; i++)
+		{
+			if (childrenTmp[i]->node->kind != XMLNODE_ATTRIBUTE)
+			{
+				break;
+			}
+		}
+		nonAttr = i++;
+
+		/*
+		 * If attribute is found anywhere after that, move it to position
+		 * immediately following the last correctly located (i.e. near the
+		 * reference array beginning) attribute.
+		 */
+		for (; i < childCount; i++)
+		{
+			if (childrenTmp[i]->node->kind == XMLNODE_ATTRIBUTE)
+			{
+				XNodeInternal attr;
+				XNodeInternal *src,
+						   *dst;
+				unsigned int size = (i - nonAttr) * sizeof(XNodeInternal);
+
+				attr = childrenTmp[i];
+				src = childrenTmp + nonAttr;
+				dst = src + 1;
+				memmove(dst, src, size);
+				childrenTmp[nonAttr] = attr;
+				nonAttr++;
+			}
+		}
+	}
+
+	if (node->node->kind != XMLNODE_ELEMENT)
+	{
+		/*
+		 * 'childrenTmp' is not initialized, we're iterating the children
+		 * first time.
+		 */
+		childItem = (XNodeListItem *) (&node->children)->content;
+	}
+
+	/* Make sure that attributes are unique. */
+	if (node->node->kind == XMLNODE_ELEMENT && childCount > 0)
+	{
+		unsigned int attrCount = 0;
+		char	  **attrNames = (char **) palloc(childCount * sizeof(char *));
+
+		for (i = 0; i < childCount; i++)
+		{
+			if (childrenTmp[i]->node->kind == XMLNODE_ATTRIBUTE)
+			{
+				XMLNodeHdr	attrNode = childrenTmp[i]->node;
+
+				attrNames[attrCount++] = XNODE_CONTENT(attrNode);
+			}
+			else
+			{
+				break;
+			}
+		}
+
+		if (attrCount > 1)
+		{
+			qsort(attrNames, attrCount, sizeof(char *), attrNameComparator);
+
+			for (i = 0; i < (attrCount - 1); i++)
+			{
+				if (strcmp(attrNames[i], attrNames[i + 1]) == 0)
+				{
+					elog(ERROR, "attribute name '%s' is not unique", attrNames[i]);
+				}
+			}
+		}
+		pfree(attrNames);
+	}
+
+	for (i = 0; i < childCount; i++)
+	{
+		XNodeInternal child;
+		XMLNodeOffset root = 0;
+
+		if (childrenTmp != NULL)
+		{
+			child = childrenTmp[i];
+		}
+		else
+		{
+			child = (XNodeInternal) childItem->value.singlePtr;
+			childItem++;
+		}
+
+		offs[i] = *output - start;
+		writeXMLNodeInternal(child, output, &root);
+		offs[i] += root;
+	}
+
+	if (childrenTmp != NULL)
+	{
+		pfree(childrenTmp);
+	}
+
+	/*
+	 * For element, 'children.content' has to be checked instead of
+	 * 'childCount'. 'childCount' might have become zero due to node removal.
+	 * Even in such a case we still need to construct the new node out of
+	 * (possibly missing) children, instead of copying the original subtree.
+	 */
+	if ((nodeKind == XMLNODE_ELEMENT && node->children.content != NULL) || nodeKind == XNTNODE_TEMPLATE ||
+		nodeKind == XMLNODE_DOC)
+	{
+		XMLCompNodeHdr compNode = (XMLCompNodeHdr) *output;
+		char	   *name;
+
+		/* The header */
+		compNode->common.flags = 0;
+
+		switch (nodeKind)
+		{
+			case XMLNODE_ELEMENT:
+				compNode->common.kind = XMLNODE_ELEMENT;
+				if (!hasNonAttr)
+				{
+					compNode->common.flags |= XNODE_EMPTY;
+				}
+				break;
+
+			case XNTNODE_TEMPLATE:
+				compNode->common.kind = XMLNODE_DOC_FRAGMENT;
+				break;
+
+			default:
+				compNode->common.kind = nodeKind;
+				break;
+
+		}
+
+		compNode->children = childCount;
+		*output += sizeof(XMLCompNodeHdrData);
+
+		/* References */
+		if (childCount > 0)
+		{
+			XMLNodeOffset relOffMax = (char *) compNode - (start + offs[0]);
+			char		bwidth = getXMLNodeOffsetByteWidth(relOffMax);
+
+			for (i = 0; i < childCount; i++)
+			{
+				XMLNodeOffset offRel = (char *) compNode - (start + offs[i]);
+
+				writeXMLNodeOffset(offRel, output, bwidth, true);
+			}
+			XNODE_SET_REF_BWIDTH(compNode, bwidth);
+		}
+
+		if (node->node->kind == XMLNODE_ELEMENT)
+		{
+			XMLCompNodeHdr elNode = (XMLCompNodeHdr) node->node;
+
+			/* Element name */
+			name = XNODE_ELEMENT_NAME(elNode);
+			strcpy(*output, name);
+			*output += strlen(name) + 1;
+		}
+		*root = (char *) compNode - start;
+	}
+	else
+	{
+		XMLNodeOffset nodeRoot;
+
+		/*
+		 * This is either a simple node or element that we didn't have to
+		 * deconstruct.
+		 */
+		copyXMLNode(node->node, *output, false, &nodeRoot);
+		*root = *output + nodeRoot - start;
+		*output += getXMLNodeSize(node->node, true);
+	}
+
+	if (offs != NULL)
+	{
+		pfree(offs);
+	}
 }
 
 /* How many bytes do we need to store the offset? */
@@ -1109,4 +1362,10 @@ getDocFragmentInfo(XMLNodeHdr node, unsigned int *size, unsigned short *count)
 	{
 		*count = 1;
 	}
+}
+
+static int
+attrNameComparator(const void *left, const void *right)
+{
+	return strcmp((char *) left, (char *) right);
 }

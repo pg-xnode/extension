@@ -28,7 +28,7 @@ extern void copyXMLNodeOrDocFragment(XMLNodeHdr newNode, unsigned int newNdSize,
 						 char **newNdRoot, char ***newNdRoots);
 extern XMLNodeHdr getFirstXMLNodeLeaf(XMLCompNodeHdr compNode);
 
-extern XMLNodeHdr getNextXMLNode(XMLScan xscan, bool removed);
+extern XMLNodeHdr getNextXMLNode(XMLScan xscan);
 extern void checkXMLWellFormedness(XMLCompNodeHdr root);
 extern int	utf8cmp(char *c1, char *c2);
 
@@ -59,12 +59,10 @@ typedef struct
 } XMLTreeWalkerContext;
 
 extern void walkThroughXMLTree(XMLNodeHdr rootNode, VisitXMLNode visitor, bool attributes, void *userData);
-
 extern void dumpXMLNodeDebug(StringInfo output, char *data, XMLNodeOffset rootOff);
-
 extern bool xmlStringIsNumber(char *str, double *numValue, char **end, bool skipWhitespace);
-
 extern bool checkFragmentForAttributes(XMLCompNodeHdr fragment);
+extern bool isXMLNodeDescendant(XMLNodeHdr node, XMLCompNodeHdr treeRoot);
 
 extern char **getUnresolvedXMLNamespaces(XMLNodeHdr node, unsigned int *count);
 extern void resolveNamespaces(XMLNodeContainer declarations, unsigned int declsActive, char *elNmspName,

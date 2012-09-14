@@ -610,7 +610,7 @@ getElementNodeStr(XMLCompNodeHdr element)
 	initScanForTextNodes(&textScan, element);
 	xnodeInitStringInfo(&si, 32);
 
-	while ((textNode = getNextXMLNode(&textScan, false)) != NULL)
+	while ((textNode = getNextXMLNode(&textScan)) != NULL)
 	{
 		char	   *cntPart = XNODE_CONTENT(textNode);
 
@@ -751,6 +751,31 @@ checkFragmentForAttributes(XMLCompNodeHdr fragment)
 		}
 	}
 	return false;
+}
+
+/*
+ * Returns true if 'node' is either descendant of 'treeRoot' or the root
+ * itself.
+ */
+bool
+isXMLNodeDescendant(XMLNodeHdr node, XMLCompNodeHdr treeRoot)
+{
+	XMLNodeHdr	firstLeaf;
+	XMLNodeKind rootKind = treeRoot->common.kind;
+
+	if (node == (XMLNodeHdr) treeRoot)
+	{
+		return true;
+	}
+
+	if (rootKind != XMLNODE_DOC && rootKind != XMLNODE_ELEMENT &&
+		rootKind != XMLNODE_DOC_FRAGMENT)
+	{
+		return false;
+	}
+
+	firstLeaf = getFirstXMLNodeLeaf(treeRoot);
+	return (node >= firstLeaf && node < (XMLNodeHdr) treeRoot);
 }
 
 static void
@@ -926,16 +951,17 @@ getUnresolvedXMLNamespaces(XMLNodeHdr node, unsigned int *count)
 		}
 
 		/*
-		 * If the prefix is not 'xmlns' that it represents a unbound
+		 * If the prefix is not 'xmlns' then it represents an unbound
 		 * namespace.
 		 *
 		 * This is a special case when we're for example adding (prefixed)
-		 * attribute to element. Attributes already pertaining to an element
+		 * attribute to element. Attributes already pertaining to the element
 		 * are checked elsewhere (i.e. while checking the owning element
 		 * itself).
 		 */
 		result = (char **) palloc(sizeof(char *));
 		result[0] = strtok(attrName, ":");
+		*count = 1;
 		return result;
 	}
 
@@ -1046,7 +1072,6 @@ resolveNamespaces(XMLNodeContainer declarations, unsigned int declsActive, char 
 		}
 	}
 }
-
 
 /*
  * Collect names of all namespaces used in the current node (element) and find out which
