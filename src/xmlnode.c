@@ -56,7 +56,7 @@ UTF8Interval nameCharIntervals[XNODE_NAME_CHAR_INTERVALS] =
 	{{0xe2, 0x80, 0xbf, 0x00}, {0xe2, 0x81, 0x80, 0x00}},
 };
 
-static void getDocFragmentInfo(XMLNodeHdr node, unsigned int *size, unsigned short *count);
+static void getNodeInfo(XMLNodeHdr node, unsigned int *size, unsigned short *count);
 static int	attrNameComparator(const void *left, const void *right);
 
 typedef struct TypeInfo
@@ -188,8 +188,7 @@ xmlnode_to_xmldoc(PG_FUNCTION_ARGS)
 {
 	XMLCompNodeHdr rootNode,
 				rootDoc;
-	unsigned int sizeNew,
-				dataSizeNew;
+	unsigned int sizeNewMax;
 	xmlnode		node = (xmlnode) PG_GETARG_VARLENA_P(0);
 	xmldoc		document = NULL;
 	char	   *docData;
@@ -197,26 +196,8 @@ xmlnode_to_xmldoc(PG_FUNCTION_ARGS)
 	unsigned int dataSizeOrig = sizeOrig - VARHDRSZ;
 	char	   *nodeData = (char *) VARDATA(node);
 
-	/*
-	 * The new root will start where last value of the array (i.e. offset of
-	 * the current root) was so far
-	 */
-	XMLNodeOffset rootOffsetNew = dataSizeOrig - sizeof(XMLNodeOffset);
-
-	/* Find that 'old last (root offset) value' ... */
-	XMLNodeOffset *rootOffPtrOrig = (XMLNodeOffset *) (nodeData + rootOffsetNew);
-
-	/* ... and read it */
-	XMLNodeOffset rootOffsetOrig = *rootOffPtrOrig;
-
-	/*
-	 * Compute 'relative reference' of the 'old root' that the document ('new
-	 * root') will remember
-	 */
-	XMLNodeOffset dist = rootOffsetNew - rootOffsetOrig;
-	XMLNodeOffset *rootOffPtrNew;
-
-	char		bwidth = getXMLNodeOffsetByteWidth(dist);
+	XMLNodeOffset sizeToCopy = dataSizeOrig - sizeof(XMLNodeOffset);
+	XMLNodeOffset rootOffsetOrig = XNODE_ROOT_OFFSET(node);
 
 	rootNode = (XMLCompNodeHdr) (nodeData + rootOffsetOrig);
 
@@ -243,31 +224,71 @@ xmlnode_to_xmldoc(PG_FUNCTION_ARGS)
 		 * http://www.w3.org/TR/2008/REC-xml-20081126/#NT-document
 		 */
 		char	   *refTargPtr;
+		XMLNodeOffset *rootOffPtrNew;
+		XMLNodeOffset dist;
+		char		bwidth;
 
-		sizeNew = sizeOrig + sizeof(XMLCompNodeHdrData) + bwidth;
-		dataSizeNew = sizeNew - VARHDRSZ;
-		document = (xmldoc) palloc(sizeNew);
+		/*
+		 * Add maximum possible padding of document node, the document node
+		 * itself, maximum space for 1 reference and maximum padding for the
+		 * root node offset (the original document already contains the offset
+		 * itself, but it gets moved now so additional padding may be needed.)
+		 */
+		sizeNewMax = sizeOrig + MAX_PADDING(XNODE_ALIGNOF_COMPNODE) +
+			sizeof(XMLCompNodeHdrData) + sizeof(XMLNodeOffset) +
+			MAX_PADDING(XNODE_ALIGNOF_NODE_OFFSET);
+
+		document = (xmldoc) palloc(sizeNewMax);
 		docData = (char *) VARDATA(document);
-		memcpy(docData, nodeData, rootOffsetNew);
-		rootDoc = (XMLCompNodeHdr) (docData + rootOffsetNew);
+		memcpy(docData, nodeData, sizeToCopy);
+
+		/*
+		 * The document root node will be added as close to the copied chunk
+		 * as correct alignment allows.
+		 */
+		rootDoc = (XMLCompNodeHdr) (docData + TYPEALIGN(XNODE_ALIGNOF_COMPNODE, sizeToCopy));
+
 		rootDoc->common.kind = XMLNODE_DOC;
 		rootDoc->common.flags = 0;
-		XNODE_SET_REF_BWIDTH(rootDoc, bwidth);
 		rootDoc->children = 1;
+
+		/*
+		 * Compute relative reference of the 'old root' that the document
+		 * ('new root') will contain.
+		 */
+		dist = (char *) rootDoc - docData - rootOffsetOrig;
+		bwidth = getXMLNodeOffsetByteWidth(dist);
+		XNODE_SET_REF_BWIDTH(rootDoc, bwidth);
+
 		refTargPtr = (char *) rootDoc + sizeof(XMLCompNodeHdrData);
-		writeXMLNodeOffset(dist, &refTargPtr, bwidth, false);
-		rootOffPtrNew = (XMLNodeOffset *) (docData + dataSizeNew - sizeof(XMLNodeOffset));
-		*rootOffPtrNew = rootOffsetNew;
-		SET_VARSIZE(document, sizeNew);
+		writeXMLNodeOffset(dist, &refTargPtr, bwidth, true);
+
+		/*
+		 * 'refTargPtr' ended up right after the finished document root. We
+		 * just need to find the aligned address for the root offset and write
+		 * the offset there.
+		 */
+		rootOffPtrNew = (XMLNodeOffset *) TYPEALIGN(XNODE_ALIGNOF_NODE_OFFSET, refTargPtr);
+		*rootOffPtrNew = (char *) rootDoc - docData;
+
+		SET_VARSIZE(document, (char *) rootOffPtrNew - (char *) document + sizeof(XMLNodeOffset));
 	}
 	else if (rootNode->common.kind == XMLNODE_DOC_FRAGMENT)
 	{
 		checkXMLWellFormedness(rootNode);
+
+		/*
+		 * The document root's role is the same like that of the document
+		 * fragment: it's a parent of the actual nodes. So we just need to
+		 * copy the whole tree and change the root node kind.
+		 */
 		document = (xmldoc) palloc(sizeOrig);
 		docData = (char *) VARDATA(document);
 		memcpy(document, node, sizeOrig);
+
 		rootDoc = (XMLCompNodeHdr) (docData + rootOffsetOrig);
 		rootDoc->common.kind = XMLNODE_DOC;
+		rootDoc->common.flags = 0;
 		SET_VARSIZE(document, sizeOrig);
 	}
 	else
@@ -285,33 +306,33 @@ xmldoc_to_xmlnode(PG_FUNCTION_ARGS)
 	xmldoc		doc = (xmldoc) PG_GETARG_VARLENA_P(0);
 	char	   *docData = VARDATA(doc);
 	xmlnode		node;
-	XMLNodeOffset rootOff,
-				rootOffNew;
-	XMLNodeOffset *rootOffPtrNew;
 
 	XMLCompNodeHdr root = (XMLCompNodeHdr) XNODE_ROOT(doc);
 
 	Assert(root->common.kind == XMLNODE_DOC);
-
-	rootOff = (char *) root - docData;
 
 	if (root->children == 1)
 	{
 		/* The single child (i.e. root element) will be the result of the cast */
 		char	   *refPtr = XNODE_FIRST_REF(root);
 		unsigned char bwidth = XNODE_GET_REF_BWIDTH(root);
+		XMLNodeOffset rootOff = (char *) root - docData;
 		XMLNodeOffset childOff = rootOff - readXMLNodeOffset(&refPtr, bwidth, false);
 		XMLNodeHdr	child = (XMLNodeHdr) (docData + childOff);
 
-		node = (xmlnode) copyXMLNode(child, NULL, true, &rootOffNew);
-		rootOffPtrNew = XNODE_ROOT_OFFSET_PTR(node);
-		*rootOffPtrNew = rootOffNew;
+		node = (xmlnode) copyXMLNode(child, NULL, true, NULL);
 	}
 	else
 	{
-		/* Just change type to document fragment and ignore head if one exists */
-		char	   *nodeData;
+		/*
+		 * Just change type to document fragment and ignore XMLDeclData if one
+		 * exists
+		 */
+		char	   *nodeData,
+				   *ptrUnaligned;
 		XMLCompNodeHdr rootNew;
+		XMLNodeOffset rootOffNew;
+		XMLNodeOffset *rootOffPtrNew;
 
 		node = (xmlnode) copyXMLNode((XMLNodeHdr) root, NULL, true, &rootOffNew);
 		nodeData = VARDATA(node);
@@ -320,13 +341,18 @@ xmldoc_to_xmlnode(PG_FUNCTION_ARGS)
 		rootNew->common.flags = 0;
 
 		/*
-		 * The root offset will be stored right after the document fragment
-		 * header. If we used XNODE_ROOT_OFFSET_PTR() at this place, it could
-		 * be wrong because original document (that we have just coppied)
-		 * could have contained XMLDeclData.
+		 * The root offset will be stored (aligned) right after the document
+		 * fragment header.
 		 */
-		rootOffPtrNew = (XMLNodeOffset *) XNODE_ELEMENT_NAME(rootNew);
+		ptrUnaligned = (char *) XNODE_ELEMENT_NAME(rootNew);
+		rootOffPtrNew = (XMLNodeOffset *) TYPEALIGN(XNODE_ALIGNOF_NODE_OFFSET, ptrUnaligned);
 		*rootOffPtrNew = rootOffNew;
+
+		/*
+		 * If the document contained XMLDeclData, the size is going to be
+		 * decreased.
+		 */
+		SET_VARSIZE(node, (char *) rootOffPtrNew - (char *) node + sizeof(XMLNodeOffset));
 	}
 
 	PG_RETURN_POINTER(node);
@@ -353,8 +379,7 @@ dumpXMLNode(char *data, XMLNodeOffset rootNdOff)
 			elog(ERROR, "document fragment having attributes as direct children can't be dumped.");
 		}
 	}
-
-	if (root->kind == XMLNODE_DOC && (root->flags & XNODE_DOC_XMLDECL))
+	else if (root->kind == XMLNODE_DOC && (root->flags & XNODE_DOC_XMLDECL))
 	{
 		XMLCompNodeHdr doc = (XMLCompNodeHdr) root;
 		XMLDecl		decl = (XMLDecl) XNODE_ELEMENT_NAME(doc);
@@ -363,17 +388,13 @@ dumpXMLNode(char *data, XMLNodeOffset rootNdOff)
 		declSize = strlen(declStr);
 		srcCursor = (char *) decl + sizeof(XMLDeclData);
 	}
-
-	if (root->kind == XNTNODE_ROOT)
+	else if (root->kind == XNTNODE_ROOT)
 	{
 		XNTHeader	xntHdr;
+		XMLCompNodeHdr template = (XMLCompNodeHdr) root;
 
-		if (srcCursor == NULL)
-		{
-			XMLCompNodeHdr template = (XMLCompNodeHdr) root;
-
-			srcCursor = XNODE_ELEMENT_NAME(template);
-		}
+		srcCursor = XNODE_ELEMENT_NAME(template);
+		srcCursor = (char *) TYPEALIGN(XNODE_ALIGNOF_XNT_HDR, srcCursor);
 		xntHdr = (XNTHeader) srcCursor;
 
 		if (xntHdr->paramCount > 0)
@@ -406,7 +427,12 @@ dumpXMLNode(char *data, XMLNodeOffset rootNdOff)
 
 /*
  * Write 'node' and it's descendants to storage, starting at '*output'.
- * When finished, '*output' points to the first byte following the storage.
+ * When finished, '*output' points to the first byte following the storage
+ * and 'root' contains offset of node/subtree root, counting from the
+ * original value of '*output'.
+ *
+ * If used to write document (XMLNODE_DOC), the caller is responsible
+ * for adding XML declaration to the root node.
  */
 void
 writeXMLNodeInternal(XNodeInternal node, char **output, XMLNodeOffset *root)
@@ -421,7 +447,6 @@ writeXMLNodeInternal(XNodeInternal node, char **output, XMLNodeOffset *root)
 	bool		hasNonAttr = false;
 	XMLNodeKind nodeKind = node->node->kind;
 
-
 	if ((nodeKind == XMLNODE_DOC || nodeKind == XMLNODE_ELEMENT || nodeKind == XNTNODE_TEMPLATE) &&
 		node->children.content != NULL)
 	{
@@ -430,12 +455,12 @@ writeXMLNodeInternal(XNodeInternal node, char **output, XMLNodeOffset *root)
 
 	if (childCount > 0)
 	{
-		Assert(node->node->kind == XMLNODE_ELEMENT || node->node->kind == XMLNODE_DOC ||
-			   node->node->kind == XNTNODE_TEMPLATE);
+		Assert(nodeKind == XMLNODE_ELEMENT || nodeKind == XMLNODE_DOC ||
+			   nodeKind == XNTNODE_TEMPLATE);
 
 		offs = (XMLNodeOffset *) palloc(childCount * sizeof(XMLNodeOffset));
 
-		if (node->node->kind == XMLNODE_ELEMENT)
+		if (nodeKind == XMLNODE_ELEMENT)
 		{
 			childrenTmp = (XNodeInternal *) palloc(childCount * sizeof(XNodeInternal));
 			childItem = (XNodeListItem *) (&node->children)->content;
@@ -504,7 +529,7 @@ writeXMLNodeInternal(XNodeInternal node, char **output, XMLNodeOffset *root)
 		}
 	}
 
-	if (node->node->kind != XMLNODE_ELEMENT)
+	if (nodeKind != XMLNODE_ELEMENT)
 	{
 		/*
 		 * 'childrenTmp' is not initialized, we're iterating the children
@@ -514,7 +539,7 @@ writeXMLNodeInternal(XNodeInternal node, char **output, XMLNodeOffset *root)
 	}
 
 	/* Make sure that attributes are unique. */
-	if (node->node->kind == XMLNODE_ELEMENT && childCount > 0)
+	if (nodeKind == XMLNODE_ELEMENT && childCount > 0)
 	{
 		unsigned int attrCount = 0;
 		char	  **attrNames = (char **) palloc(childCount * sizeof(char *));
@@ -582,10 +607,12 @@ writeXMLNodeInternal(XNodeInternal node, char **output, XMLNodeOffset *root)
 	if ((nodeKind == XMLNODE_ELEMENT && node->children.content != NULL) || nodeKind == XNTNODE_TEMPLATE ||
 		nodeKind == XMLNODE_DOC)
 	{
-		XMLCompNodeHdr compNode = (XMLCompNodeHdr) *output;
+		XMLCompNodeHdr compNode;
 		char	   *name;
 
+		*output = (char *) TYPEALIGN(XNODE_ALIGNOF_COMPNODE, *output);
 		/* The header */
+		compNode = (XMLCompNodeHdr) *output;
 		compNode->common.flags = 0;
 
 		switch (nodeKind)
@@ -626,7 +653,7 @@ writeXMLNodeInternal(XNodeInternal node, char **output, XMLNodeOffset *root)
 			XNODE_SET_REF_BWIDTH(compNode, bwidth);
 		}
 
-		if (node->node->kind == XMLNODE_ELEMENT)
+		if (nodeKind == XMLNODE_ELEMENT)
 		{
 			XMLCompNodeHdr elNode = (XMLCompNodeHdr) node->node;
 
@@ -635,19 +662,22 @@ writeXMLNodeInternal(XNodeInternal node, char **output, XMLNodeOffset *root)
 			strcpy(*output, name);
 			*output += strlen(name) + 1;
 		}
+
 		*root = (char *) compNode - start;
 	}
 	else
 	{
 		XMLNodeOffset nodeRoot;
+		char	   *copyRootPtr;
 
 		/*
 		 * This is either a simple node or element that we didn't have to
 		 * deconstruct.
 		 */
 		copyXMLNode(node->node, *output, false, &nodeRoot);
-		*root = *output + nodeRoot - start;
-		*output += getXMLNodeSize(node->node, true);
+		copyRootPtr = *output + nodeRoot;
+		*root = copyRootPtr - start;
+		*output = copyRootPtr + getXMLNodeSize((XMLNodeHdr) copyRootPtr, false);
 	}
 
 	if (offs != NULL)
@@ -965,6 +995,16 @@ xmlelement(PG_FUNCTION_ARGS)
 	 */
 	resSizeMax = VARHDRSZ + attrsSizeTotal + childSize + (attrCount + childCount) * 4 +
 		sizeof(XMLCompNodeHdrData) + nameLen + 1 + sizeof(XMLNodeOffset);
+
+	/*
+	 * As for padding, the worst case is that the child node is a document
+	 * fragment only containing compound nodes. In addition, the new element
+	 * node needs to be taken into account, as well as the root node offset.
+	 * On the other hand no padding is required for attributes.
+	 */
+	resSizeMax += MAX_PADDING(XNODE_ALIGNOF_COMPNODE) * (childCount + 1) +
+		MAX_PADDING(XNODE_ALIGNOF_NODE_OFFSET);
+
 	result = (char *) palloc(resSizeMax);
 	resCursor = resData = VARDATA(result);
 
@@ -1021,9 +1061,10 @@ xmlelement(PG_FUNCTION_ARGS)
 				elog(ERROR, "the nested node must not be %s", getXMLNodeKindStr(k));
 			}
 		}
-		copyXMLNodeOrDocFragment(child, childSize, &resCursor, &newNd, &newNds);
+		copyXMLNodeOrDocFragment(child, &resCursor, &newNd, &newNds);
 	}
 
+	resCursor = (char *) TYPEALIGN(XNODE_ALIGNOF_COMPNODE, resCursor);
 	element = (XMLCompNodeHdr) resCursor;
 	element->common.kind = XMLNODE_ELEMENT;
 	element->common.flags = (child == NULL) ? XNODE_EMPTY : 0;
@@ -1106,6 +1147,7 @@ xmlelement(PG_FUNCTION_ARGS)
 	strcpy(nameDst, elName);
 	resCursor = nameDst + strlen(elName) + 1;
 
+	resCursor = (char *) TYPEALIGN(XNODE_ALIGNOF_NODE_OFFSET, resCursor);
 	SET_VARSIZE(result, (char *) resCursor - result + sizeof(XMLNodeOffset));
 	rootOffPtr = XNODE_ROOT_OFFSET_PTR(result);
 	*rootOffPtr = (char *) element - resData;
@@ -1215,7 +1257,6 @@ xmlfragment(PG_FUNCTION_ARGS)
 				node = NULL;
 	XMLNodeOffset *rootsAbs;
 	XMLNodeOffset rootOff,
-				offCursor,
 				offRelMax,
 				root = 0;
 	XMLCompNodeHdr resFragment;
@@ -1237,14 +1278,15 @@ xmlfragment(PG_FUNCTION_ARGS)
 	}
 
 	/* Evaluate the 'state node'... */
-	getDocFragmentInfo(node, &nodeSize, &nodeCount);
+	getNodeInfo(node, &nodeSize, &nodeCount);
 	resultSize += nodeSize;
 
 	/* ... as well as the new one. */
-	getDocFragmentInfo(newNode, &newNodeSize, &nodeCountNew);
+	getNodeInfo(newNode, &newNodeSize, &nodeCountNew);
 	resultSize += newNodeSize;
 
 	nodeCountTotal = nodeCount + nodeCountNew;
+
 	Assert(nodeCountTotal > 1);
 	if (nodeCountTotal > XMLNODE_MAX_CHILDREN)
 	{
@@ -1253,18 +1295,31 @@ xmlfragment(PG_FUNCTION_ARGS)
 
 	/*
 	 * getXMLNodeSize() does account for references, but not always the
-	 * maximum byte width.
+	 * maximum byte width. Let's assume the worst: all references are going to
+	 * grow from 1 to 4 bytes.
 	 */
-	resultSize += nodeCountTotal * sizeof(XMLNodeOffset);
+	resultSize += nodeCountTotal * (sizeof(XMLNodeOffset) - 1);
 	resultSize += VARHDRSZ + sizeof(XMLCompNodeHdrData) + sizeof(XMLNodeOffset);
+
+	/*
+	 * As for padding, the worst case is that the original node, the new one
+	 * and also the new root need some. And the root offset too.
+	 */
+	resultSize += 3 * MAX_PADDING(XNODE_ALIGNOF_COMPNODE) + MAX_PADDING(XNODE_ALIGNOF_NODE_OFFSET);
+
 	result = (char *) palloc(resultSize);
 	resData = resCursor = VARDATA(result);
 
 	rootsAbs = (XMLNodeOffset *) palloc(nodeCountTotal * sizeof(XMLNodeOffset));
 
-	offCursor = 0;
-
-	/* Copy the existing node. */
+	/*
+	 * Copy the existing node.
+	 *
+	 * copyXMLNodeOrDocFragment() is not easy to use here because the existing
+	 * (status) node and the new one can each be either a single node or
+	 * fragment. The combinations of both would make initialization of
+	 * 'rootsAbs' uneasy.
+	 */
 	if (nodeCount == 1)
 	{
 		copyXMLNode(node, resCursor, false, &root);
@@ -1283,14 +1338,19 @@ xmlfragment(PG_FUNCTION_ARGS)
 		}
 		pfree(roots);
 	}
-	offCursor += nodeSize;
 
 	/* And append the new one(s). */
 	if (nodeCountNew == 1)
 	{
 		copyXMLNode(newNode, resCursor, false, &root);
-		resCursor += newNodeSize;
-		rootsAbs[nodeCount] = root + offCursor;
+		resCursor += root;
+		rootsAbs[nodeCount] = resCursor - resData;
+
+		/*
+		 * Move the cursor to address immediately following the copied new
+		 * node.
+		 */
+		resCursor += getXMLNodeSize(newNode, false);
 	}
 	else
 	{
@@ -1305,14 +1365,18 @@ xmlfragment(PG_FUNCTION_ARGS)
 		}
 		pfree(roots);
 	}
-	offCursor += newNodeSize;
 
+	/*
+	 * At least 2 nodes must exist in the result now, so the resulting node
+	 * must be a document fragment.
+	 */
+	resCursor = (char *) TYPEALIGN(XNODE_ALIGNOF_COMPNODE, resCursor);
 	resFragment = (XMLCompNodeHdr) resCursor;
 	resFragment->common.kind = XMLNODE_DOC_FRAGMENT;
 	resFragment->common.flags = 0;
 	resFragment->children = nodeCountTotal;
 
-	offRelMax = offCursor - rootsAbs[0];
+	offRelMax = resCursor - (resData + rootsAbs[0]);
 	bwidth = getXMLNodeOffsetByteWidth(offRelMax);
 	XNODE_SET_REF_BWIDTH(resFragment, bwidth);
 
@@ -1321,21 +1385,22 @@ xmlfragment(PG_FUNCTION_ARGS)
 	for (i = 0; i < nodeCountTotal; i++)
 	{
 		XMLNodeOffset offRel;
-		XMLNodeHdr	fragChild;
+		XMLNodeHdr	resFragChild;
 
 		/*
 		 * There should be no way for such a fragment to arise but the check
 		 * doesn't hurt.
 		 */
-		fragChild = (XMLNodeHdr) (resData + rootsAbs[i]);
-		if (fragChild->kind == XMLNODE_ATTRIBUTE)
+		resFragChild = (XMLNodeHdr) (resData + rootsAbs[i]);
+		if (resFragChild->kind == XMLNODE_ATTRIBUTE)
 		{
 			elog(ERROR, "resulting document fragment must not contain attribute nodes");
 		}
-		offRel = (char *) resFragment - (resData + rootsAbs[i]);
+		offRel = (char *) resFragment - (char *) resFragChild;
 		writeXMLNodeOffset(offRel, &resCursor, bwidth, true);
 	}
 
+	resCursor = (char *) TYPEALIGN(XNODE_ALIGNOF_NODE_OFFSET, resCursor);
 	rootOff = (char *) resFragment - resData;
 	rootOffPtr = (XMLNodeOffset *) resCursor;
 	*rootOffPtr = rootOff;
@@ -1345,18 +1410,25 @@ xmlfragment(PG_FUNCTION_ARGS)
 }
 
 static void
-getDocFragmentInfo(XMLNodeHdr node, unsigned int *size, unsigned short *count)
+getNodeInfo(XMLNodeHdr node, unsigned int *size, unsigned short *count)
 {
 	/* Evaluate the 'state node'... */
 	*size = getXMLNodeSize(node, true);
+
 	if (node->kind == XMLNODE_DOC_FRAGMENT)
 	{
 		XMLCompNodeHdr fragment = (XMLCompNodeHdr) node;
 
 		*count = fragment->children;
 		Assert(*count > 1);
-		/* The fragment node (header) itself won't be copied. */
-		*size -= sizeof(XMLCompNodeHdrData) + XNODE_GET_REF_BWIDTH(fragment) *fragment->children;
+
+		/*
+		 * The fragment node (header) itself won't be copied. Possible padding
+		 * of the fragment (root) is not subtracted, even though it may
+		 * disappear in the resulting tree. This can save mere 3 bytes in
+		 * extreme case, so the effort does not seem to be adequate.
+		 */
+		*size -= getXMLNodeSize(node, false);
 	}
 	else
 	{

@@ -86,7 +86,8 @@ typedef struct XMLNodeInternalData
 {
 	/*
 	 * Where the node starts in 'state.tree' (varlena header size not
-	 * included)
+	 * included). Used to return the output position to caller of
+	 * processToken().
 	 */
 	XMLNodeOffset nodeOut;
 
@@ -122,7 +123,7 @@ static bool isPredefinedEntity(char *refStart, char *value);
 
 static void evaluateWhitespace(XMLParserState state);
 static void ensureSpace(unsigned int size, XMLParserState state);
-static void saveNodeHeader(XMLParserState state, XMLNodeInternal nodeInfo, char flags);
+static unsigned int saveNodeHeader(XMLParserState state, XMLNodeInternal nodeInfo, char flags);
 static void saveContent(XMLParserState state, XMLNodeInternal nodeInfo);
 static void saveReferences(XMLParserState state, XMLNodeInternal nodeInfo, XMLCompNodeHdr compNode,
   unsigned short children, bool *specAttrsValid, unsigned int specAttrCount);
@@ -358,11 +359,16 @@ xmlnodeParseNode(XMLParserState state)
 	if (state->stack.position == 1)
 	{
 		XMLNodeOffset *rootOffPtr;
+		char	   *ptrUnaligned;
+		unsigned int padding;
 
-		ensureSpace(sizeof(XMLNodeOffset), state);
-		rootOffPtr = (XMLNodeOffset *) (state->tree + state->dstPos);
+		ptrUnaligned = state->tree + state->dstPos;
+		rootOffPtr = (XMLNodeOffset *) TYPEALIGN(XNODE_ALIGNOF_NODE_OFFSET, ptrUnaligned);
+		padding = (char *) rootOffPtr - ptrUnaligned;
+		ensureSpace(padding + sizeof(XMLNodeOffset), state);
+
 		*rootOffPtr = xmlnodePopOffset(&state->stack);
-		state->dstPos += sizeof(XMLNodeOffset);
+		state->dstPos += padding + sizeof(XMLNodeOffset);
 		SET_VARSIZE(state->result, state->dstPos + VARHDRSZ);
 	}
 	else
@@ -1375,7 +1381,6 @@ processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowe
 		unsigned int specAttrCount = 0;
 		bool	   *specAttrsValid = NULL;
 
-
 		if (!(allowed & TOKEN_STAG))
 		{
 			elog(ERROR, "element not allowed at row %u, column %u.", tagRow, tagCol);
@@ -1544,14 +1549,17 @@ processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowe
 		{
 			XMLCompNodeHdr element;
 			XMLNodeOffset elementOff;
+			unsigned int padding;
 
 			/*
 			 * In this case 'child' always means 'attribute'
 			 */
 
-			elementOff = nodeInfo->nodeOut = state->dstPos;
+			nodeInfo->nodeOut = state->dstPos;
 			nodeInfo->tokenType = TOKEN_EMPTY_ELEMENT;
-			saveNodeHeader(state, nodeInfo, XNODE_EMPTY);
+			padding = saveNodeHeader(state, nodeInfo, XNODE_EMPTY);
+			nodeInfo->nodeOut += padding;
+			elementOff = nodeInfo->nodeOut;
 			element = (XMLCompNodeHdr) (state->tree + elementOff);
 
 			/*
@@ -1612,6 +1620,7 @@ processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowe
 			XMLCompNodeHdr element;
 			XMLNodeHdr	firstText = NULL;
 			XMLNodeOffset elementOff;
+			unsigned int padding;
 
 			state->saveHeader = true;
 
@@ -1714,9 +1723,11 @@ processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowe
 			 * Now that children are processed, the node can be written to
 			 * output.
 			 */
-			elementOff = nodeInfo->nodeOut = state->dstPos;
+			nodeInfo->nodeOut = state->dstPos;
 			nodeInfo->tokenType = childTag.tokenType;
-			saveNodeHeader(state, nodeInfo, children == attributes ? XNODE_EMPTY : 0);
+			padding = saveNodeHeader(state, nodeInfo, children == attributes ? XNODE_EMPTY : 0);
+			nodeInfo->nodeOut += padding;
+			elementOff = nodeInfo->nodeOut;
 			element = (XMLCompNodeHdr) (state->tree + elementOff);
 
 			if (isSpecialNode)
@@ -2422,22 +2433,32 @@ ensureSpace(unsigned int size, XMLParserState state)
 	}
 }
 
-static void
+static unsigned int
 saveNodeHeader(XMLParserState state, XMLNodeInternal nodeInfo, char flags)
 {
-	unsigned int hdrSize;
+	unsigned int incr;
+	char	   *outPosOrig,
+			   *nodeStart;
 	XMLNodeHdr	node;
+	unsigned int padding = 0;
+
+	outPosOrig = state->tree + nodeInfo->nodeOut;
 
 	if (nodeInfo->tokenType & (TOKEN_ETAG | TOKEN_EMPTY_ELEMENT))
 	{
-		hdrSize = sizeof(XMLCompNodeHdrData);
+		incr = sizeof(XMLCompNodeHdrData);
+		nodeStart = (char *) TYPEALIGN(XNODE_ALIGNOF_COMPNODE, outPosOrig);
+		padding = nodeStart - outPosOrig;
+		incr += padding;
 	}
 	else
 	{
-		hdrSize = sizeof(XMLNodeHdrData);
+		incr = sizeof(XMLNodeHdrData);
+		nodeStart = outPosOrig;
 	}
-	ensureSpace(hdrSize, state);
-	node = (XMLNodeHdr) (state->tree + nodeInfo->nodeOut);
+	ensureSpace(incr, state);
+
+	node = (XMLNodeHdr) nodeStart;
 	node->flags = flags;
 	switch (nodeInfo->tokenType)
 	{
@@ -2480,8 +2501,10 @@ saveNodeHeader(XMLParserState state, XMLNodeInternal nodeInfo, char flags)
 		node->flags |= XNODE_NMSP_PREFIX;
 	}
 
-	state->dstPos += hdrSize;
+	state->dstPos += incr;
 	nodeInfo->headerSaved = true;
+
+	return padding;
 }
 
 static void
@@ -2611,8 +2634,9 @@ saveRootNodeHeader(XMLParserState state, XMLNodeKind kind)
 	XMLCompNodeHdr rootNode;
 	XNodeListItem *rootOffSrc;
 	char	   *rootOffTarg;
-	XMLNodeOffset rootNodeOff = state->dstPos;
+	XMLNodeOffset rootNodeOff;
 	XMLNodeOffset *rootNodeOffPtr;
+	char	   *ptrUnaligned;
 	unsigned short int childCount;
 	unsigned int refsTotal;
 	char		bwidth;
@@ -2622,7 +2646,18 @@ saveRootNodeHeader(XMLParserState state, XMLNodeKind kind)
 	char	  **paramNames = NULL;
 	unsigned short paramCount = 0;
 	unsigned short substNodesCount = 0;
+	unsigned int padding;
 
+	/*
+	 * The 'absolute' address should be aligned. Note that 'rootNodeOff' is an
+	 * offset from the first address following VARLENA header If we applied
+	 * TYPEALIGN() on 'rootNodeOff', the resulting absolute address might not
+	 * (in theory) aligned correctly.
+	 */
+	rootNodeOff = (char *) TYPEALIGN(XNODE_ALIGNOF_COMPNODE, (state->tree + state->dstPos)) -
+		state->tree;
+
+	padding = rootNodeOff - state->dstPos;
 	rootHdrSz = sizeof(XMLCompNodeHdrData);
 
 	/*
@@ -2630,12 +2665,14 @@ saveRootNodeHeader(XMLParserState state, XMLNodeKind kind)
 	 * node must have been processed.
 	 */
 	Assert(state->stack.position >= 1);
+
 	childCount = state->stack.position;
 	rootOffSrc = state->stack.content;
 	bwidth = getXMLNodeOffsetByteWidth(rootNodeOff - rootOffSrc->value.singleOff);
 	refsTotal = childCount * bwidth;
-	ensureSpace(rootHdrSz + refsTotal, state);
-	state->dstPos += rootHdrSz;
+	ensureSpace(padding + rootHdrSz + refsTotal, state);
+	state->dstPos += padding + rootHdrSz;
+
 	rootNode = (XMLCompNodeHdr) (state->tree + rootNodeOff);
 	rootNode->common.flags = 0;
 	XNODE_SET_REF_BWIDTH(rootNode, bwidth);
@@ -2658,6 +2695,7 @@ saveRootNodeHeader(XMLParserState state, XMLNodeKind kind)
 
 	if (kind == XMLNODE_DOC && state->decl != NULL)
 	{
+		/* No padding needed for the current version. */
 		declSize = sizeof(XMLDeclData);
 	}
 
@@ -2682,15 +2720,14 @@ saveRootNodeHeader(XMLParserState state, XMLNodeKind kind)
 				lItem++;
 			}
 		}
-		xntHdrSize += sizeof(XNTHeaderData);
+		xntHdrSize += MAX_PADDING(XNODE_ALIGNOF_XNT_HDR) + sizeof(XNTHeaderData);
 
 		substNodesCount = substNodesCont->position;
-		xntHdrSize += substNodesCount * sizeof(XMLNodeOffset);
-
+		xntHdrSize += MAX_PADDING(XNODE_ALIGNOF_NODE_OFFSET) + substNodesCount * sizeof(XMLNodeOffset);
 	}
 
 	extraSize = declSize + xntHdrSize;
-	ensureSpace(extraSize + sizeof(XMLNodeOffset), state);
+	ensureSpace(extraSize + MAX_PADDING(XNODE_ALIGNOF_NODE_OFFSET) + sizeof(XMLNodeOffset), state);
 	/* re-initialize the 'rootNode', re-allocation might have taken place. */
 	rootNode = (XMLCompNodeHdr) (state->tree + rootNodeOff);
 
@@ -2704,11 +2741,18 @@ saveRootNodeHeader(XMLParserState state, XMLNodeKind kind)
 	if (xntHdrSize > 0)
 	{
 		XNTHeaderData hdr;
+		char	   *dst,
+				   *dstAligned;
 
 		hdr.paramCount = paramCount;
 		hdr.substNodesCount = substNodesCount;
-		memcpy(state->tree + state->dstPos, &hdr, sizeof(XNTHeaderData));
-		state->dstPos += sizeof(XNTHeaderData);
+
+		dst = state->tree + state->dstPos;
+		dstAligned = (char *) TYPEALIGN(XNODE_ALIGNOF_XNT_HDR, dst);
+		padding = dstAligned - dst;
+
+		memcpy(dstAligned, &hdr, sizeof(XNTHeaderData));
+		state->dstPos += padding + sizeof(XNTHeaderData);
 
 		if (paramCount > 0)
 		{
@@ -2727,7 +2771,11 @@ saveRootNodeHeader(XMLParserState state, XMLNodeKind kind)
 			XMLNodeContainer substNodesCont = &state->substNodes;
 			XNodeListItem *item = substNodesCont->content;
 			unsigned short i;
-			XMLNodeOffset *offPtr = (XMLNodeOffset *) (state->tree + state->dstPos);
+			XMLNodeOffset *offPtr;
+
+			ptrUnaligned = state->tree + state->dstPos;
+			offPtr = (XMLNodeOffset *) TYPEALIGN(XNODE_ALIGNOF_NODE_OFFSET, ptrUnaligned);
+			padding = (char *) offPtr - ptrUnaligned;
 
 			for (i = 0; i < substNodesCount; i++)
 			{
@@ -2735,13 +2783,16 @@ saveRootNodeHeader(XMLParserState state, XMLNodeKind kind)
 				offPtr++;
 				item++;
 			}
-			state->dstPos += substNodesCount * sizeof(XMLNodeOffset);
+			state->dstPos += padding + substNodesCount * sizeof(XMLNodeOffset);
 		}
 	}
 
-	rootNodeOffPtr = (XMLNodeOffset *) (state->tree + state->dstPos);
+	ptrUnaligned = state->tree + state->dstPos;
+	rootNodeOffPtr = (XMLNodeOffset *) TYPEALIGN(XNODE_ALIGNOF_NODE_OFFSET, ptrUnaligned);
+	padding = (char *) rootNodeOffPtr - ptrUnaligned;
+
 	*rootNodeOffPtr = ((char *) rootNode - state->tree);
-	state->dstPos += sizeof(XMLNodeOffset);
+	state->dstPos += padding + sizeof(XMLNodeOffset);
 	SET_VARSIZE(state->result, state->dstPos + VARHDRSZ);
 }
 
@@ -3264,6 +3315,8 @@ dumpSpecString(char **output, char *outNew, unsigned int *outPos, unsigned int *
  * however all references within a particular node must have the same 'byte width'.
  * Thus we need to determine this value outside.
  * step - whether '*outPtr' should be moved so that it's ready for the next write.
+ *
+ * As each byte is stored separate, there's no concern about alignment.
  */
 
 void

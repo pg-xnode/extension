@@ -12,6 +12,8 @@ static void checkNodeNamespaces(XMLNodeHdr *stack, unsigned int depth, void *use
 static char *getNamespaceName(char *name, char *colon);
 static void addUniqueNamespace(XMLNodeContainer result, char *nmspName);
 
+static unsigned int getNodePadding(char *start, XMLNodeOffset offAbs, XMLNodeHdr node);
+
 struct XMLNodeDumpInfo
 {
 	StringInfo	output;
@@ -124,21 +126,19 @@ getXMLNodeSize(XMLNodeHdr node, bool subtree)
 		case XMLNODE_ELEMENT:
 		case XMLNODE_DOC_FRAGMENT:
 			{
-				unsigned int children = ((XMLCompNodeHdr) node)->children;
-				char		bwidth = XNODE_GET_REF_BWIDTH((XMLCompNodeHdr) node);
+				unsigned int children;
+				char		bwidth;
 
+				children = ((XMLCompNodeHdr) node)->children;
+				bwidth = XNODE_GET_REF_BWIDTH((XMLCompNodeHdr) node);
 				result = sizeof(XMLCompNodeHdrData);
+
 				if (subtree)
 				{
-					XMLNodeIteratorData iterator;
-					XMLNodeHdr	childNode;
+					char	   *subtreeStart;
 
-					initXMLNodeIterator(&iterator, (XMLCompNodeHdr) node, true);
-
-					while ((childNode = getNextXMLNodeChild(&iterator)) != NULL)
-					{
-						result += getXMLNodeSize(childNode, true);
-					}
+					subtreeStart = (char *) getFirstXMLNodeLeaf((XMLCompNodeHdr) node);
+					result += (char *) node - subtreeStart;
 				}
 				result += children * bwidth;
 
@@ -236,7 +236,9 @@ getXMLNodeKindStr(XMLNodeKind k)
  *
  * 'node' - the node to copy
  *
- * 'target' - if not NULL, it's assumed that sufficient space is available and the copy is written there.
+ * 'target' - if not NULL, it's assumed that sufficient space is available and the copy is written there,
+ * *including possible padding*.
+ *
  * If NULL, the appropriate chunk of memory is palloc'd by the function.
  *
  * 'xmlnode' - if 'true', valid value of 'xmlnode' (varlena) type is returned. Otherwise we return
@@ -252,11 +254,12 @@ copyXMLNode(XMLNodeHdr node, char *target, bool xmlnode, XMLNodeOffset *root)
 	unsigned int cntLen = 0;
 	char	   *end,
 			   *start,
-			   *result,
-			   *data;
+			   *result;
 	unsigned int dataLength,
-				resultLength;
-	XMLNodeOffset *offPtr;
+				resultSizeSafe;
+	XMLNodeOffset rootOffAbs;
+	unsigned int paddMax,
+				padding = 0;
 
 	start = NULL;
 	if (node->kind == XMLNODE_ELEMENT || node->kind == XMLNODE_DOC || node->kind == XMLNODE_DOC_FRAGMENT)
@@ -329,37 +332,63 @@ copyXMLNode(XMLNodeHdr node, char *target, bool xmlnode, XMLNodeOffset *root)
 		start = (char *) node;
 	}
 
-	if (root != NULL)
-	{
-		*root = (char *) node - start;
-	}
+	rootOffAbs = (char *) node - start;
 	end = content + cntLen;
+
+	padding = 0;
+	dataLength = end - start;
 
 	if (xmlnode)
 	{
-		dataLength = end - start + sizeof(XMLNodeOffset);
-		resultLength = dataLength + VARHDRSZ;
-		result = (target != NULL) ? target : (char *) palloc(resultLength);
-		data = VARDATA(result);
-		offPtr = (XMLNodeOffset *) (result + resultLength - sizeof(XMLNodeOffset));
-		*offPtr = (char *) node - start;
-		memcpy(data, start, dataLength - sizeof(XMLNodeOffset));
-		SET_VARSIZE(result, resultLength);
-		return result;
+		paddMax = MAX_PADDING(XNODE_ALIGNOF_COMPNODE) + MAX_PADDING(XNODE_ALIGNOF_NODE_OFFSET);
+		resultSizeSafe = VARHDRSZ + dataLength + sizeof(XMLNodeOffset) + paddMax;
 	}
 	else
 	{
-		dataLength = end - start;
-		result = (target != NULL) ? target : (char *) palloc(dataLength);
-		memcpy(result, start, dataLength);
-		return result;
+		paddMax = MAX_PADDING(XNODE_ALIGNOF_COMPNODE);
+		resultSizeSafe = dataLength + paddMax;
 	}
+
+	result = (target != NULL) ? target : (char *) palloc(resultSizeSafe);
+
+	if (xmlnode)
+	{
+		char	   *data,
+				   *ptrUnaligned;
+		XMLNodeOffset *rootOffRel;
+
+		data = VARDATA(result);
+		padding = getNodePadding(data, rootOffAbs, node);
+		data += padding;
+		memcpy(data, start, dataLength);
+
+		ptrUnaligned = data + dataLength;
+		rootOffRel = (XMLNodeOffset *) TYPEALIGN(XNODE_ALIGNOF_NODE_OFFSET, ptrUnaligned);
+		*rootOffRel = (char *) node - start + padding;
+
+		SET_VARSIZE(result, (char *) rootOffRel - result + sizeof(XMLNodeOffset));
+	}
+	else
+	{
+		padding = getNodePadding(result, rootOffAbs, node);
+		memcpy(result + padding, start, dataLength);
+	}
+
+	if (root != NULL)
+	{
+		*root = rootOffAbs + padding;
+	}
+
+	return result;
 }
 
 /*
  * Copy document fragment (i.e. children of 'fragNode', but not 'fragNode' itself)
  * to a memory starting at '*resCursorPtr'.
+ *
  * When done, '*resCursorPtr' points right after the copied fragment.
+ *
+ * Note that '*resCursorPtr' must contain enough space for possible padding.
  *
  * Returns array where each element represents offset of particular new (just inserted) node
  * from the beginning of the output memory chunk.
@@ -384,19 +413,26 @@ copyXMLDocFragment(XMLCompNodeHdr fragNode, char **resCursorPtr)
 
 	while ((newNdPart = getNextXMLNodeChild(&iterator)) != NULL)
 	{
-		XMLNodeOffset newNdPartOff;
+		XMLNodeOffset newNdPartCopyOff;
+		XMLNodeHdr	newNdPartCopy;
 
-		copyXMLNode(newNdPart, resCursor, false, &newNdPartOff);
-		newNdRoots[i++] = resCursor + newNdPartOff;
-		resCursor += getXMLNodeSize(newNdPart, true);
+		copyXMLNode(newNdPart, resCursor, false, &newNdPartCopyOff);
+		newNdPartCopy = (XMLNodeHdr) (resCursor + newNdPartCopyOff);
+		newNdRoots[i++] = (char *) newNdPartCopy;
+
+		/* Move right after the last copy. */
+		resCursor = (char *) newNdPartCopy + getXMLNodeSize(newNdPartCopy, false);
+
 	}
 	*resCursorPtr = resCursor;
 	return newNdRoots;
 }
 
+/*
+ * Note that '*resCursor' must contain enough space for possible padding.
+ */
 void
-copyXMLNodeOrDocFragment(XMLNodeHdr newNode, unsigned int newNdSize, char **resCursor,
-						 char **newNdRoot, char ***newNdRoots)
+copyXMLNodeOrDocFragment(XMLNodeHdr newNode, char **resCursor, char **newNdRoot, char ***newNdRoots)
 {
 
 	XMLNodeOffset newNdOff;
@@ -409,7 +445,12 @@ copyXMLNodeOrDocFragment(XMLNodeHdr newNode, unsigned int newNdSize, char **resC
 	{
 		copyXMLNode(newNode, *resCursor, false, &newNdOff);
 		*newNdRoot = *resCursor + newNdOff;
-		*resCursor += newNdSize;
+
+		/*
+		 * Move the cursor to the first address following the new node just
+		 * copied.
+		 */
+		*resCursor = *newNdRoot + getXMLNodeSize(newNode, false);
 	}
 }
 
@@ -1280,4 +1321,45 @@ getNextXMLNodeChild(XMLNodeIterator iterator)
 	}
 	iterator->childrenLeft--;
 	return childNode;
+}
+
+
+/*
+ * 'node' is either a single node or a root of a subtree. In the 2nd case it has to be
+ * used to determine padding and not the children.
+ *
+ * Note that 1-byte aligned child node (e.g. attribute) can be at the beginning of the block.
+ * That does not restrict the target address, however the parent (element) does.
+ * On the other hand, If any child demands 2 B or higher alignment too, it's not our problem:
+ * whoever created such structure must have ensured the correct distance between
+ * parent and children.
+ *
+ * 'start' and 'offAbs' - the intended position of the node before alignment was considered.
+ */
+static unsigned int
+getNodePadding(char *start, XMLNodeOffset offAbs, XMLNodeHdr node)
+{
+	unsigned int result = 0;
+
+	if (node->kind == XMLNODE_ELEMENT || node->kind == XMLNODE_DOC ||
+		node->kind == XMLNODE_DOC_FRAGMENT)
+	{
+
+		char	   *ptrUnaligned,
+				   *ptrAligned;
+
+		/* Where is the node (not its descendants) going to fall? */
+		ptrUnaligned = start + offAbs;
+
+		/*
+		 * Exactly this node has to be used to determine the padding.
+		 *
+		 *
+		 */
+		ptrAligned = (char *) TYPEALIGN(XNODE_ALIGNOF_COMPNODE, ptrUnaligned);
+
+		result = ptrAligned - ptrUnaligned;
+	}
+
+	return result;
 }

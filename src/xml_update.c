@@ -186,13 +186,11 @@ updateXMLDocument(XMLScan xscan, xmldoc doc, XMLNodeAction action, XMLNodeHdr ne
 			((action == XMLNODE_ACTION_ADD && addMode == XMLADD_REPLACE) ||
 			 action == XMLNODE_ACTION_REMOVE))
 		{
-
 			unsigned int j;
 			XNodeListItem *item = targNodes.content;
 
 			for (j = 0; j < targNodes.position; j++)
 			{
-
 				if (isXMLNodeDescendant(targNode, (XMLCompNodeHdr) item->value.singlePtr))
 				{
 					ignoreTargNode = true;
@@ -376,6 +374,7 @@ updateXMLDocument(XMLScan xscan, xmldoc doc, XMLNodeAction action, XMLNodeHdr ne
 
 	writeXMLNodeInternal(docModifiable, &resTmp, &resRootOff);
 	docRootNew = (XMLCompNodeHdr) (resData + resRootOff);
+	checkXMLWellFormedness(docRootNew);
 
 	if (docRoot->common.flags & XNODE_DOC_XMLDECL)
 	{
@@ -387,8 +386,7 @@ updateXMLDocument(XMLScan xscan, xmldoc doc, XMLNodeAction action, XMLNodeHdr ne
 		docRootNew->common.flags |= XNODE_DOC_XMLDECL;
 	}
 
-	checkXMLWellFormedness(docRootNew);
-
+	resTmp = (char *) TYPEALIGN(XNODE_ALIGNOF_NODE_OFFSET, resTmp);
 	resRootOffPtr = (XMLNodeOffset *) resTmp;
 	*resRootOffPtr = resRootOff;
 	resTmp += sizeof(XMLNodeOffset);
@@ -583,15 +581,22 @@ static unsigned int
 getTreeStorageSizeInternal(XNodeInternal root, int depth)
 {
 	XNodeListItem *childItem = root->children.content;
+	XMLNodeKind rootKind = root->node->kind;
 	unsigned int result;
+
+	result = getXMLNodeSize(root->node, childItem == NULL);
+
+	if (rootKind == XMLNODE_DOC || rootKind == XMLNODE_ELEMENT ||
+		rootKind == XMLNODE_DOC_FRAGMENT)
+	{
+		result += MAX_PADDING(XNODE_ALIGNOF_COMPNODE);
+	}
 
 	/*
 	 * If we have pointers to the children, their sizes will be added in
-	 * recursive calls of this function. Otherwise the size must include the
-	 * subtree now.
+	 * recursive calls of this function. Otherwise the node (subtree) size
+	 * retrieved above already contains sizes of the children.
 	 */
-	result = getXMLNodeSize(root->node, childItem == NULL);
-
 	if (childItem != NULL)
 	{
 		unsigned int i,
@@ -614,7 +619,8 @@ getTreeStorageSizeInternal(XNodeInternal root, int depth)
 	if (depth == 0)
 	{
 		/* Varlena header + root node offset + possible declaration. */
-		result += VARHDRSZ + sizeof(XMLNodeOffset) + sizeof(XMLDeclData);
+		result += VARHDRSZ + MAX_PADDING(XNODE_ALIGNOF_NODE_OFFSET) + sizeof(XMLNodeOffset)
+			+ sizeof(XMLDeclData);
 	}
 	return result;
 }

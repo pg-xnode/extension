@@ -72,6 +72,8 @@ typedef struct XNTHeaderData
 	unsigned short paramCount;
 } XNTHeaderData;
 
+#define XNODE_ALIGNOF_XNT_HDR	ALIGNOF_SHORT
+
 typedef struct XNTHeaderData *XNTHeader;
 
 typedef struct XNTParamNameSorted

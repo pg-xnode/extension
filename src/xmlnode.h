@@ -40,6 +40,9 @@
 #define XNODE_CHAR_PIPE			0x7c
 #define XNODE_CHAR_RBRKT_CUR	0x7d
 
+/* How many bytes need to be preserved to achieve given alignment. */
+#define MAX_PADDING(alignment)	((alignment) - 1)
+
 #define XNODE_NAMESPACE_DEF_PREFIX		"xmlns"
 
 typedef enum XMLNodeKind
@@ -73,6 +76,8 @@ typedef enum XMLNodeKind
 } XMLNodeKind;
 
 typedef uint32 XMLNodeOffset;
+
+#define XNODE_ALIGNOF_NODE_OFFSET ALIGNOF_INT
 
 /*
  * Zero is only invalid if interpreted as *relative* offset.
@@ -123,6 +128,8 @@ typedef struct XMLCompNodeHdrData
 
 typedef XMLCompNodeHdrData *XMLCompNodeHdr;
 
+#define XNODE_ALIGNOF_COMPNODE	ALIGNOF_SHORT
+
 
 typedef struct XMLDeclData
 {
@@ -169,6 +176,10 @@ extern char getXMLNodeOffsetByteWidth(XMLNodeOffset o);
 /*
  * TODO Check if the multiplication needs to be performed in alternative
  * (more efficient) way. The same for XNODE_LAST_REF() above
+ */
+/*
+ * Returns name of XML element, but can also be used to get the appropriate data
+ * out of other kinds of compound nodes.
  */
 #define XNODE_ELEMENT_NAME(el) (XNODE_FIRST_REF(el) + (el)->children * XNODE_GET_REF_BWIDTH(el))
 

@@ -903,7 +903,16 @@ xnode_from_template(PG_FUNCTION_ARGS)
 	templData = VARDATA(template);
 	templDocRoot = (XMLCompNodeHdr) XNODE_ROOT(template);
 	Assert(templDocRoot->common.kind == XNTNODE_ROOT);
+
 	templHdrData = XNODE_ELEMENT_NAME(templDocRoot);
+
+	/* XML declaration: currently just the structure size, no padding. */
+	if (templDocRoot->common.flags & XNODE_DOC_XMLDECL)
+	{
+		templHdrData += sizeof(XMLDeclData);
+	}
+
+	templHdrData = (char *) TYPEALIGN(XNODE_ALIGNOF_XNT_HDR, templHdrData);
 	templHdr = (XNTHeader) templHdrData;
 
 	if (templHdr->paramCount > 0)
@@ -911,9 +920,11 @@ xnode_from_template(PG_FUNCTION_ARGS)
 		templHdrData += sizeof(XNTHeaderData);
 		templParNames = getXPathParameterArray(&templHdrData, templHdr->paramCount);
 	}
+
 	substNodeCount = templHdr->substNodesCount;
 	if (substNodeCount > 0)
 	{
+		templHdrData = (char *) TYPEALIGN(XNODE_ALIGNOF_NODE_OFFSET, templHdrData);
 		substNodes = (XMLNodeOffset *) templHdrData;
 	}
 
@@ -1194,11 +1205,12 @@ xnode_from_template(PG_FUNCTION_ARGS)
 		XMLNodeOffset *offRootPtr;
 
 		/* varlena header + root node offset */
-		resSizeEstimate += VARHDRSZ + sizeof(XMLNodeOffset);
+		resSizeEstimate += VARHDRSZ + MAX_PADDING(XNODE_ALIGNOF_NODE_OFFSET) + sizeof(XMLNodeOffset);
 		if (templRootInternal->children.position > 1)
 		{
 			/* Document fragment node in addition. */
-			resSizeEstimate += sizeof(XMLCompNodeHdrData) + templNode->children * sizeof(XMLNodeOffset);
+			resSizeEstimate += (XNODE_ALIGNOF_COMPNODE - 1) + sizeof(XMLCompNodeHdrData) +
+				templNode->children * sizeof(XMLNodeOffset);
 		}
 		result = (char *) palloc(resSizeEstimate);
 
@@ -1210,8 +1222,14 @@ xnode_from_template(PG_FUNCTION_ARGS)
 		}
 		else
 		{
+			/*
+			 * The template will be written too in addition to its children
+			 * and finally turned into a document fragment.
+			 */
 			writeXMLNodeInternal(templRootInternal, &resTmp, &offRoot);
 		}
+
+		resTmp = (char *) TYPEALIGN(XNODE_ALIGNOF_NODE_OFFSET, resTmp);
 		offRootPtr = (XMLNodeOffset *) resTmp;
 		*offRootPtr = offRoot;
 		resTmp += sizeof(XMLNodeOffset);
@@ -1574,7 +1592,8 @@ buildNewNodeTree(XMLNodeHdr node, XNodeInternal parent, unsigned int *storageSiz
 							resultNode->flags |= XNODE_EMPTY;
 						}
 
-						*storageSize += resultNodeSize + sizeof(XMLNodeOffset);
+						*storageSize += MAX_PADDING(XNODE_ALIGNOF_COMPNODE) +
+							resultNodeSize + sizeof(XMLNodeOffset);
 					}
 
 					break;
@@ -1665,7 +1684,8 @@ buildNewNodeTree(XMLNodeHdr node, XNodeInternal parent, unsigned int *storageSiz
 			 * might need more space in the new tree. When constructing the
 			 * node from template we treat the references separate, see above.
 			 */
-			*storageSize += sizeof(XMLCompNodeHdrData) + strlen(name) +1;
+			*storageSize += MAX_PADDING(XNODE_ALIGNOF_COMPNODE) +
+				sizeof(XMLCompNodeHdrData) + strlen(name) +1;
 		}
 		else if (node->kind == XMLNODE_ATTRIBUTE && (node->flags & XNODE_ATTR_VALUE_BINARY))
 		{

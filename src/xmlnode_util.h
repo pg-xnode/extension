@@ -24,8 +24,8 @@ extern unsigned int getXMLNodeSize(XMLNodeHdr node, bool subtree);
 extern char *getXMLNodeKindStr(XMLNodeKind k);
 extern char *copyXMLNode(XMLNodeHdr node, char *target, bool xmlnode, XMLNodeOffset *root);
 extern char **copyXMLDocFragment(XMLCompNodeHdr fragNode, char **resCursorPtr);
-extern void copyXMLNodeOrDocFragment(XMLNodeHdr newNode, unsigned int newNdSize, char **resCursor,
-						 char **newNdRoot, char ***newNdRoots);
+extern void copyXMLNodeOrDocFragment(XMLNodeHdr newNode, char **resCursor, char **newNdRoot,
+						 char ***newNdRoots);
 extern XMLNodeHdr getFirstXMLNodeLeaf(XMLCompNodeHdr compNode);
 
 extern XMLNodeHdr getNextXMLNode(XMLScan xscan);

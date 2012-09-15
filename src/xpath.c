@@ -19,8 +19,10 @@ static void retrieveColumnPaths(XMLScanContext xScanCtx, ArrayType *pathsColArr,
 static ArrayType *getResultArray(XMLScanContext ctx, XMLNodeOffset baseNodeOff);
 static xpathval getXPathExprValue(XPathExprState exprState, xmldoc document, bool *notNull,
 				  XPathExprOperandValue res);
+static XPathValue getXPathValue(xpathval raw);
 static char *getBoolValueString(bool value);
 
+static char *getMemoryForXPathVal(unsigned int size, XPathValue *xpval, char **outData);
 
 /* The order must follow XPathValueType */
 char	   *xpathValueTypes[] = {"boolean", "number", "string", "nodeset"};
@@ -806,9 +808,11 @@ castXPathValToStr(XPathValue src)
 				char	   *data = (char *) src;
 				XMLNodeOffset rootNdOff = src->v.nodeSetRoot;
 
-				return dumpXMLNode(data, rootNdOff);
+				/* The 'nodeSetRoot' counts from the start of 'src'. */
+				return dumpXMLNode(data, (char *) src - data + rootNdOff);
 			}
 			break;
+
 		default:
 			elog(ERROR, "unrecognized type of xpath value: %u", src->type);
 			return NULL;
@@ -1007,7 +1011,8 @@ getXPathExprValue(XPathExprState exprState, xmldoc document, bool *notNull, XPat
 	xpathval	retValue = NULL;
 	XPathValue	xpval = NULL;
 	unsigned int resSize = 0;
-	char	   *output = NULL;
+	char	   *outData,
+			   *output = NULL;
 
 	*notNull = false;
 
@@ -1025,31 +1030,43 @@ getXPathExprValue(XPathExprState exprState, xmldoc document, bool *notNull, XPat
 			 * declaration is removed.
 			 */
 			XMLNodeHdr	node;
-			XMLNodeOffset rootOffOrig;
-			XMLCompNodeHdr rootOrig;
+			XMLNodeOffset rootOffOrig,
+						rootOffNew;
+			XMLNodeHdr	rootOrig;
 			unsigned int sizeOrig,
-						sizeNew;
+						sizeNewEst;
 			char	   *output,
-					   *targ;
+					   *targ,
+					   *after;
 
 			rootOffOrig = XNODE_ROOT_OFFSET(document);
-			rootOrig = (XMLCompNodeHdr) XNODE_ROOT(document);
+			rootOrig = XNODE_ROOT(document);
 			sizeOrig = VARSIZE(document);
-			sizeNew = (rootOrig->common.flags & XNODE_DOC_XMLDECL) ? sizeOrig - sizeof(XMLDeclData) : sizeOrig;
-			sizeNew += sizeof(XPathValueData);
-			output = (char *) palloc(sizeNew);
+			sizeNewEst = (rootOrig->flags & XNODE_DOC_XMLDECL) ? sizeOrig - sizeof(XMLDeclData) : sizeOrig;
 
-			xpval = (XPathValue) VARDATA(output);
+			/*
+			 * Offset of the XPathValue structure (how far it will be from
+			 * 'outData'.
+			 */
+			sizeNewEst++;
+			/* The new root node may need padding. */
+			sizeNewEst += MAX_PADDING(XNODE_ALIGNOF_XPATHVAL) + sizeof(XPathValueData) +
+				MAX_PADDING(XNODE_ALIGNOF_COMPNODE);
+
+			output = getMemoryForXPathVal(sizeNewEst, &xpval, &outData);
+
 			xpval->type = XPATH_VAL_NODESET;
-			xpval->v.nodeSetRoot = rootOffOrig + sizeof(XPathValueData);
 
 			targ = (char *) xpval + sizeof(XPathValueData);
-			memcpy(targ, VARDATA(document), sizeNew - (VARHDRSZ + sizeof(XPathValueData)));
-			SET_VARSIZE(output, sizeNew);
-			retValue = (xpathval) output;
-
-			node = (XMLNodeHdr) ((char *) VARDATA(output) + rootOffOrig + sizeof(XPathValueData));
+			copyXMLNode(rootOrig, targ, false, &rootOffNew);
+			node = (XMLNodeHdr) (targ + rootOffNew);
 			node->kind = XMLNODE_DOC_FRAGMENT;
+			node->flags = 0;
+			xpval->v.nodeSetRoot = (char *) node - (char *) xpval;
+
+			after = (char *) node + getXMLNodeSize(node, false);
+			SET_VARSIZE(output, after - output);
+			retValue = (xpathval) output;
 			*notNull = true;
 		}
 		else
@@ -1057,9 +1074,15 @@ getXPathExprValue(XPathExprState exprState, xmldoc document, bool *notNull, XPat
 			unsigned int j = res->v.nodeSet.count;
 			XMLNodeHdr	firstNode = NULL;
 
+			/*
+			 * Only create the output value for non-empty set. Otherwise
+			 * '*notNull' will remain 'false' and the caller won't expect any
+			 * output.
+			 */
 			if (j > 0)
 			{
-				char	   *outTmp;
+				char	   *outTmp,
+						   *after;
 
 				*notNull = true;
 
@@ -1067,18 +1090,23 @@ getXPathExprValue(XPathExprState exprState, xmldoc document, bool *notNull, XPat
 				{
 					unsigned int nodeSize;
 					XMLNodeOffset root;
+					char	   *nodeCopyPtr;
 
-					firstNode = (XMLNodeHdr) getXPathOperandValue(exprState, res->v.nodeSet.nodes.nodeId,
-													  XPATH_VAR_NODE_SINGLE);
+					firstNode = (XMLNodeHdr) getXPathOperandValue(exprState,
+						 res->v.nodeSet.nodes.nodeId, XPATH_VAR_NODE_SINGLE);
 					nodeSize = getXMLNodeSize(firstNode, true);
-					resSize = VARHDRSZ + sizeof(XPathValueData) + nodeSize;
-					output = (char *) palloc(resSize);
-					outTmp = VARDATA(output);
-					xpval = (XPathValue) outTmp;
-					outTmp += sizeof(XPathValueData);
+					resSize = VARHDRSZ + 1 + MAX_PADDING(XNODE_ALIGNOF_XPATHVAL) +
+						sizeof(XPathValueData) + MAX_PADDING(XNODE_ALIGNOF_COMPNODE) +
+						nodeSize;
+					output = getMemoryForXPathVal(resSize, &xpval, &outData);
+
+					outTmp = (char *) xpval + sizeof(XPathValueData);
+
 					copyXMLNode(firstNode, outTmp, false, &root);
+					nodeCopyPtr = outTmp + root;
 					xpval->type = XPATH_VAL_NODESET;
-					xpval->v.nodeSetRoot = sizeof(XPathValueData) + root;
+					xpval->v.nodeSetRoot = nodeCopyPtr - (char *) xpval;
+					after = nodeCopyPtr + getXMLNodeSize((XMLNodeHdr) nodeCopyPtr, false);
 				}
 				else
 				{
@@ -1089,66 +1117,85 @@ getXPathExprValue(XPathExprState exprState, xmldoc document, bool *notNull, XPat
 					unsigned int nodeSizeTotal = 0;
 					char		bwidth;
 					char	   *refTarget;
-					XMLNodeHdr	node;
-					unsigned int *nodeSizes;
 					XMLCompNodeHdr fragmentHdr;
-					XMLNodeOffset targetPos;
+					XMLNodeHdr *nodeArray;
+					XMLNodeOffset *offsAbs,
+								offAbsFrag;
 
-					nodeSizes = (unsigned int *) palloc(j * sizeof(unsigned int));
+
+					nodeArray = (XMLNodeHdr *) getXPathOperandValue(exprState,
+						 res->v.nodeSet.nodes.arrayId, XPATH_VAR_NODE_ARRAY);
+
 					for (k = 0; k < j; k++)
 					{
-						XMLNodeHdr *array = (XMLNodeHdr *) getXPathOperandValue(exprState,
-						 res->v.nodeSet.nodes.arrayId, XPATH_VAR_NODE_ARRAY);
+						XMLNodeHdr	node;
 
 						if (k == XMLNODE_MAX_CHILDREN)
 						{
 							elog(ERROR, "Maximum number of %u children exceeded for node document fragment.",
 								 XMLNODE_MAX_CHILDREN);
 						}
-						node = array[k];
-						nodeSizes[k] = getXMLNodeSize(node, true);
-						nodeSizeTotal += nodeSizes[k];
+						node = nodeArray[k];
+						nodeSizeTotal += getXMLNodeSize(node, true) +
+							MAX_PADDING(XNODE_ALIGNOF_COMPNODE);
 					}
 
 					/*
-					 * 'nodeSizeTotal' now equals to the greatest distance
-					 * between parent (doc fragment) and its child.
+					 * 'nodeSizeTotal' now equals to the maximum possible
+					 * distance between parent (doc fragment) and its child.
 					 */
 					bwidth = getXMLNodeOffsetByteWidth(nodeSizeTotal);
-					resSize = VARHDRSZ + sizeof(XPathValueData) + nodeSizeTotal + sizeof(XMLCompNodeHdrData) +
-						bwidth * j;
-					output = (char *) palloc(resSize);
-					xpval = (XPathValue) VARDATA(output);
-					outTmp = (char *) xpval + sizeof(XPathValueData);
-					fragmentHdr = (XMLCompNodeHdr) (outTmp + nodeSizeTotal);
-					refTarget = (char *) fragmentHdr + sizeof(XMLCompNodeHdrData);
-					targetPos = 0;
+					resSize = VARHDRSZ + 1 + MAX_PADDING(XNODE_ALIGNOF_XPATHVAL) +
+						sizeof(XPathValueData) + nodeSizeTotal +
+						MAX_PADDING(XNODE_ALIGNOF_COMPNODE) +
+						sizeof(XMLCompNodeHdrData) + bwidth * j;
+					output = getMemoryForXPathVal(resSize, &xpval, &outData);
 
+					outTmp = (char *) xpval + sizeof(XPathValueData);
+
+					offsAbs = (XMLNodeOffset *) palloc(j * sizeof(XMLNodeOffset));
+					nodeArray = (XMLNodeHdr *) getXPathOperandValue(exprState,
+						 res->v.nodeSet.nodes.arrayId, XPATH_VAR_NODE_ARRAY);
+
+					/*
+					 * Copy the nodes and remember how far each is from the
+					 * beginning.
+					 */
 					for (k = 0; k < j; k++)
 					{
-						XMLNodeOffset root,
-									dist;
-						XMLNodeHdr *nodeArray = (XMLNodeHdr *) getXPathOperandValue(exprState,
-						 res->v.nodeSet.nodes.arrayId, XPATH_VAR_NODE_ARRAY);
-						char	   *ndTarget = outTmp + targetPos;
+						XMLNodeHdr	node;
+						char	   *nodeCopyPtr;
+						XMLNodeOffset root;
 
 						node = nodeArray[k];
-						copyXMLNode(node, ndTarget, false, &root);
-						dist = nodeSizeTotal - (targetPos + root);
-						writeXMLNodeOffset(dist, &refTarget, bwidth, true);
-						targetPos += nodeSizes[k];
+						copyXMLNode(node, outTmp, false, &root);
+						nodeCopyPtr = outTmp + root;
+						offsAbs[k] = nodeCopyPtr - outData;
+						outTmp = nodeCopyPtr + getXMLNodeSize((XMLNodeHdr) nodeCopyPtr, false);
 					}
-					pfree(nodeSizes);
 
+					fragmentHdr = (XMLCompNodeHdr) (TYPEALIGN(XNODE_ALIGNOF_COMPNODE, outTmp));
 					fragmentHdr->common.kind = XMLNODE_DOC_FRAGMENT;
 					fragmentHdr->common.flags = 0;
 					XNODE_SET_REF_BWIDTH(fragmentHdr, bwidth);
 					fragmentHdr->children = j;
+					refTarget = XNODE_FIRST_REF(fragmentHdr);
+					offAbsFrag = (char *) fragmentHdr - outData;
+
+					for (k = 0; k < j; k++)
+					{
+						XMLNodeOffset offRel;
+
+						offRel = offAbsFrag - offsAbs[k];
+						writeXMLNodeOffset(offRel, &refTarget, bwidth, true);
+					}
+					pfree(offsAbs);
+					after = refTarget;
 
 					xpval->type = XPATH_VAL_NODESET;
-					xpval->v.nodeSetRoot = sizeof(XPathValueData) + nodeSizeTotal;
+					xpval->v.nodeSetRoot = (char *) fragmentHdr - (char *) xpval;
 				}
-				SET_VARSIZE(output, resSize);
+				SET_VARSIZE(output, after - output);
 				retValue = (xpathval) output;
 			}
 		}
@@ -1157,9 +1204,10 @@ getXPathExprValue(XPathExprState exprState, xmldoc document, bool *notNull, XPat
 	{
 		if (res->type == XPATH_VAL_NUMBER || res->type == XPATH_VAL_BOOLEAN)
 		{
-			resSize = VARHDRSZ + sizeof(XPathValueData);
-			output = (char *) palloc(resSize);
-			xpval = (XPathValue) VARDATA(output);
+			resSize = VARHDRSZ + 1 + MAX_PADDING(XNODE_ALIGNOF_XPATHVAL) +
+				sizeof(XPathValueData);
+			output = getMemoryForXPathVal(resSize, &xpval, &outData);
+
 			xpval->type = res->type;
 
 			if (res->type == XPATH_VAL_NUMBER)
@@ -1181,9 +1229,10 @@ getXPathExprValue(XPathExprState exprState, xmldoc document, bool *notNull, XPat
 			char	   *resStr = (char *) getXPathOperandValue(exprState, res->v.stringId, XPATH_VAR_STRING);
 			unsigned int len = strlen(resStr);
 
-			resSize = VARHDRSZ + sizeof(XPathValueData) + len;
-			output = (char *) palloc(resSize);
-			xpval = (XPathValue) VARDATA(output);
+			resSize = VARHDRSZ + 1 + MAX_PADDING(XNODE_ALIGNOF_XPATHVAL) +
+				sizeof(XPathValueData) + len;
+			output = getMemoryForXPathVal(resSize, &xpval, &outData);
+
 			strcpy(xpval->v.strVal, resStr);
 			xpval->type = res->type;
 			*notNull = true;
@@ -1196,6 +1245,16 @@ getXPathExprValue(XPathExprState exprState, xmldoc document, bool *notNull, XPat
 		retValue = (xpathval) output;
 	}
 	return retValue;
+}
+
+static XPathValue
+getXPathValue(xpathval raw)
+{
+	char	   *inData = VARDATA(raw);
+	uint8	   *xpvOff = (uint8 *) inData;
+	XPathValue	result = (XPathValue) (inData + *xpvOff);
+
+	return result;
 }
 
 static char *
@@ -1230,8 +1289,7 @@ PG_FUNCTION_INFO_V1(xpathval_out);
 Datum
 xpathval_out(PG_FUNCTION_ARGS)
 {
-	xpathval	xpval = PG_GETARG_VARLENA_P(0);
-	XPathValue	xpv = (XPathValue) VARDATA(xpval);
+	XPathValue	xpv = getXPathValue(PG_GETARG_VARLENA_P(0));
 	char	   *result = castXPathValToStr(xpv);
 
 	PG_RETURN_CSTRING(result);
@@ -1243,8 +1301,7 @@ PG_FUNCTION_INFO_V1(xpathval_to_bool);
 Datum
 xpathval_to_bool(PG_FUNCTION_ARGS)
 {
-	xpathval	xpval = PG_GETARG_VARLENA_P(0);
-	XPathValue	xpv = (XPathValue) VARDATA(xpval);
+	XPathValue	xpv = getXPathValue(PG_GETARG_VARLENA_P(0));
 	bool		result = castXPathValToBool(xpv);
 
 	PG_RETURN_BOOL(result);
@@ -1256,8 +1313,7 @@ PG_FUNCTION_INFO_V1(xpathval_to_float8);
 Datum
 xpathval_to_float8(PG_FUNCTION_ARGS)
 {
-	xpathval	xpval = PG_GETARG_VARLENA_P(0);
-	XPathValue	xpv = (XPathValue) VARDATA(xpval);
+	XPathValue	xpv = getXPathValue(PG_GETARG_VARLENA_P(0));
 	float8		result = castXPathValToNum(xpv);
 
 	PG_RETURN_FLOAT8(result);
@@ -1269,8 +1325,7 @@ PG_FUNCTION_INFO_V1(xpathval_to_numeric);
 Datum
 xpathval_to_numeric(PG_FUNCTION_ARGS)
 {
-	xpathval	xpval = PG_GETARG_VARLENA_P(0);
-	XPathValue	xpv = (XPathValue) VARDATA(xpval);
+	XPathValue	xpv = getXPathValue(PG_GETARG_VARLENA_P(0));
 	float8		resFloat = castXPathValToNum(xpv);
 	Datum		resDatum = DirectFunctionCall1Coll(float8_numeric, InvalidOid, Float8GetDatum(resFloat));
 
@@ -1283,8 +1338,7 @@ PG_FUNCTION_INFO_V1(xpathval_to_int4);
 Datum
 xpathval_to_int4(PG_FUNCTION_ARGS)
 {
-	xpathval	xpval = PG_GETARG_VARLENA_P(0);
-	XPathValue	xpv = (XPathValue) VARDATA(xpval);
+	XPathValue	xpv = getXPathValue(PG_GETARG_VARLENA_P(0));
 	float8		resFloat = castXPathValToNum(xpv);
 	Datum		resDatum = DirectFunctionCall1Coll(dtoi4, InvalidOid, Float8GetDatum(resFloat));
 
@@ -1298,26 +1352,34 @@ Datum
 xpathval_to_xmlnode(PG_FUNCTION_ARGS)
 {
 	xpathval	xpval = PG_GETARG_VARLENA_P(0);
-	XPathValue	xp = (XPathValue) VARDATA(xpval);
+	XPathValue	xpv = getXPathValue(xpval);
 
-	if (xp->type == XPATH_VAL_NODESET)
+	if (xpv->type == XPATH_VAL_NODESET)
 	{
-		unsigned int sizeNew = VARSIZE(xpval) - sizeof(XPathValueData);
-		unsigned int resSize = sizeNew + sizeof(XMLNodeOffset);
-		char	   *result = (char *) palloc(resSize);
-		XPathValue	xpv = (XPathValue) VARDATA(xpval);
-		char	   *src = (char *) xpv + sizeof(XPathValueData);
-		char	   *dst = VARDATA(result);
-		XMLNodeOffset *rootOffPtr = (XMLNodeOffset *) (result + sizeNew);
+		XMLNodeHdr	rootNode;
+		xmlnode		result;
 
-		memcpy(dst, src, sizeNew - VARHDRSZ);
-		*rootOffPtr = xp->v.nodeSetRoot - sizeof(XPathValueData);
-		SET_VARSIZE(result, resSize);
+		rootNode = (XMLNodeHdr) ((char *) xpv + xpv->v.nodeSetRoot);
+		result = (xmlnode) copyXMLNode(rootNode, NULL, true, NULL);
 		PG_RETURN_POINTER(result);
 	}
 	else
 	{
-		elog(ERROR, "%s can't be cast to node", xpathValueTypes[xp->type]);
+		elog(ERROR, "%s can't be cast to node", xpathValueTypes[xpv->type]);
 		PG_RETURN_NULL();
 	}
+}
+
+static char *
+getMemoryForXPathVal(unsigned int size, XPathValue *xpval, char **outData)
+{
+	char	   *output;
+	uint8	   *xpvOff;
+
+	output = (char *) palloc(size);
+	*outData = VARDATA(output);
+	xpvOff = (uint8 *) *outData;
+	*xpval = (XPathValue) TYPEALIGN(XNODE_ALIGNOF_XPATHVAL, (xpvOff + 1));
+	*xpvOff = (char *) *xpval - *outData;
+	return output;
 }

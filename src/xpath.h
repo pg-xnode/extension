@@ -165,7 +165,7 @@ typedef struct XPathValueData
 	{
 		/*
 		 * Where the node (or document fragment in case multiple nodes are
-		 * stored here) stargs.
+		 * stored here) starts.
 		 */
 		XMLNodeOffset nodeSetRoot;
 		float8		numVal;
@@ -175,6 +175,8 @@ typedef struct XPathValueData
 }	XPathValueData;
 
 typedef struct XPathValueData *XPathValue;
+
+#define XNODE_ALIGNOF_XPATHVAL	ALIGNOF_DOUBLE
 
 typedef struct varlena xpathvaltype;
 typedef xpathvaltype *xpathval;
