@@ -275,21 +275,19 @@ xmlnode_to_xmldoc(PG_FUNCTION_ARGS)
 	}
 	else if (rootNode->common.kind == XMLNODE_DOC_FRAGMENT)
 	{
+		char		bwidth;
+
 		checkXMLWellFormedness(rootNode);
 
-		/*
-		 * The document root's role is the same like that of the document
-		 * fragment: it's a parent of the actual nodes. So we just need to
-		 * copy the whole tree and change the root node kind.
-		 */
-		document = (xmldoc) palloc(sizeOrig);
-		docData = (char *) VARDATA(document);
-		memcpy(document, node, sizeOrig);
-
-		rootDoc = (XMLCompNodeHdr) (docData + rootOffsetOrig);
+		bwidth = XNODE_GET_REF_BWIDTH(rootNode);
+		document = (xmldoc) copyXMLNode((XMLNodeHdr) rootNode, NULL, true, NULL);
+		rootDoc = (XMLCompNodeHdr) XNODE_ROOT(document);
 		rootDoc->common.kind = XMLNODE_DOC;
+
+		/* Document may have specific flags... */
 		rootDoc->common.flags = 0;
-		SET_VARSIZE(document, sizeOrig);
+		/* however flags also contain byt width and that must stay unchanged. */
+		XNODE_SET_REF_BWIDTH(rootDoc, bwidth);
 	}
 	else
 	{
