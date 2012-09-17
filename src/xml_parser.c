@@ -1494,7 +1494,7 @@ processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowe
 			if (attrsNew != NULL)
 			{
 				unsigned int i;
-				char	   *attrData = state->tree + attrOffsets->value.singleOff;
+				char	   *attrData;
 				unsigned int attrDataOrigSize = state->dstPos - attrOffsets->value.singleOff;
 
 				Assert(newCount >= attributes);
@@ -1527,6 +1527,7 @@ processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowe
 				{
 					ensureSpace(newSize - attrDataOrigSize, state);
 				}
+				attrData = state->tree + attrOffsets->value.singleOff;
 				memcpy(attrData, attrsNew, newSize);
 				if (newSize != attrDataOrigSize)
 				{
@@ -2437,28 +2438,33 @@ static unsigned int
 saveNodeHeader(XMLParserState state, XMLNodeInternal nodeInfo, char flags)
 {
 	unsigned int incr;
-	char	   *outPosOrig,
-			   *nodeStart;
+	char	   *outPtr;
 	XMLNodeHdr	node;
 	unsigned int padding = 0;
 
-	outPosOrig = state->tree + nodeInfo->nodeOut;
+	outPtr = state->tree + nodeInfo->nodeOut;
 
 	if (nodeInfo->tokenType & (TOKEN_ETAG | TOKEN_EMPTY_ELEMENT))
 	{
+		char	   *outPtrAligned;
+
 		incr = sizeof(XMLCompNodeHdrData);
-		nodeStart = (char *) TYPEALIGN(XNODE_ALIGNOF_COMPNODE, outPosOrig);
-		padding = nodeStart - outPosOrig;
+		outPtrAligned = (char *) TYPEALIGN(XNODE_ALIGNOF_COMPNODE, outPtr);
+		padding = outPtrAligned - outPtr;
 		incr += padding;
 	}
 	else
 	{
 		incr = sizeof(XMLNodeHdrData);
-		nodeStart = outPosOrig;
 	}
+
 	ensureSpace(incr, state);
 
-	node = (XMLNodeHdr) nodeStart;
+	/*
+	 * 'outPtrAligned can't be used because reallocation might have taken
+	 * place.
+	 */
+	node = (XMLNodeHdr) (state->tree + nodeInfo->nodeOut + padding);;
 	node->flags = flags;
 	switch (nodeInfo->tokenType)
 	{
