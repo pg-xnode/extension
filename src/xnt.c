@@ -1218,7 +1218,7 @@ xnode_from_template(PG_FUNCTION_ARGS)
 
 		if (templRootInternal->children.position == 1)
 		{
-			writeXMLNodeInternal(templRootInternal->children.content->value.singlePtr, &resTmp, &offRoot);
+			writeXMLNodeInternal(templRootInternal->children.content->value.singlePtr, true, &resTmp, &offRoot);
 		}
 		else
 		{
@@ -1226,7 +1226,7 @@ xnode_from_template(PG_FUNCTION_ARGS)
 			 * The template will be written too in addition to its children
 			 * and finally turned into a document fragment.
 			 */
-			writeXMLNodeInternal(templRootInternal, &resTmp, &offRoot);
+			writeXMLNodeInternal(templRootInternal, true, &resTmp, &offRoot);
 		}
 
 		resTmp = (char *) TYPEALIGN(XNODE_ALIGNOF_NODE_OFFSET, resTmp);

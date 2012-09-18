@@ -379,7 +379,7 @@ typedef struct XNodeInternalData
 
 typedef struct XNodeInternalData *XNodeInternal;
 
-extern void writeXMLNodeInternal(XNodeInternal node, char **output, XMLNodeOffset *root);
+extern void writeXMLNodeInternal(XNodeInternal node, bool checkElementChildren, char **output, XMLNodeOffset *root);
 
 /*
  * DOM functions

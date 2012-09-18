@@ -372,7 +372,7 @@ updateXMLDocument(XMLScan xscan, xmldoc doc, XMLNodeAction action, XMLNodeHdr ne
 	result = (char *) palloc(getTreeStorageSize(docModifiable));
 	resTmp = resData = VARDATA(result);
 
-	writeXMLNodeInternal(docModifiable, &resTmp, &resRootOff);
+	writeXMLNodeInternal(docModifiable, false, &resTmp, &resRootOff);
 	docRootNew = (XMLCompNodeHdr) (resData + resRootOff);
 	checkXMLWellFormedness(docRootNew);
 

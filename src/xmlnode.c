@@ -58,6 +58,8 @@ UTF8Interval nameCharIntervals[XNODE_NAME_CHAR_INTERVALS] =
 
 static void getNodeInfo(XMLNodeHdr node, unsigned int *size, unsigned short *count);
 static int	attrNameComparator(const void *left, const void *right);
+static XNodeInternal *reorderElementChildren(XNodeInternal node);
+static bool elementChildrenNeedReordering(XNodeInternal node);
 
 typedef struct TypeInfo
 {
@@ -433,17 +435,16 @@ dumpXMLNode(char *data, XMLNodeOffset rootNdOff)
  * for adding XML declaration to the root node.
  */
 void
-writeXMLNodeInternal(XNodeInternal node, char **output, XMLNodeOffset *root)
+writeXMLNodeInternal(XNodeInternal node, bool checkElementChildren, char **output, XMLNodeOffset *root)
 {
 	XMLNodeOffset *offs = NULL;
 	char	   *start = *output;
 	unsigned short i;
 	unsigned int childCount = 0;
 	XNodeListItem *childItem = NULL;
-	XNodeInternal *childrenTmp = NULL;
-	bool		mustReorder = false;
-	bool		hasNonAttr = false;
+	XNodeInternal *childrenReordered = NULL;
 	XMLNodeKind nodeKind = node->node->kind;
+	bool		hasNonAttribute = false;
 
 	if ((nodeKind == XMLNODE_DOC || nodeKind == XMLNODE_ELEMENT || nodeKind == XNTNODE_TEMPLATE) &&
 		node->children.content != NULL)
@@ -451,102 +452,44 @@ writeXMLNodeInternal(XNodeInternal node, char **output, XMLNodeOffset *root)
 		childCount = node->children.position;
 	}
 
-	if (childCount > 0)
+	if (nodeKind == XMLNODE_ELEMENT && childCount > 0)
 	{
-		Assert(nodeKind == XMLNODE_ELEMENT || nodeKind == XMLNODE_DOC ||
-			   nodeKind == XNTNODE_TEMPLATE);
-
-		offs = (XMLNodeOffset *) palloc(childCount * sizeof(XMLNodeOffset));
-
-		if (nodeKind == XMLNODE_ELEMENT)
+		if (checkElementChildren)
 		{
-			childrenTmp = (XNodeInternal *) palloc(childCount * sizeof(XNodeInternal));
-			childItem = (XNodeListItem *) (&node->children)->content;
-
-			for (i = 0; i < childCount; i++)
-			{
-				XNodeInternal child = (XNodeInternal) childItem->value.singlePtr;
-
-				if (child->node->kind != XMLNODE_ATTRIBUTE)
-				{
-					hasNonAttr = true;
-				}
-
-				if (!mustReorder && hasNonAttr && child->node->kind == XMLNODE_ATTRIBUTE)
-				{
-					mustReorder = true;
-				}
-
-				childrenTmp[i] = child;
-				childItem++;
-			}
+			if (elementChildrenNeedReordering(node))
+				childrenReordered = reorderElementChildren(node);
 		}
-	}
 
-	if (mustReorder)
-	{
-		unsigned short i,
-					nonAttr;
-
-		/*
-		 * Ensure that attributes are at the lowest positions in the reference
-		 * list.
-		 */
-
-		/* Start with finding the first non-attribute node. */
+		childItem = (XNodeListItem *) (&node->children)->content;
 		for (i = 0; i < childCount; i++)
 		{
-			if (childrenTmp[i]->node->kind != XMLNODE_ATTRIBUTE)
+			XNodeInternal child = (XNodeInternal) childItem->value.singlePtr;
+
+			if (child->node->kind != XMLNODE_ATTRIBUTE)
 			{
+				hasNonAttribute = true;
 				break;
 			}
-		}
-		nonAttr = i++;
-
-		/*
-		 * If attribute is found anywhere after that, move it to position
-		 * immediately following the last correctly located (i.e. near the
-		 * reference array beginning) attribute.
-		 */
-		for (; i < childCount; i++)
-		{
-			if (childrenTmp[i]->node->kind == XMLNODE_ATTRIBUTE)
-			{
-				XNodeInternal attr;
-				XNodeInternal *src,
-						   *dst;
-				unsigned int size = (i - nonAttr) * sizeof(XNodeInternal);
-
-				attr = childrenTmp[i];
-				src = childrenTmp + nonAttr;
-				dst = src + 1;
-				memmove(dst, src, size);
-				childrenTmp[nonAttr] = attr;
-				nonAttr++;
-			}
+			childItem++;
 		}
 	}
 
-	if (nodeKind != XMLNODE_ELEMENT)
-	{
-		/*
-		 * 'childrenTmp' is not initialized, we're iterating the children
-		 * first time.
-		 */
-		childItem = (XNodeListItem *) (&node->children)->content;
-	}
-
-	/* Make sure that attributes are unique. */
-	if (nodeKind == XMLNODE_ELEMENT && childCount > 0)
+	if (nodeKind == XMLNODE_ELEMENT && childCount > 0 && checkElementChildren)
 	{
 		unsigned int attrCount = 0;
 		char	  **attrNames = (char **) palloc(childCount * sizeof(char *));
 
+		childItem = (XNodeListItem *) (&node->children)->content;
+
+		/* Make sure that attributes are unique. */
+
 		for (i = 0; i < childCount; i++)
 		{
-			if (childrenTmp[i]->node->kind == XMLNODE_ATTRIBUTE)
+			XNodeInternal child = (XNodeInternal) childItem->value.singlePtr;
+
+			if (child->node->kind == XMLNODE_ATTRIBUTE)
 			{
-				XMLNodeHdr	attrNode = childrenTmp[i]->node;
+				XMLNodeHdr	attrNode = child->node;
 
 				attrNames[attrCount++] = XNODE_CONTENT(attrNode);
 			}
@@ -554,6 +497,7 @@ writeXMLNodeInternal(XNodeInternal node, char **output, XMLNodeOffset *root)
 			{
 				break;
 			}
+			childItem++;
 		}
 
 		if (attrCount > 1)
@@ -571,14 +515,21 @@ writeXMLNodeInternal(XNodeInternal node, char **output, XMLNodeOffset *root)
 		pfree(attrNames);
 	}
 
+
+	if (childrenReordered == NULL)
+	{
+		childItem = (XNodeListItem *) (&node->children)->content;
+	}
+	offs = (XMLNodeOffset *) palloc(childCount * sizeof(XMLNodeOffset));
+
 	for (i = 0; i < childCount; i++)
 	{
 		XNodeInternal child;
 		XMLNodeOffset root = 0;
 
-		if (childrenTmp != NULL)
+		if (childrenReordered != NULL)
 		{
-			child = childrenTmp[i];
+			child = childrenReordered[i];
 		}
 		else
 		{
@@ -587,13 +538,8 @@ writeXMLNodeInternal(XNodeInternal node, char **output, XMLNodeOffset *root)
 		}
 
 		offs[i] = *output - start;
-		writeXMLNodeInternal(child, output, &root);
+		writeXMLNodeInternal(child, checkElementChildren, output, &root);
 		offs[i] += root;
-	}
-
-	if (childrenTmp != NULL)
-	{
-		pfree(childrenTmp);
 	}
 
 	/*
@@ -617,10 +563,12 @@ writeXMLNodeInternal(XNodeInternal node, char **output, XMLNodeOffset *root)
 		{
 			case XMLNODE_ELEMENT:
 				compNode->common.kind = XMLNODE_ELEMENT;
-				if (!hasNonAttr)
+
+				if (!hasNonAttribute)
 				{
 					compNode->common.flags |= XNODE_EMPTY;
 				}
+
 				break;
 
 			case XNTNODE_TEMPLATE:
@@ -676,6 +624,11 @@ writeXMLNodeInternal(XNodeInternal node, char **output, XMLNodeOffset *root)
 		copyRootPtr = *output + nodeRoot;
 		*root = copyRootPtr - start;
 		*output = copyRootPtr + getXMLNodeSize((XMLNodeHdr) copyRootPtr, false);
+	}
+
+	if (childrenReordered != NULL)
+	{
+		pfree(childrenReordered);
 	}
 
 	if (offs != NULL)
@@ -1438,4 +1391,107 @@ static int
 attrNameComparator(const void *left, const void *right)
 {
 	return strcmp((char *) left, (char *) right);
+}
+
+/*
+ * Ensure that attributes are at lower positions than the other elements.
+ */
+static XNodeInternal *
+reorderElementChildren(XNodeInternal node)
+{
+	unsigned short i,
+				nonAttr;
+	XNodeListItem *childItem;
+	XNodeInternal *childrenReordered = NULL;
+	unsigned int childCount = node->children.position;
+
+	/*
+	 * First, copy the child elements into an array to simplify access.
+	 */
+
+	childItem = (XNodeListItem *) (&node->children)->content;
+	childrenReordered = (XNodeInternal *) palloc(childCount * sizeof(XNodeInternal));
+	for (i = 0; i < childCount; i++)
+	{
+		childrenReordered[i] = (XNodeInternal) childItem->value.singlePtr;
+		childItem++;
+	}
+
+	/* Find the first non-attribute node. */
+	for (i = 0; i < childCount; i++)
+	{
+		if (childrenReordered[i]->node->kind != XMLNODE_ATTRIBUTE)
+		{
+			break;
+		}
+	}
+	nonAttr = i++;
+
+	/*
+	 * If attribute is found anywhere after that, move it to position
+	 * immediately following the last correctly located (i.e. near the
+	 * reference array beginning) attribute.
+	 */
+	for (; i < childCount; i++)
+	{
+		if (childrenReordered[i]->node->kind == XMLNODE_ATTRIBUTE)
+		{
+			XNodeInternal attr;
+			XNodeInternal *src,
+					   *dst;
+			unsigned int size;
+
+			attr = childrenReordered[i];
+
+			/*
+			 * Move the 'first non-attribute' and all the followers up to the
+			 * attribute being processed by one position up. The current
+			 * (i-th) attribute get's overwritten but we already have the
+			 * value in 'attr'.
+			 */
+			src = childrenReordered + nonAttr;
+			dst = src + 1;
+			size = (i - nonAttr) * sizeof(XNodeInternal);
+			memmove(dst, src, size);
+			/* ... and put the attribute in front of the nodes just moved. */
+			childrenReordered[nonAttr] = attr;
+
+			/* The 'first non-attribute' has just shifted. */
+			nonAttr++;
+		}
+	}
+	return childrenReordered;
+}
+
+static bool
+elementChildrenNeedReordering(XNodeInternal node)
+{
+	bool		hasNonAttr = false;
+	bool		mustReorder = false;
+	XNodeListItem *childItem = (XNodeListItem *) (&node->children)->content;
+	unsigned int childCount = node->children.position;
+	unsigned int i;
+
+	for (i = 0; i < childCount; i++)
+	{
+		XNodeInternal child = (XNodeInternal) childItem->value.singlePtr;
+
+		if (child->node->kind != XMLNODE_ATTRIBUTE)
+		{
+			hasNonAttr = true;
+		}
+
+		if (!mustReorder && hasNonAttr && child->node->kind == XMLNODE_ATTRIBUTE)
+		{
+			/*
+			 * We know that non-attribute is there but another attribute
+			 * appears after that.
+			 */
+			mustReorder = true;
+			break;
+		}
+
+		childItem++;
+	}
+	return mustReorder;
 }
