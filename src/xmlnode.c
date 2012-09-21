@@ -190,6 +190,7 @@ xmlnode_to_xmldoc(PG_FUNCTION_ARGS)
 {
 	XMLCompNodeHdr rootNode,
 				rootDoc;
+	XMLNodeKind rootNodeKind;
 	unsigned int sizeNewMax;
 	xmlnode		node = (xmlnode) PG_GETARG_VARLENA_P(0);
 	xmldoc		document = NULL;
@@ -202,8 +203,10 @@ xmlnode_to_xmldoc(PG_FUNCTION_ARGS)
 	XMLNodeOffset rootOffsetOrig = XNODE_ROOT_OFFSET(node);
 
 	rootNode = (XMLCompNodeHdr) (nodeData + rootOffsetOrig);
+	rootNodeKind = rootNode->common.kind;
 
-	if (rootNode->common.kind == XMLNODE_ELEMENT || rootNode->common.kind == XMLNODE_DOC)
+	if (rootNodeKind == XMLNODE_ELEMENT || rootNodeKind == XMLNODE_DOC ||
+		rootNodeKind == XMLNODE_DOC_FRAGMENT)
 	{
 		unsigned int unresolvedNmspcCount;
 		char	  **unresolvedNamespaces = getUnresolvedXMLNamespaces((XMLNodeHdr) rootNode, &unresolvedNmspcCount);

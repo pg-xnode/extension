@@ -970,16 +970,16 @@ dumpXScanDebug(StringInfo output, XMLScan scan, char *docData, XMLNodeOffset doc
 char	  **
 getUnresolvedXMLNamespaces(XMLNodeHdr node, unsigned int *count)
 {
+	XMLNodeKind nodeKind = node->kind;
 	XMLCompNodeHdr element;
 	XMLNamespaceCheckState stateData;
 	char	  **result = NULL;
 	unsigned int resultSize;
 	unsigned int i;
-	XNodeListItem *item;
 
 	*count = 0;
 
-	if (node->kind == XMLNODE_ATTRIBUTE && (node->flags & XNODE_NMSP_PREFIX))
+	if (nodeKind == XMLNODE_ATTRIBUTE && (node->flags & XNODE_NMSP_PREFIX))
 	{
 		char	   *attrName = XNODE_CONTENT(node);
 		unsigned int nmspPrefLen = strlen(XNODE_NAMESPACE_DEF_PREFIX);
@@ -1007,7 +1007,9 @@ getUnresolvedXMLNamespaces(XMLNodeHdr node, unsigned int *count)
 	}
 
 	element = (XMLCompNodeHdr) node;
-	if (element->common.kind != XMLNODE_DOC && element->common.kind != XMLNODE_ELEMENT)
+
+	if (nodeKind != XMLNODE_DOC && nodeKind != XMLNODE_ELEMENT &&
+		nodeKind != XMLNODE_DOC_FRAGMENT)
 	{
 		return NULL;
 	}
@@ -1018,16 +1020,21 @@ getUnresolvedXMLNamespaces(XMLNodeHdr node, unsigned int *count)
 	resultSize = stateData.result.position;
 	xmlnodeContainerFree(&stateData.declarations);
 
-	result = (char **) palloc(resultSize * sizeof(char *));
-	item = stateData.result.content;
-	for (i = 0; i < resultSize; i++)
+	if (resultSize > 0)
 	{
-		char	   *nmspName;
+		XNodeListItem *item;
 
-		Assert(item->kind == XNODE_LIST_ITEM_SINGLE_PTR);
-		nmspName = (char *) item->value.singlePtr;
-		result[i] = nmspName;
-		item++;
+		result = (char **) palloc(resultSize * sizeof(char *));
+		item = stateData.result.content;
+		for (i = 0; i < resultSize; i++)
+		{
+			char	   *nmspName;
+
+			Assert(item->kind == XNODE_LIST_ITEM_SINGLE_PTR);
+			nmspName = (char *) item->value.singlePtr;
+			result[i] = nmspName;
+			item++;
+		}
 	}
 	xmlnodeContainerFree(&stateData.result);
 	*count = resultSize;
@@ -1116,7 +1123,7 @@ resolveNamespaces(XMLNodeContainer declarations, unsigned int declsActive, char 
 
 /*
  * Collect names of all namespaces used in the current node (element) and find out which
- * are have no declaration neither in this node nor above it.
+ * have no declaration, neither in this node nor above.
  */
 static void
 checkNodeNamespaces(XMLNodeHdr *stack, unsigned int depth, void *userData)
@@ -1139,12 +1146,23 @@ checkNodeNamespaces(XMLNodeHdr *stack, unsigned int depth, void *userData)
 	 */
 	Assert(currentNode->common.kind != XMLNODE_ATTRIBUTE);
 
-	if (currentNode->common.kind != XMLNODE_ELEMENT && currentNode->common.kind != XMLNODE_DOC_FRAGMENT)
+	state = (XMLNamespaceCheckState *) userData;
+
+	if (currentNode->common.kind == XMLNODE_DOC_FRAGMENT)
+	{
+		Assert(depth == 0);
+
+		/*
+		 * The first element of the stack must not stay uninitialized even if
+		 * we're just gong to return.
+		 */
+		state->counts[depth] = 0;
+	}
+
+	if (currentNode->common.kind != XMLNODE_ELEMENT)
 	{
 		return;
 	}
-
-	state = (XMLNamespaceCheckState *) userData;
 
 	if (currentNode->children > 0)
 	{
@@ -1165,7 +1183,8 @@ checkNodeNamespaces(XMLNodeHdr *stack, unsigned int depth, void *userData)
 	 * 'nmspStack->counts[depth]' says how many declarations (counting from
 	 * position 0 in the stack) are valid for the current xml element.
 	 */
-	state->counts[depth] = nmspDeclCount;;
+	state->counts[depth] = nmspDeclCount;
+
 	if (depth > 0)
 	{
 		state->counts[depth] += state->counts[depth - 1];
