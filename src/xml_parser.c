@@ -1846,9 +1846,9 @@ checkNamespaces(XMLParserState state, XMLNodeInternal nodeInfo, unsigned int att
 
 	if (!elNmspNameResolved || attrsUnresolved > 0)
 	{
-		resolveNamespaces(&state->nmspDecl, state->nmspDecl.position, elNmspName, &elNmspNameResolved, attrsPrefixed,
-						  attrsPrefixedCount, attrFlags, &attrsUnresolved, state->nmspSpecialName,
-						  state->nmspSpecialValue, elNmspIsSpecial);
+		resolveXMLNamespaces(&state->nmspDecl, state->nmspDecl.position, elNmspName, &elNmspNameResolved, attrsPrefixed,
+							 attrsPrefixedCount, attrFlags, &attrsUnresolved, state->nmspSpecialName,
+							 state->nmspSpecialValue, elNmspIsSpecial);
 	}
 
 	if (!elNmspNameResolved)

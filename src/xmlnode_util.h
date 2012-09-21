@@ -64,35 +64,7 @@ extern bool xmlStringIsNumber(char *str, double *numValue, char **end, bool skip
 extern bool checkFragmentForAttributes(XMLCompNodeHdr fragment);
 extern bool isXMLNodeDescendant(XMLNodeHdr node, XMLCompNodeHdr treeRoot);
 
-extern char **getUnresolvedXMLNamespaces(XMLNodeHdr node, unsigned int *count);
-extern void resolveNamespaces(XMLNodeContainer declarations, unsigned int declsActive, char *elNmspName,
-				  bool *elNmspNameResolved, XMLNodeHdr *attrsPrefixed, unsigned int attrsPrefixedCount, bool *attrFlags,
-				  unsigned short *attrsUnresolved, char *specNmspName, char *specNmspValue, bool *elNmspIsSpecial);
-extern void collectXMLNamespaceDeclarations(XMLCompNodeHdr currentNode, unsigned int *attrCount,
-								unsigned int *nmspDeclCount, XMLNodeContainer declarations, bool declsOnly, XMLNodeHdr **attrsPrefixed,
-								unsigned int *attrsPrefixedCount);
-
 extern void xnodeInitStringInfo(StringInfo stringInfo, int len);
-
-typedef struct XMLNamespaceCheckState
-{
-	XMLNodeContainerData declarations;
-
-	/* How many (non-unique) declarations each level of the stack adds. */
-	unsigned int counts[XMLTREE_WALKER_MAX_DEPTH];
-
-	/*
-	 * Array of unbound namespaces (without 'xmlns:' prefix). Each element of
-	 * this array is 'unique'.
-	 */
-
-	/*
-	 * TODO Enhance the container so that value can be added at any position.
-	 * Then keep 'result' sorted and use binary search when checking for
-	 * duplicate values.
-	 */
-	XMLNodeContainerData result;
-} XMLNamespaceCheckState;
 
 typedef struct XMLNodeIteratorData
 {

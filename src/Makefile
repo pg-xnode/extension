@@ -1,6 +1,6 @@
 MODULE_big = xnode
 OBJS = xmlnode.o xpath.o xpath_parser.o xml_parser.o xmlnode_util.o xpath_functions.o \
-xml_scan.o xml_update.o xnt.o dtd.o
+xml_scan.o xml_update.o xnt.o dtd.o namespace.o
 
 EXTENSION = xnode
 DATA = xnode--0.7.1.sql

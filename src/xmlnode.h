@@ -382,6 +382,17 @@ typedef struct XNodeInternalData *XNodeInternal;
 extern void writeXMLNodeInternal(XNodeInternal node, bool checkElementChildren, char **output, XMLNodeOffset *root);
 
 /*
+ * Namespace
+ */
+extern char **getUnresolvedXMLNamespaces(XMLNodeHdr node, unsigned int *count);
+extern void resolveXMLNamespaces(XMLNodeContainer declarations, unsigned int declsActive, char *elNmspName,
+					 bool *elNmspNameResolved, XMLNodeHdr *attrsPrefixed, unsigned int attrsPrefixedCount, bool *attrFlags,
+					 unsigned short *attrsUnresolved, char *specNmspName, char *specNmspValue, bool *elNmspIsSpecial);
+extern void collectXMLNamespaceDeclarations(XMLCompNodeHdr currentNode, unsigned int *attrCount,
+								unsigned int *nmspDeclCount, XMLNodeContainer declarations, bool declsOnly, XMLNodeHdr **attrsPrefixed,
+								unsigned int *attrsPrefixedCount);
+
+/*
  * DOM functions
  */
 extern Datum xmlnode_children(PG_FUNCTION_ARGS);
