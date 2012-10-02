@@ -260,11 +260,15 @@ getNextXMLNode(XMLScan xscan)
 					if (xpEl->hasPredicate)
 					{
 						XPathExprOperandValueData result;
-						XPathExpression exprOrig = (XPathExpression) ((char *) xpEl + sizeof(XPathElementData) +
-														   strlen(nameTest));
-						XPathExprState exprState = prepareXPathExpression(exprOrig, currentElement,
-								 xscan->document, xscan->xpathHeader, xscan);
+						char	   *exprUnaligned;
+						XPathExpression exprOrig;
+						XPathExprState exprState;
 
+						exprUnaligned = (char *) xpEl + sizeof(XPathElementData) +
+							strlen(nameTest);
+						exprOrig = (XPathExpression) TYPEALIGN(XPATH_ALIGNOF_EXPR, exprUnaligned);
+						exprState = prepareXPathExpression(exprOrig, currentElement,
+								 xscan->document, xscan->xpathHeader, xscan);
 						evaluateXPathExpression(exprState, exprState->expr, 0, &result);
 
 						if (result.isNull)
@@ -642,12 +646,16 @@ evaluateXPathExpression(XPathExprState exprState, XPathExpression expr, unsigned
 	bool		neg;
 
 	currentPtr += sizeof(XPathExpressionData);
+	Assert(PointerIsAligned(currentPtr, XPATH_ALIGNOF_OFFSET));
+
 	if (recursionLevel == 0)
 	{
-		unsigned short varSize = expr->variables * sizeof(XPathOffset);
+		unsigned short varSize = XPATH_EXPR_VAR_MAX * sizeof(XPathOffset);
 
 		currentPtr += varSize;
 	}
+
+	currentPtr = (char *) TYPEALIGN(XPATH_ALIGNOF_OPERAND, currentPtr);
 	currentOpnd = (XPathExprOperand) currentPtr;
 	prepareLiteral(exprState, currentOpnd);
 	currentSize = evaluateXPathOperand(exprState, currentOpnd, recursionLevel, result);
@@ -659,12 +667,13 @@ evaluateXPathExpression(XPathExprState exprState, XPathExpression expr, unsigned
 
 		currentPtr += currentSize;
 		operator = XPATH_EXPR_OPERATOR(currentPtr);
-		currentSize = sizeof(XPathExprOperatorIdStore);
+		currentSize = sizeof(XPathExprOperatorStorageData);
 		currentPtr += currentSize;
 		if (i == 0)
 		{
 			firstOp = operator->id;
 		}
+		currentPtr = (char *) TYPEALIGN(XPATH_ALIGNOF_OPERAND, currentPtr);
 		currentOpnd = (XPathExprOperand) currentPtr;
 		prepareLiteral(exprState, currentOpnd);
 
@@ -784,7 +793,7 @@ static void
 evaluateXPathFunction(XPathExprState exprState, XPathExpression funcExpr, unsigned short recursionLevel,
 					  XPathExprOperandValue result)
 {
-	char	   *c = (char *) funcExpr + sizeof(XPathExpressionData);
+	char	   *c;
 	unsigned short i;
 	XPathExprOperandValue args,
 				argsTmp;
@@ -799,9 +808,14 @@ evaluateXPathFunction(XPathExprState exprState, XPathExpression funcExpr, unsign
 	argsTmp = args = (XPathExprOperandValue) palloc(funcExpr->members * sizeof(XPathExprOperandValueData));
 	argTypesReceived = (XPathValueType *) palloc(funcExpr->members * sizeof(XPathValueType));
 
+	c = (char *) funcExpr + sizeof(XPathExpressionData);
+
 	for (i = 0; i < funcExpr->members; i++)
 	{
-		XPathExprOperand opnd = (XPathExprOperand) c;
+		XPathExprOperand opnd;
+
+		c = (char *) TYPEALIGN(XPATH_ALIGNOF_OPERAND, c);
+		opnd = (XPathExprOperand) c;
 
 		if (opnd->common.type == XPATH_OPERAND_EXPR_TOP || opnd->common.type == XPATH_OPERAND_EXPR_SUB ||
 			opnd->common.type == XPATH_OPERAND_FUNC)

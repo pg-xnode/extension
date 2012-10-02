@@ -68,7 +68,8 @@ CREATE TYPE @extschema@.path (
 	internallength = variable,
 	input = @extschema@.path_in,
 	output = @extschema@.path_out,
-	alignment = int,
+	-- 8-aligned because float8 is used to represent numbers
+	alignment = double,
 	storage = plain
 );
 
@@ -252,7 +253,8 @@ CREATE TYPE xnt (
 	internallength = variable,
 	input = xnt_in,
 	output = xnt_out,
-	alignment = int,
+	-- 8-aligned because it may contain XPath expressions
+	alignment = double,
 	storage = extended
 );
 

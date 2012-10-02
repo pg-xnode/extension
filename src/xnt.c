@@ -221,8 +221,8 @@ preprocessXNTAttributes(XNodeListItem *attrOffsets, unsigned short attrCount, ch
 			   *result = NULL;
 	unsigned int *attrSizes = NULL;
 	unsigned int indGen;
+	unsigned int outSizeMax = 0;
 
-	*outSize = 0;
 	*outCount = 0;
 	*specAttrCount = attrInfo->number;
 
@@ -289,7 +289,7 @@ preprocessXNTAttributes(XNodeListItem *attrOffsets, unsigned short attrCount, ch
 					valueSize = strlen(attrValue) + 1;
 				}
 
-				newAttrSize = valueSize + sizeof(XMLNodeHdrData);
+				newAttrSize = sizeof(XMLNodeHdrData) + valueSize;
 				specNode = (XMLNodeHdr) palloc(newAttrSize);
 				specNode->kind = attr->kind;
 				specNode->flags = attr->flags;
@@ -298,12 +298,20 @@ preprocessXNTAttributes(XNodeListItem *attrOffsets, unsigned short attrCount, ch
 
 				if (expr != NULL)
 				{
+					/*
+					 * 'expr' is now treated as as binary stream (no access to
+					 * the structures) so we can forget about alignment for a
+					 * while. All we need to know is where the data start in
+					 * the new node. This position will control the alignment
+					 * in the resulting document.
+					 */
 					memcpy(specNodeValue, expr, valueSize);
 					pfree(expr);
 					specNode->flags |= XNODE_ATTR_VALUE_BINARY;
 				}
 				else if (attrValueTokenized != NULL)
 				{
+					/* Likewise, see the comment above. */
 					memcpy(specNodeValue, attrValueTokenized, valueSize);
 					pfree(attrValueTokenized);
 					specNode->flags |= XNODE_ATTR_VALUE_BINARY;
@@ -314,7 +322,11 @@ preprocessXNTAttributes(XNodeListItem *attrOffsets, unsigned short attrCount, ch
 				}
 
 				attrsSorted[j] = specNode;
-				*outSize += newAttrSize;
+				outSizeMax += newAttrSize;
+				if (expr != NULL || attrValueTokenized != NULL)
+				{
+					outSizeMax += MAX_PADDING(XPATH_ALIGNOF_EXPR);
+				}
 				attrSizes[j] = newAttrSize;
 				attrValsToFree[j] = true;
 				found = true;
@@ -338,7 +350,7 @@ preprocessXNTAttributes(XNodeListItem *attrOffsets, unsigned short attrCount, ch
 				/* The whole attribute is stored in this case. */
 				attrsSorted[indGen] = attr;
 				attrSizes[indGen] = sizeof(XMLNodeHdrData) + strlen(attrName) +strlen(attrValue) + 2;
-				*outSize += attrSizes[indGen];
+				outSizeMax += attrSizes[indGen];
 				indGen++;
 			}
 			else
@@ -368,7 +380,7 @@ preprocessXNTAttributes(XNodeListItem *attrOffsets, unsigned short attrCount, ch
 		 */
 		XMLNodeOffset offNew = attrItem->value.singleOff;
 
-		result = resTmp = (char *) palloc(*outSize * sizeof(char));
+		result = resTmp = (char *) palloc(outSizeMax);
 
 		/*
 		 * Construct the new sequence of attributes and adjust parent's
@@ -380,10 +392,38 @@ preprocessXNTAttributes(XNodeListItem *attrOffsets, unsigned short attrCount, ch
 
 			if (currentSize > 0)
 			{
-				Assert(attrsSorted[i] != NULL);
+				char	   *ptr,
+						   *ptrAligned;
+				unsigned int padding = 0;
+				XMLNodeHdr	attribute;
 
+				Assert(attrsSorted[i] != NULL);
+				attribute = attrsSorted[i];
+
+				if (attribute->flags & XNODE_ATTR_VALUE_BINARY)
+				{
+					/*
+					 * If the next node is located immediately after the
+					 * previous, then 'ptr' is the position inside the new
+					 * node controlling the alignment (typically XPath
+					 * expression). As the 'binary nodes' have the
+					 * alignment-sensitive data right after the header, the
+					 * header size is used to derive the position.
+					 */
+					ptr = resTmp + sizeof(XMLNodeHdrData);
+
+					/*
+					 * If that address is not aligned, padding must be
+					 * prepended.
+					 */
+					ptrAligned = (char *) TYPEALIGN(XPATH_ALIGNOF_EXPR, ptr);
+					padding = ptrAligned - ptr;
+				}
+
+				resTmp += padding;
 				memcpy(resTmp, attrsSorted[i], currentSize);
 				resTmp += currentSize;
+				offNew += padding;
 				offsetsValid[i] = true;
 			}
 			else
@@ -392,15 +432,13 @@ preprocessXNTAttributes(XNodeListItem *attrOffsets, unsigned short attrCount, ch
 				offsetsValid[i] = false;
 			}
 
-			if (i > 0)
-			{					/* The first offset does not change. */
-				attrItem->value.singleOff = offNew;
-			}
+			attrItem->value.singleOff = offNew;
 			offNew += currentSize;
 			attrItem++;
 		}
 
 		*outCount = indGen;
+		*outSize = resTmp - result;
 
 		for (i = 0; i < outAttrsMax; i++)
 		{
@@ -436,8 +474,7 @@ preprocessXNTAttrValues(XNodeListItem *attrOffsets, unsigned short attrCount, ch
 	char	   *resCursor;
 	XNodeListItem *attrItem;
 	XMLNodeOffset offNew;
-
-	*outSize = 0;
+	unsigned int outSizeMax = 0;
 
 	arrSize = attrCount * sizeof(bool);
 	toReplace = (bool *) palloc(arrSize);
@@ -496,11 +533,13 @@ preprocessXNTAttrValues(XNodeListItem *attrOffsets, unsigned short attrCount, ch
 
 			valuesNew[i] = getAttrValueTokenized(attrValue, &valueSizeNew, paramNames);
 			valueSizes[i] = valueSizeNew;
+
+			outSizeMax += MAX_PADDING(XPATH_ALIGNOF_EXPR);
 		}
-		*outSize += fixedSizes[i] + valueSizes[i];
+		outSizeMax += fixedSizes[i] + valueSizes[i];
 	}
 
-	result = resCursor = (char *) palloc(*outSize);
+	result = resCursor = (char *) palloc(outSizeMax);
 
 	attrItem = attrOffsets;
 	offNew = attrItem->value.singleOff;
@@ -509,14 +548,27 @@ preprocessXNTAttrValues(XNodeListItem *attrOffsets, unsigned short attrCount, ch
 	{
 		XMLNodeHdr	attr = attrNodes[i];
 		XMLNodeHdr	attrNew;
+		char	   *ptr,
+				   *ptrAligned;
+		unsigned int padding = 0;
+
+		if (toReplace[i])
+		{
+			/* See preprocessXNTAttributes() for explanation. */
+			ptr = resCursor + fixedSizes[i];
+			ptrAligned = (char *) TYPEALIGN(XPATH_ALIGNOF_EXPR, ptr);
+			padding = ptrAligned - ptr;
+		}
 
 		/*
 		 * Header and attribute name is always copied from the original
 		 * attribute.
 		 */
+		resCursor += padding;
 		memcpy(resCursor, attr, fixedSizes[i]);
 		attrNew = (XMLNodeHdr) resCursor;
 		resCursor += fixedSizes[i];
+		offNew += padding;
 
 		/*
 		 * The value is either modified (binary) or the original (plain
@@ -544,6 +596,8 @@ preprocessXNTAttrValues(XNodeListItem *attrOffsets, unsigned short attrCount, ch
 		offNew += fixedSizes[i] + valueSizes[i];
 		attrItem++;
 	}
+
+	*outSize = resCursor - result;
 
 	pfree(attrNodes);
 	pfree(toReplace);
@@ -580,7 +634,10 @@ dumpBinaryAttrValue(char *binValue, char **paramNames, XPathExprOperandValue par
 
 		if (isExpr)
 		{
-			XPathExpression expr = (XPathExpression) cursor;
+			XPathExpression expr;
+
+			cursor = (char *) TYPEALIGN(XPATH_ALIGNOF_EXPR, cursor);
+			expr = (XPathExpression) cursor;
 
 			if (paramNames != NULL)
 			{
@@ -634,7 +691,7 @@ getXPathExpression(char *src, unsigned int termFlags, XMLNodeContainer paramName
 				   unsigned short *endPos)
 {
 	XPathExpression expr = (XPathExpression) palloc(XPATH_EXPR_BUFFER_SIZE);
-	XPathOffset outPos = sizeof(XPathExpressionData) + XPATH_EXPR_VAR_MAX * sizeof(XPathOffset);
+	XPathOffset outPos = 0;
 	XPathParserStateData state;
 
 	state.c = src;
@@ -703,13 +760,12 @@ getAttrValueTokenized(char *attrValue, unsigned int *valueSize, XMLNodeContainer
 	unsigned short k;
 	char	   *result,
 			   *resCursor;
+	unsigned int valueSizeMax = 0;
 
 	/*
 	 * Attribute value contains xpath expressions and therefore must be
 	 * tokenized.
 	 */
-
-	*valueSize = 0;
 
 	/* Each iteration processes 1 token. */
 	while (*c != '\0')
@@ -733,7 +789,7 @@ getAttrValueTokenized(char *attrValue, unsigned int *valueSize, XMLNodeContainer
 			tokenSizes[tokenCount] = tokenExpr->common.size;
 			tokenIsExpr[tokenCount] = true;
 			tokenCount++;
-			*valueSize += tokenExpr->common.size;
+			valueSizeMax += MAX_PADDING(XPATH_ALIGNOF_EXPR) + tokenExpr->common.size;
 			c += endPos;
 		}
 		else
@@ -761,7 +817,7 @@ getAttrValueTokenized(char *attrValue, unsigned int *valueSize, XMLNodeContainer
 				tokenSizes[tokenCount] = size;
 				tokenIsExpr[tokenCount] = false;
 				tokenCount++;
-				*valueSize += size;
+				valueSizeMax += size;
 			}
 		}
 	}
@@ -769,21 +825,28 @@ getAttrValueTokenized(char *attrValue, unsigned int *valueSize, XMLNodeContainer
 	Assert(tokenCount > 0);
 
 	/* Add space for the total number of tokens as well as type of each token. */
-	*valueSize += tokenCount * sizeof(bool) + sizeof(uint8);
+	valueSizeMax += tokenCount * sizeof(bool) + sizeof(uint8);
 
 	/* Construct the tokenized binary value. */
-	result = resCursor = (char *) palloc(*valueSize);
+	result = resCursor = (char *) palloc(valueSizeMax);
 	*((uint8 *) resCursor) = tokenCount;
 	resCursor++;
 
 	for (k = 0; k < tokenCount; k++)
 	{
-		*((bool *) resCursor) = tokenIsExpr[k];
+		bool		isExpression = tokenIsExpr[k];
+
+		*((bool *) resCursor) = isExpression;
 		resCursor++;
+		if (isExpression)
+		{
+			resCursor = (char *) TYPEALIGN(XPATH_ALIGNOF_EXPR, resCursor);
+		}
 		memcpy(resCursor, tokens[k], tokenSizes[k]);
 		resCursor += tokenSizes[k];
 		pfree(tokens[k]);
 	}
+	*valueSize = resCursor - result;
 	return result;
 }
 
@@ -915,10 +978,22 @@ xnode_from_template(PG_FUNCTION_ARGS)
 	templHdrData = (char *) TYPEALIGN(XNODE_ALIGNOF_XNT_HDR, templHdrData);
 	templHdr = (XNTHeader) templHdrData;
 
-	if (templHdr->paramCount > 0)
+	if (templHdr->paramCount > 0 || templHdr->substNodesCount > 0)
 	{
 		templHdrData += sizeof(XNTHeaderData);
-		templParNames = getXPathParameterArray(&templHdrData, templHdr->paramCount);
+	}
+
+	if (templHdr->paramCount > 0)
+	{
+		unsigned short i;
+
+		templParNames = (char **) palloc(templHdr->paramCount * sizeof(char *));
+
+		for (i = 0; i < templHdr->paramCount; i++)
+		{
+			templParNames[i] = templHdrData;
+			templHdrData += strlen(templHdrData) + 1;
+		}
 	}
 
 	substNodeCount = templHdr->substNodesCount;

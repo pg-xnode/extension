@@ -64,7 +64,7 @@ extern bool validXPathTermChar(char c, unsigned char flags);
 typedef uint16 XPathOffset;
 
 /*
- * This in fact means 'location' path as opposed to the full XPath expression
+ * This in fact means 'location path' as opposed to the full XPath expression
  * (see XPathExpressionData structure). It shouldn't be a problem as location
  * path is often considered XPath by users. Specific name like 'XLocPathData'
  * wouldn't look nice.
@@ -103,10 +103,12 @@ typedef struct XPathData *XPath;
 
 #define XPATH_MAX_SUBPATHS	16
 
+
 typedef struct XPathHeaderData
 {
 	uint8		pathCount;
-	unsigned int size;			/* This header + all the paths. */
+	uint8		paramCount;
+	XPathOffset paramFirst;		/* How far the first parameter name starts. */
 	XPathOffset paths[1];
 }	XPathHeaderData;
 
@@ -175,8 +177,6 @@ typedef struct XPathValueData
 }	XPathValueData;
 
 typedef struct XPathValueData *XPathValue;
-
-#define XNODE_ALIGNOF_XPATHVAL	ALIGNOF_DOUBLE
 
 typedef struct varlena xpathvaltype;
 typedef xpathvaltype *xpathval;
@@ -372,6 +372,8 @@ typedef struct XPathExprOperandData
 
 typedef struct XPathExprOperandData *XPathExprOperand;
 
+
+
 #define XPATH_EXPR_OPERATOR_KINDS	14
 
 /*
@@ -395,14 +397,20 @@ typedef enum XPathExprOperatorId
 	XPATH_EXPR_OPERATOR_OR
 } XPathExprOperatorId;
 
-typedef uint8 XPathExprOperatorIdStore;
+typedef struct XPathExprOperatorStorageData
+{
+	/* XPathExprOperatorId is stored in a single byte. */
+	uint8		id;
+}	XPathExprOperatorStorageData;
+
+typedef struct XPathExprOperatorStorageData *XPathExprOperatorStorage;
 
 /*
  * Binary operators
  */
 typedef struct XPathExprOperatorData
 {
-	XPathExprOperatorIdStore id;
+	XPathExprOperatorId id;
 	uint8		precedence;
 	uint8		resType;
 } XPathExprOperatorData;
@@ -426,8 +434,8 @@ XPathExprOperatorTextData xpathOperators[XPATH_EXPR_OPERATOR_KINDS];
  * Get XPathExprOperator from the storage.
  * 'idPtr' is pointer to the operator's id in the XPath storage.
  */
-#define XPATH_EXPR_OPERATOR(idPtr) ((idPtr != NULL) ?\
-	(&((xpathOperators + *((XPathExprOperatorIdStore *) idPtr))->op)) : NULL)
+#define XPATH_EXPR_OPERATOR(idPtr) (((idPtr) != NULL) ?\
+	(&((xpathOperators + ((XPathExprOperatorStorage) (idPtr))->id)->op)) : NULL)
 
 /*
  * If type is XPATH_OPERAND_EXPR_TOP, the header is followed by array of
@@ -472,16 +480,6 @@ typedef struct XPathExpressionData
 typedef struct XPathExpressionData *XPathExpression;
 
 #define XPATH_SUBEXPRESSION_EXPLICIT		(1 << 0)
-
-/*
- * XPathHeaderData structure and list of parameters follow by optionaly.
- * If both are there, the order must be always the same: first paths, then parameters.
- */
-typedef struct XPathStorageHeader
-{
-	bool		hasPaths;
-	uint16		paramCount;
-} XPathStorageHeader;
 
 
 extern void dumpXPathExpression(XPathExpression expr, XPathHeader xpathHdr, StringInfo output, bool main,
@@ -549,11 +547,72 @@ typedef enum XPathNodeType
 }	XPathNodeType;
 
 
-extern XPathExprOperatorIdStore *parseXPathExpression(XPathExpression exprCurrent, XPathParserState state,
-					 unsigned char termFlags, XPathExprOperatorIdStore *firstOpPtr, char *output, unsigned short *outPos, bool isSubExpr,
-					 bool argList, XPath *subpaths, unsigned short *subpathCnt, bool mainExpr, XMLNodeContainer paramNames);
+/*
+ * Alignment information is summarized at one place so that
+ * dependencies are obvious.
+ */
 
-extern void parseLocationPath(XPath *subpaths, bool isSubPath, unsigned short *subpathCnt, char **xpathPtr,
+/* XPathOffset */
+#define XPATH_ALIGNOF_OFFSET	ALIGNOF_SHORT
+
+/*
+ * XPathHeaderData
+ *
+ * The following structures (XPathData) don't affect this alignment, because
+ * their position is not derived from the preceding structures. Instead,
+ * XPathHeaderData contains offset of each XPathData.
+ */
+#define XPATH_ALIGNOF_PATH_HDR	ALIGNOF_SHORT
+
+/*
+ * XPathExprOperandData
+ *
+ * 'XPathExprGenericValue.num' member causes such a high alignment
+ */
+#define XPATH_ALIGNOF_OPERAND	ALIGNOF_DOUBLE
+
+/*
+ * XPathExpressionData
+ *
+ * Expression is a special type of operand.
+ * Alignment must be XPATH_ALIGNOF_OPERAND even though the members
+ * don't demand such. The point is that we use TYPEALIGN() macro to
+ * derive position of each next operand, while we don't know yet if
+ * will actually be a XPathExpressionData or XPathExprOperandData.
+ */
+#define XPATH_ALIGNOF_EXPR	XPATH_ALIGNOF_OPERAND
+
+/*
+ * XPathElementData
+ *
+ * Alignment must be identical to that of expression because position of node
+ * test predicate expression is derived from position of the owning
+ * XPathElementData.
+ */
+#define XPATH_ALIGNOF_LOC_STEP	XPATH_ALIGNOF_EXPR
+
+/*
+ * XPathData
+ *
+ * The structure itself would not require such a high alignment, but
+ * the path contains expressions (see comment for XPATH_ALIGNOF_EXPR)
+ */
+#define XPATH_ALIGNOF_LOC_PATH	MAXIMUM_ALIGNOF
+
+/*
+ * XPathValueData
+ *
+ * Contains float8.
+ */
+#define XNODE_ALIGNOF_XPATHVAL	ALIGNOF_DOUBLE
+
+
+extern XPathExprOperatorStorage parseXPathExpression(XPathExpression exprCurrent, XPathParserState state,
+					 unsigned char termFlags, XPathExprOperatorStorage firstOperatorStorage, char *output,
+		  unsigned short *outPos, bool isSubExpr, bool argList, XPath *paths,
+	 unsigned short *subpathCnt, bool mainExpr, XMLNodeContainer paramNames);
+
+extern void parseLocationPath(XPath *paths, bool isSubPath, unsigned short *pathCount, char **xpathSrc,
 				  unsigned short *pos, XMLNodeContainer paramNames);
 
 /*
@@ -633,7 +692,14 @@ typedef struct XMLScanContextData
 {
 	XMLScan		baseScan;
 	unsigned int columns;
-	XPathExpression *colPaths;
+
+	/*
+	 * Even though the expression can be derived from the header, both are
+	 * stored for better performance.
+	 */
+	XPathHeader *colHeaders;
+	XPathExpression *colExpressions;
+
 	Datum	   *colResults;
 	bool	   *colResNulls;
 	Oid			outArrayType,
@@ -693,8 +759,9 @@ extern char *castXPathValToStr(XPathValue src);
 
 extern unsigned short getXPathOperandId(XPathExprState exprState, void *value, XPathExprVar varKind);
 extern void *getXPathOperandValue(XPathExprState exprState, unsigned short id, XPathExprVar varKind);
-
-extern char **getXPathParameterArray(char **first, unsigned short count);
+extern XPathHeader getXPathHeader(xpath xpathValue);
+extern XPathExpression getXPathExpressionFromStorage(XPathHeader xpathHeader);
+extern char **getXPathParameterArray(XPathHeader xpathHeader);
 
 typedef void (*XpathFuncImpl) (XPathExprState exprState, unsigned short nargs, XPathExprOperandValue args,
 										   XPathExprOperandValue result);

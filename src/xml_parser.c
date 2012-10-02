@@ -1445,7 +1445,7 @@ processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowe
 			 *
 			 * <myelement myattr="{myparam}"/>
 			 *
-			 * However not allways: <xnt:copy-of-param name="myparam"/>
+			 * However not always: <xnt:copy-of-param name="myparam"/>
 			 *
 			 * Inside processTag() we don't know yet if e.g the last attribute
 			 * of the current tag isn't just overriding the 'xnt' namespace
@@ -1494,8 +1494,20 @@ processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowe
 			if (attrsNew != NULL)
 			{
 				unsigned int i;
-				char	   *attrData;
-				unsigned int attrDataOrigSize = state->dstPos - attrOffsets->value.singleOff;
+				char	   *attrDataOrig,
+						   *attrDataNew;
+				unsigned int attrDataOrigSize,
+							padding;
+
+				attrDataOrig = state->tree + attrOffsets->value.singleOff;
+
+				/*
+				 * The new binary data are more restrictive, because of XPath
+				 * expressions.
+				 */
+				attrDataNew = (char *) TYPEALIGN(XPATH_ALIGNOF_EXPR, attrDataOrig);
+				padding = attrDataNew - attrDataOrig;
+				attrDataOrigSize = state->dstPos - attrOffsets->value.singleOff;
 
 				Assert(newCount >= attributes);
 
@@ -1511,11 +1523,11 @@ processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowe
 					{
 						XNodeListItem *itemOrig = attrOffsets + i;
 
-						itemOrig->value.singleOff = itemNew->value.singleOff;
+						itemOrig->value.singleOff = itemNew->value.singleOff + padding;
 					}
 					else
 					{
-						xmlnodePushSingleNode(&state->stack, itemNew->value.singleOff);
+						xmlnodePushSingleNode(&state->stack, itemNew->value.singleOff + padding);
 					}
 				}
 
@@ -1523,12 +1535,19 @@ processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowe
 				 * Replace the original attribute data with those (possibly)
 				 * changed.
 				 */
+				newSize += padding;
 				if (newSize > attrDataOrigSize)
-				{
+				{				/* Reallocation must be anticipated. */
+					XMLNodeOffset offOrig = attrDataOrig - state->tree;
+					XMLNodeOffset offNew = attrDataNew - state->tree;
+
 					ensureSpace(newSize - attrDataOrigSize, state);
+					attrDataOrig = state->tree + offOrig;
+					attrDataNew = state->tree + offNew;
 				}
-				attrData = state->tree + attrOffsets->value.singleOff;
-				memcpy(attrData, attrsNew, newSize);
+
+				memcpy(attrDataOrig + padding, attrsNew, newSize - padding);
+
 				if (newSize != attrDataOrigSize)
 				{
 					if (newSize > attrDataOrigSize)
@@ -1542,6 +1561,28 @@ processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowe
 				}
 				pfree(attrsNew);
 				children = attributes = newCount;
+
+				/*
+				 * If all the attributes of the current node have been
+				 * shifted, then we have to update from the corresponding
+				 * namespace declaration pointers.
+				 */
+				if (padding > 0 && state->nmspDecl.content != NULL && state->nmspDecl.position > 0)
+				{
+					unsigned short i;
+					unsigned int declsTotal = state->nmspDecl.position;
+					XNodeListItem *item;
+
+					Assert(nmspDecls <= declsTotal);
+					item = state->nmspDecl.content + declsTotal - 1;
+					for (i = 0; i < nmspDecls; i++)
+					{
+						XMLNodeOffset orig = (XMLNodeOffset) item->value.singleOff;
+
+						item->value.singleOff = orig + padding;
+						item--;
+					}
+				}
 			}
 			pfree(attrOffsetsNew);
 		}
@@ -1846,7 +1887,7 @@ checkNamespaces(XMLParserState state, XMLNodeInternal nodeInfo, unsigned int att
 
 	if (!elNmspNameResolved || attrsUnresolved > 0)
 	{
-		resolveXMLNamespaces(&state->nmspDecl, state->nmspDecl.position, elNmspName, &elNmspNameResolved, attrsPrefixed,
+		resolveXMLNamespaces(state->tree, &state->nmspDecl, state->nmspDecl.position, elNmspName, &elNmspNameResolved, attrsPrefixed,
 							 attrsPrefixedCount, attrFlags, &attrsUnresolved, state->nmspSpecialName,
 							 state->nmspSpecialValue, elNmspIsSpecial);
 	}
@@ -2201,7 +2242,7 @@ processTag(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowed,
 						/* readName() does not allow for 2 or more colons. */
 						Assert(attrName[nameLength - 1] != XNODE_CHAR_COLON);
 
-						xmlnodePushSinglePtr(&state->nmspDecl, (void *) attrNode);
+						xmlnodePushSingleNode(&state->nmspDecl, (char *) attrNode - state->tree);
 						if (nmspDecls != NULL)
 						{
 							(*nmspDecls)++;

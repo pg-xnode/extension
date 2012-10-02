@@ -7,6 +7,8 @@
 
 typedef struct XMLNamespaceCheckState
 {
+	char	   *tree;
+
 	XMLNodeContainerData declarations;
 
 	/* How many (non-unique) declarations each level of the stack adds. */
@@ -36,7 +38,7 @@ static void addUniqueNamespace(XMLNodeContainer result, char *nmspName);
  * 'count' receives length of the array.
  */
 char	  **
-getUnresolvedXMLNamespaces(XMLNodeHdr node, unsigned int *count)
+getUnresolvedXMLNamespaces(char *tree, XMLNodeHdr node, unsigned int *count)
 {
 	XMLNodeKind nodeKind = node->kind;
 	XMLCompNodeHdr element;
@@ -84,6 +86,7 @@ getUnresolvedXMLNamespaces(XMLNodeHdr node, unsigned int *count)
 
 	xmlnodeContainerInit(&stateData.declarations);
 	xmlnodeContainerInit(&stateData.result);
+	stateData.tree = tree;
 	walkThroughXMLTree((XMLNodeHdr) node, checkNodeNamespaces, false, (void *) &stateData);
 	resultSize = stateData.result.position;
 	xmlnodeContainerFree(&stateData.declarations);
@@ -110,7 +113,7 @@ getUnresolvedXMLNamespaces(XMLNodeHdr node, unsigned int *count)
 }
 
 void
-resolveXMLNamespaces(XMLNodeContainer declarations, unsigned int declsActive, char *elNmspName,
+resolveXMLNamespaces(char *tree, XMLNodeContainer declarations, unsigned int declsActive, char *elNmspName,
 					 bool *elNmspNameResolved, XMLNodeHdr *attrsPrefixed, unsigned int attrsPrefixedCount, bool *attrFlags,
 					 unsigned short *attrsUnresolved, char *specNmspName, char *specNmspValue, bool *elNmspIsSpecial)
 {
@@ -128,8 +131,8 @@ resolveXMLNamespaces(XMLNodeContainer declarations, unsigned int declsActive, ch
 		unsigned int declNmspLength;
 		XMLNodeHdr	declNode;
 
-		Assert(item->kind == XNODE_LIST_ITEM_SINGLE_PTR);
-		declNode = (XMLNodeHdr) item->value.singlePtr;
+		Assert(item->kind == XNODE_LIST_ITEM_SINGLE_OFF);
+		declNode = (XMLNodeHdr) (tree + item->value.singleOff);
 		declNmspName = (char *) XNODE_CONTENT(declNode) + strlen(XNODE_NAMESPACE_DEF_PREFIX) + 1;
 		declNmspLength = strlen(declNmspName);
 
@@ -197,7 +200,7 @@ resolveXMLNamespaces(XMLNodeContainer declarations, unsigned int declsActive, ch
  * declarations) and 'attrsPrefixedCount' receives number of such attributes.
  */
 void
-collectXMLNamespaceDeclarations(XMLCompNodeHdr currentNode, unsigned int *attrCount, unsigned int *nmspDeclCount,
+collectXMLNamespaceDeclarations(char *tree, XMLCompNodeHdr currentNode, unsigned int *attrCount, unsigned int *nmspDeclCount,
 								XMLNodeContainer declarations, bool declsOnly, XMLNodeHdr **attrsPrefixed, unsigned int *attrsPrefixedCount)
 {
 
@@ -245,7 +248,7 @@ collectXMLNamespaceDeclarations(XMLCompNodeHdr currentNode, unsigned int *attrCo
 
 				/* Namespace declaration. */
 
-				xmlnodePushSinglePtr(declarations, (void *) childNode);
+				xmlnodePushSingleNode(declarations, (char *) childNode - tree);
 				if (nmspDeclCount != NULL)
 				{
 					(*nmspDeclCount)++;
@@ -308,7 +311,7 @@ checkNodeNamespaces(XMLNodeHdr *stack, unsigned int depth, void *userData)
 
 	if (currentNode->children > 0)
 	{
-		collectXMLNamespaceDeclarations(currentNode, &attrCount, &nmspDeclCount, &state->declarations, false,
+		collectXMLNamespaceDeclarations(state->tree, currentNode, &attrCount, &nmspDeclCount, &state->declarations, false,
 										&attrsPrefixed, &attrsPrefixedCount);
 		attrsUnresolved = attrsPrefixedCount;
 	}
@@ -343,7 +346,7 @@ checkNodeNamespaces(XMLNodeHdr *stack, unsigned int depth, void *userData)
 
 	if (!elNmspNameResolved || attrsUnresolved > 0)
 	{
-		resolveXMLNamespaces(&state->declarations, state->counts[depth], elNmspName, &elNmspNameResolved, attrsPrefixed,
+		resolveXMLNamespaces(state->tree, &state->declarations, state->counts[depth], elNmspName, &elNmspNameResolved, attrsPrefixed,
 		  attrsPrefixedCount, attrFlags, &attrsUnresolved, NULL, NULL, NULL);
 	}
 

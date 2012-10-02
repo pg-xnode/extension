@@ -209,7 +209,7 @@ xmlnode_to_xmldoc(PG_FUNCTION_ARGS)
 		rootNodeKind == XMLNODE_DOC_FRAGMENT)
 	{
 		unsigned int unresolvedNmspcCount;
-		char	  **unresolvedNamespaces = getUnresolvedXMLNamespaces((XMLNodeHdr) rootNode, &unresolvedNmspcCount);
+		char	  **unresolvedNamespaces = getUnresolvedXMLNamespaces(nodeData, (XMLNodeHdr) rootNode, &unresolvedNmspcCount);
 
 		if (unresolvedNmspcCount > 0)
 		{
@@ -402,8 +402,15 @@ dumpXMLNode(char *data, XMLNodeOffset rootNdOff)
 
 		if (xntHdr->paramCount > 0)
 		{
+			unsigned short i;
+
 			srcCursor += sizeof(XNTHeaderData);
-			paramNames = getXPathParameterArray(&srcCursor, xntHdr->paramCount);
+			paramNames = (char **) palloc(xntHdr->paramCount * sizeof(char *));
+			for (i = 0; i < xntHdr->paramCount; i++)
+			{
+				paramNames[i] = srcCursor;
+				srcCursor += strlen(srcCursor) + 1;
+			}
 		}
 	}
 

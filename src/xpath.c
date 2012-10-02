@@ -36,10 +36,11 @@ xpath_in(PG_FUNCTION_ARGS)
 	pg_enc		dbEnc = GetDatabaseEncoding();
 	char	   *xpathStr;
 	XPathHeader xpathHdr;
-	char	   *result;
+	char	   *result,
+			   *out;
 	unsigned short i,
-				resSize;
-	XPathOffset outPos;
+				resSize,
+				exprOutPos;
 	XPath		paths[XPATH_MAX_SUBPATHS];
 	unsigned short pathCount = 0;
 	XPathExpression expr;
@@ -48,7 +49,6 @@ xpath_in(PG_FUNCTION_ARGS)
 	XMLNodeContainerData paramNames;
 	char	  **parNamesArray = NULL;
 	unsigned short paramCount = 0;
-	XPathStorageHeader *storageHdr;
 
 	if (dbEnc != PG_UTF8)
 	{
@@ -70,8 +70,13 @@ xpath_in(PG_FUNCTION_ARGS)
 	state.pos = 0;
 
 	xmlnodeContainerInit(&paramNames);
-	outPos = sizeof(XPathExpressionData) + XPATH_EXPR_VAR_MAX * sizeof(XPathOffset);
-	parseXPathExpression(expr, &state, XPATH_TERM_NULL, NULL, (char *) expr, &outPos, false, false, paths,
+
+	/*
+	 * 'isSubExpr=false' will be passed to the parser, so the parser will also
+	 * set the 'exprOutPos'.
+	 */
+	exprOutPos = 0;
+	parseXPathExpression(expr, &state, XPATH_TERM_NULL, NULL, (char *) expr, &exprOutPos, false, false, paths,
 						 &pathCount, true, &paramNames);
 
 	/*
@@ -79,13 +84,15 @@ xpath_in(PG_FUNCTION_ARGS)
 	 */
 	expr->mainExprAbs = true;
 	varOffPtr = (XPathOffset *) ((char *) expr + sizeof(XPathExpressionData));
+	Assert(PointerIsAligned(varOffPtr, XPATH_ALIGNOF_OFFSET));
+
 	for (i = 0; i < expr->variables; i++)
 	{
 		XPathExprOperand opnd = (XPathExprOperand) ((char *) expr + *varOffPtr);
 
 		if (opnd->common.type == XPATH_OPERAND_PATH)
 		{
-			XPath		path = paths[opnd->value.v.path];
+			XPath		path = (XPath) TYPEALIGN(XPATH_ALIGNOF_LOC_PATH, paths[opnd->value.v.path]);
 
 			if (path->relative)
 			{
@@ -101,13 +108,13 @@ xpath_in(PG_FUNCTION_ARGS)
 		varOffPtr++;
 	}
 
-	resSize = VARHDRSZ + sizeof(XPathStorageHeader) + expr->common.size;
+	resSize = VARHDRSZ + MAX_PADDING(XPATH_ALIGNOF_PATH_HDR) + sizeof(XPathHeaderData) +
+		MAX_PADDING(XPATH_ALIGNOF_EXPR) + expr->common.size;
 
 	if (pathCount > 0)
 	{
 		unsigned short i;
 
-		resSize += sizeof(XPathHeaderData);
 		for (i = 0; i < pathCount; i++)
 		{
 			XPath		path = paths[i];
@@ -116,7 +123,7 @@ xpath_in(PG_FUNCTION_ARGS)
 			 * We need to store the path itself as well as its offset
 			 * (reference)
 			 */
-			resSize += path->size;
+			resSize += MAX_PADDING(XPATH_ALIGNOF_LOC_PATH) + path->size;
 
 			/*
 			 * The first offset (i == 0) will be saved inside the
@@ -146,65 +153,67 @@ xpath_in(PG_FUNCTION_ARGS)
 			item++;
 		}
 	}
+	xmlnodeContainerFree(&paramNames);
 
 	result = (char *) palloc(resSize);
-	outPos = VARHDRSZ;
+	out = (char *) TYPEALIGN(XPATH_ALIGNOF_PATH_HDR, (result + VARHDRSZ));
+	xpathHdr = (XPathHeader) out;
+	xpathHdr->pathCount = 0;
+	xpathHdr->paramCount = 0;
 
-	storageHdr = (XPathStorageHeader *) (result + outPos);
-	storageHdr->hasPaths = false;
-	storageHdr->paramCount = 0;
-	outPos += sizeof(XPathStorageHeader);
+	out += sizeof(XPathHeaderData);
 
-	memcpy(result + outPos, expr, expr->common.size);
-	outPos += expr->common.size;
+	if (pathCount > 0)
+	{
+		/*
+		 * Leave space for path references. (pathCount - 1) means that the
+		 * array starts inside XPathHeaderData.
+		 */
+		out += (pathCount - 1) * sizeof(XPathOffset);
+	}
+
+	out = (char *) TYPEALIGN(XPATH_ALIGNOF_EXPR, out);
+	memcpy(out, expr, expr->common.size);
+	out += expr->common.size;
 
 	if (pathCount > 0)
 	{
 		/* Save the paths */
 		unsigned short i;
-		XPathOffset hdrOff;
-
-		hdrOff = outPos;
-		xpathHdr = (XPathHeader) (result + hdrOff);
-		xpathHdr->pathCount = pathCount;
-
-		/*
-		 * Leave space for path references. Again, (pathCount - 1) means that
-		 * the array starts inside XPathHeaderData.
-		 */
-		outPos += sizeof(XPathHeaderData) + (pathCount - 1) * sizeof(XPathOffset);
 
 		for (i = 0; i < pathCount; i++)
 		{
 			XPath		path = paths[i];
 
-			memcpy(result + outPos, path, path->size);
-			xpathHdr->paths[i] = outPos - hdrOff;
-			outPos += path->size;
+			out = (char *) TYPEALIGN(XPATH_ALIGNOF_LOC_PATH, out);
+			memcpy(out, path, path->size);
+			xpathHdr->paths[i] = out - (char *) xpathHdr;
+			out += path->size;
 			pfree(path);
 		}
-		xpathHdr->size = outPos - hdrOff;
-		storageHdr->hasPaths = true;
+		xpathHdr->pathCount = pathCount;
 	}
 	pfree(expr);
 
+	xpathHdr->paramFirst = 0;
 	if (paramCount > 0)
 	{
 		unsigned short i;
 
+		xpathHdr->paramFirst = out - (char *) xpathHdr;
 		for (i = 0; i < paramCount; i++)
 		{
 			char	   *name = parNamesArray[i];
 
-			strcpy(result + outPos, name);
-			outPos += strlen(name) + 1;
+			strcpy(out, name);
+			out += strlen(name) + 1;
 			pfree(name);
 		}
 		pfree(parNamesArray);
-		storageHdr->paramCount = paramCount;
+		xpathHdr->paramCount = paramCount;
 	}
 
-	SET_VARSIZE(result, resSize);
+	SET_VARSIZE(result, out - result);
 	PG_RETURN_POINTER(result);
 }
 
@@ -213,27 +222,14 @@ PG_FUNCTION_INFO_V1(xpath_out);
 Datum
 xpath_out(PG_FUNCTION_ARGS)
 {
-	char	   *data = VARDATA(PG_GETARG_POINTER(0));
-	XPathStorageHeader *storageHdr = (XPathStorageHeader *) data;
-	XPathExpression expr = (XPathExpression) (data + sizeof(XPathStorageHeader));
-	char	   *dataTmp = (char *) expr + expr->common.size;
-	XPathHeader xpHdr = NULL;
-	char	  **paramNamesArray = NULL;
+	xpath		xp = (xpath) PG_GETARG_POINTER(0);
+	XPathHeader xpathHdr = getXPathHeader(xp);
+	XPathExpression expr = getXPathExpressionFromStorage(xpathHdr);
+	char	  **paramNamesArray = getXPathParameterArray(xpathHdr);
 	StringInfoData output;
 
-	if (storageHdr->hasPaths)
-	{
-		xpHdr = (XPathHeader) dataTmp;
-		dataTmp += xpHdr->size;
-	}
-
-	if (storageHdr->paramCount > 0)
-	{
-		paramNamesArray = getXPathParameterArray(&dataTmp, storageHdr->paramCount);
-	}
-
 	xnodeInitStringInfo(&output, 64);
-	dumpXPathExpression(expr, xpHdr, &output, true, paramNamesArray, false);
+	dumpXPathExpression(expr, xpathHdr, &output, true, paramNamesArray, false);
 
 	if (paramNamesArray != NULL)
 	{
@@ -247,37 +243,24 @@ PG_FUNCTION_INFO_V1(xpath_debug_print);
 Datum
 xpath_debug_print(PG_FUNCTION_ARGS)
 {
-	char	   *data = VARDATA(PG_GETARG_POINTER(0));
-	XPathStorageHeader *storageHdr = (XPathStorageHeader *) data;
-	XPathExpression expr = (XPathExpression) (data + sizeof(XPathStorageHeader));
-	char	   *dataTmp = (char *) expr + expr->common.size;
-	XPathHeader xpHdr = NULL;
-	char	  **paramNamesArray = NULL;
+	xpath		xp = (xpath) PG_GETARG_POINTER(0);
+	XPathHeader xpathHdr = getXPathHeader(xp);
+	XPathExpression expr = getXPathExpressionFromStorage(xpathHdr);
+	char	  **paramNamesArray = getXPathParameterArray(xpathHdr);
 	StringInfoData output;
 
-	if (storageHdr->hasPaths)
-	{
-		xpHdr = (XPathHeader) dataTmp;
-		dataTmp += xpHdr->size;
-	}
-
-	if (storageHdr->paramCount > 0)
-	{
-		paramNamesArray = getXPathParameterArray(&dataTmp, storageHdr->paramCount);
-	}
-
 	initStringInfo(&output);
-	dumpXPathExpression(expr, xpHdr, &output, true, paramNamesArray, true);
+	dumpXPathExpression(expr, xpathHdr, &output, true, paramNamesArray, true);
 
 	if (expr->npaths > 0)
 	{
 		unsigned short i;
 
 		appendStringInfoChar(&output, '\n');
-		for (i = 0; i < xpHdr->pathCount; i++)
+		for (i = 0; i < xpathHdr->pathCount; i++)
 		{
 			appendStringInfo(&output, "\n\n");
-			dumpLocationPath(xpHdr, i, &output, paramNamesArray, true);
+			dumpLocationPath(xpathHdr, i, &output, paramNamesArray, true);
 			appendStringInfoChar(&output, '\n');
 		}
 	}
@@ -292,6 +275,7 @@ xpath_debug_print(PG_FUNCTION_ARGS)
 XPath
 getSingleXPath(XPathExpression expr, XPathHeader xpHdr)
 {
+	char	   *opPtr;
 	XPathExprOperand operand;
 	XPath		path;
 
@@ -300,16 +284,20 @@ getSingleXPath(XPathExpression expr, XPathHeader xpHdr)
 		elog(ERROR, "xpath expression can't be used as a base path");
 	}
 
-	/*
-	 * A valid path may be enclosed in round brackets
-	 */
-	operand = (XPathExprOperand) ((char *) expr + sizeof(XPathExpressionData) +
-								  expr->variables * sizeof(XPathOffset));
+	opPtr = (char *) expr + sizeof(XPathExpressionData) + XPATH_EXPR_VAR_MAX *
+		sizeof(XPathOffset);
+	opPtr = (char *) TYPEALIGN(XPATH_ALIGNOF_OPERAND, opPtr);
+	operand = (XPathExprOperand) opPtr;
 
+	/*
+	 * Valid path may be enclosed in round brackets
+	 */
 	while (operand->common.type == XPATH_OPERAND_EXPR_SUB)
 	{
 		expr = (XPathExpression) operand;
-		operand = (XPathExprOperand) ((char *) expr + sizeof(XPathExpressionData));
+		opPtr = (char *) expr + sizeof(XPathExpressionData);
+		opPtr = (char *) TYPEALIGN(XPATH_ALIGNOF_OPERAND, opPtr);
+		operand = (XPathExprOperand) opPtr;
 	}
 
 	if (operand->common.type != XPATH_OPERAND_PATH || expr->members != 1)
@@ -332,26 +320,26 @@ Datum
 xpath_single(PG_FUNCTION_ARGS)
 {
 	xpath		xpathIn = (xpath) PG_GETARG_POINTER(0);
-	char	   *data = VARDATA(xpathIn);
-	XPathStorageHeader *storageHdr = (XPathStorageHeader *) data;
-	XPathExpression expr = (XPathExpression) (data + sizeof(XPathStorageHeader));
-	XPathHeader xpHdr = (XPathHeader) ((char *) expr + expr->common.size);
+	XPathHeader xpathHdr = getXPathHeader(xpathIn);
+	XPathExpression expr;
 	XPathExprState exprState;
 	xmldoc		doc = (xmldoc) PG_GETARG_VARLENA_P(1);
-	bool		notNull;
 	xpathval	result;
 	XPathExprOperandValueData resData;
+	bool		notNull;
 
-	if (storageHdr->paramCount > 0)
+	if (xpathHdr->paramCount > 0)
 	{
-		elog(ERROR, "this function does not accept parameterized xpath expression");
+		elog(ERROR, "function does not accept parameterized xpath expression");
 	}
+
+	expr = getXPathExpressionFromStorage(xpathHdr);
 
 	if (!expr->mainExprAbs)
 	{
 		elog(ERROR, "neither relative paths nor attributes expected in main expression");
 	}
-	exprState = prepareXPathExpression(expr, (XMLCompNodeHdr) XNODE_ROOT(doc), doc, xpHdr, NULL);
+	exprState = prepareXPathExpression(expr, (XMLCompNodeHdr) XNODE_ROOT(doc), doc, xpathHdr, NULL);
 	evaluateXPathExpression(exprState, exprState->expr, 0, &resData);
 	result = getXPathExprValue(exprState, doc, &notNull, &resData);
 	freeExpressionState(exprState);
@@ -389,23 +377,20 @@ xpath_array(PG_FUNCTION_ARGS)
 		Oid			resultType;
 
 		xpath		xpathBasePtr = (xpath) PG_GETARG_POINTER(0);
-		XPath		xpathBase;
-		XPathStorageHeader *storageHdr = (XPathStorageHeader *) VARDATA(xpathBasePtr);
+		XPathHeader xpHdrBase = getXPathHeader(xpathBasePtr);
 		XPathExpression exprBase;
-		XPathHeader xpHdrBase;
+		XPath		xpathBase;
 
 		ArrayType  *pathsColArr = PG_GETARG_ARRAYTYPE_P(1);
 		xmldoc		doc = (xmldoc) PG_GETARG_VARLENA_P(2);
 		XMLCompNodeHdr docRoot = (XMLCompNodeHdr) XNODE_ROOT(doc);
 		MemoryContext oldcontext;
 
-		if (storageHdr->paramCount > 0)
+		if (xpHdrBase->paramCount > 0)
 		{
 			elog(ERROR, "this function does not accept parameterized xpath expression");
 		}
-		exprBase = (XPathExpression) ((char *) storageHdr + sizeof(XPathStorageHeader));
-		xpHdrBase = (XPathHeader) ((char *) exprBase + exprBase->common.size);
-
+		exprBase = getXPathExpressionFromStorage(xpHdrBase);
 		xpathBase = getSingleXPath(exprBase, xpHdrBase);
 
 		fctx = SRF_FIRSTCALL_INIT();
@@ -442,7 +427,8 @@ xpath_array(PG_FUNCTION_ARGS)
 		}
 
 		xScanCtx->columns = *dimv;
-		xScanCtx->colPaths = (XPathExpression *) palloc(xScanCtx->columns * sizeof(XPathExpression));
+		xScanCtx->colHeaders = (XPathHeader *) palloc(xScanCtx->columns * sizeof(XPathHeader));
+		xScanCtx->colExpressions = (XPathExpression *) palloc(xScanCtx->columns * sizeof(XPathExpression));
 		xScanCtx->outArrayType = resultType;
 
 		/*
@@ -501,7 +487,8 @@ xpath_array(PG_FUNCTION_ARGS)
 		finalizeXMLScan(baseScan);
 		pfree(baseScan);
 
-		pfree(xScanCtx->colPaths);
+		pfree(xScanCtx->colExpressions);
+		pfree(xScanCtx->colHeaders);
 		if (xScanCtx->colResults != NULL)
 		{
 			pfree(xScanCtx->colResults);
@@ -871,27 +858,55 @@ getXPathOperandValue(XPathExprState exprState, unsigned short id, XPathExprVar v
 	}
 }
 
+XPathHeader
+getXPathHeader(xpath xpathValue)
+{
+	char	   *inData;
+
+	inData = VARDATA(xpathValue);
+	inData = (char *) TYPEALIGN(XPATH_ALIGNOF_PATH_HDR, inData);
+	return (XPathHeader) inData;
+}
+
+XPathExpression
+getXPathExpressionFromStorage(XPathHeader xpathHeader)
+{
+	char	   *resPtr = (char *) xpathHeader;
+
+	resPtr += sizeof(XPathHeaderData);
+	if (xpathHeader->pathCount > 0)
+	{
+		resPtr += (xpathHeader->pathCount - 1) * sizeof(XPathOffset);
+	}
+
+	resPtr = (char *) TYPEALIGN(XPATH_ALIGNOF_EXPR, resPtr);
+	return (XPathExpression) resPtr;
+}
+
 /*
- * Turn a sequence of NULL-terminated strings beginning at '*first' and having 'count'
- * items into an array of pointers to these strings.
- *
- * '*first' gets set to address immediately following the parameter names.
+ * Extract parameter names from the storage and return them as an array of
+ * NULL-terminated strings.
  */
 char	  **
-getXPathParameterArray(char **first, unsigned short count)
+getXPathParameterArray(XPathHeader xpathHeader)
 {
-	unsigned short i;
-	char	  **result;
-	char	   *current = *first;
+	char	  **result = NULL;
 
-	result = (char **) palloc(count * sizeof(char *));
-
-	for (i = 0; i < count; i++)
+	if (xpathHeader->paramCount > 0)
 	{
-		result[i] = current;
-		current += strlen(current) + 1;
+		unsigned short i;
+		char	   *cursor;
+
+		result = (char **) palloc(xpathHeader->paramCount * sizeof(char *));
+		cursor = (char *) xpathHeader + xpathHeader->paramFirst;
+
+		for (i = 0; i < xpathHeader->paramCount; i++)
+		{
+			result[i] = cursor;
+			cursor += strlen(cursor) + 1;
+		}
 	}
-	*first = current;
+
 	return result;
 }
 
@@ -926,23 +941,21 @@ retrieveColumnPaths(XMLScanContext xScanCtx, ArrayType *pathsColArr, int columns
 		Datum		colPathD = array_ref(pathsColArr, 1, &colIndex, arrTypLen, elTypLen, elByVal,
 										 elTypAlign, &isNull);
 		xpath		colPathPtr;
-		char	   *colPathData;
-		XPathStorageHeader *colPathHdr;
-		XPathExpression colPathExpr;
+		XPathHeader colPathHeader;
 
 		if (isNull)
 		{
 			elog(ERROR, "column XPath must not be null");
 		}
 		colPathPtr = (xpath) DatumGetPointer(colPathD);
-		colPathData = VARDATA(colPathPtr);
-		colPathHdr = (XPathStorageHeader *) colPathData;
-		if (colPathHdr->paramCount > 0)
+		colPathHeader = getXPathHeader(colPathPtr);
+
+		if (colPathHeader->paramCount > 0)
 		{
 			elog(ERROR, "this function does not accept parameterized xpath expression");
 		}
-		colPathExpr = (XPathExpression) ((char *) colPathHdr + sizeof(XPathStorageHeader));
-		xScanCtx->colPaths[colIndex - 1] = colPathExpr;
+		xScanCtx->colHeaders[colIndex - 1] = colPathHeader;
+		xScanCtx->colExpressions[colIndex - 1] = getXPathExpressionFromStorage(colPathHeader);
 	}
 }
 
@@ -970,8 +983,8 @@ getResultArray(XMLScanContext ctx, XMLNodeOffset baseNodeOff)
 	{
 		xpathval	colValue = NULL;
 		xmldoc		doc = ctx->baseScan->document;
-		XPathExpression expr = ctx->colPaths[i];
-		XPathHeader xpHdr = (XPathHeader) ((char *) expr + expr->common.size);
+		XPathHeader xpHdr = ctx->colHeaders[i];
+		XPathExpression expr = ctx->colExpressions[i];
 		bool		colNotNull = false;
 		XMLCompNodeHdr baseNode = (XMLCompNodeHdr) ((char *) VARDATA(doc) + baseNodeOff);
 		XPathExprState exprState = prepareXPathExpression(expr, baseNode, doc, xpHdr, ctx->baseScan);

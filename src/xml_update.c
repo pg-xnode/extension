@@ -17,7 +17,7 @@ static unsigned int getTreeStorageSize(XNodeInternal root);
 static unsigned int getTreeStorageSizeInternal(XNodeInternal root, int depth);
 static void addNodeOrFragment(XMLNodeHdr newNode, XMLNodeContainer container);
 static unsigned int getTargetNodePosition(XNodeInternal parent, XMLNodeHdr targNode);
-static void checkUnresolvedNamespaces(XMLScan xscan, XMLNodeHdr targNode, XMLAddMode addMode,
+static void checkUnresolvedNamespaces(char *tree, XMLScan xscan, XMLNodeHdr targNode, XMLAddMode addMode,
 						  char **unresolved, unsigned int unresolvedCount);
 
 PG_FUNCTION_INFO_V1(xmlnode_add);
@@ -28,9 +28,8 @@ xmlnode_add(PG_FUNCTION_ARGS)
 	xmldoc		doc = (xmldoc) PG_GETARG_VARLENA_P(0);
 
 	xpath		xpathPtr = (xpath) PG_GETARG_POINTER(1);
-	XPathStorageHeader *storageHdr = (XPathStorageHeader *) VARDATA(xpathPtr);
-	XPathExpression exprBase;
-	XPathHeader xpHdr;
+	XPathHeader xpHdr = getXPathHeader(xpathPtr);
+	XPathExpression expr;
 	XPath xpath;
 
 	xmlnode		newNdVar = (xmlnode) PG_GETARG_VARLENA_P(2);
@@ -41,14 +40,13 @@ xmlnode_add(PG_FUNCTION_ARGS)
 	XMLScanData xscan;
 	XMLCompNodeHdr docRoot;
 
-	if (storageHdr->paramCount > 0)
+	if (xpHdr->paramCount > 0)
 	{
 		elog(ERROR, "this function does not accept parameterized xpath expression");
 	}
 
-	exprBase = (XPathExpression) ((char *) storageHdr + sizeof(XPathStorageHeader));
-	xpHdr = (XPathHeader) ((char *) exprBase + exprBase->common.size);
-	xpath = getSingleXPath(exprBase, xpHdr);
+	expr = getXPathExpressionFromStorage(xpHdr);
+	xpath = getSingleXPath(expr, xpHdr);
 
 	if (xpath->relative)
 	{
@@ -82,24 +80,21 @@ extern Datum
 xmlnode_remove(PG_FUNCTION_ARGS)
 {
 	xmldoc		doc = (xmldoc) PG_GETARG_VARLENA_P(0);
-
 	xpath		xpathPtr = (xpath) PG_GETARG_POINTER(1);
-	XPathStorageHeader *storageHdr = (XPathStorageHeader *) VARDATA(xpathPtr);
-	XPathExpression exprBase;
-	XPathHeader xpHdr;
+	XPathHeader xpHdr = getXPathHeader(xpathPtr);
 	XPath xpath;
+	XPathExpression exprBase;
 
 	xmldoc		result;
 	XMLScanData xscan;
 	XMLCompNodeHdr docRoot;
 
-	if (storageHdr->paramCount > 0)
+	if (xpHdr->paramCount > 0)
 	{
 		elog(ERROR, "this function does not accept parameterized xpath expression");
 	}
 
-	exprBase = (XPathExpression) ((char *) storageHdr + sizeof(XPathStorageHeader));
-	xpHdr = (XPathHeader) ((char *) exprBase + exprBase->common.size);
+	exprBase = getXPathExpressionFromStorage(xpHdr);
 	xpath = getSingleXPath(exprBase, xpHdr);
 
 	if (xpath->relative)
@@ -170,7 +165,7 @@ updateXMLDocument(XMLScan xscan, xmldoc doc, XMLNodeAction action, XMLNodeHdr ne
 
 	if (action == XMLNODE_ACTION_ADD)
 	{
-		unresolvedNamespaces = getUnresolvedXMLNamespaces(newNode, &unresolvedNmspCount);
+		unresolvedNamespaces = getUnresolvedXMLNamespaces(docData, newNode, &unresolvedNmspCount);
 	}
 
 	do
@@ -212,7 +207,9 @@ updateXMLDocument(XMLScan xscan, xmldoc doc, XMLNodeAction action, XMLNodeHdr ne
 
 		if (action == XMLNODE_ACTION_ADD && unresolvedNmspCount > 0)
 		{
-			checkUnresolvedNamespaces(xscan, targNode, addMode, unresolvedNamespaces, unresolvedNmspCount);
+			char	   *tree = (char *) VARDATA(xscan->document);
+
+			checkUnresolvedNamespaces(tree, xscan, targNode, addMode, unresolvedNamespaces, unresolvedNmspCount);
 		}
 
 		/*
@@ -678,7 +675,7 @@ getTargetNodePosition(XNodeInternal parent, XMLNodeHdr targNode)
 }
 
 static void
-checkUnresolvedNamespaces(XMLScan xscan, XMLNodeHdr targNode, XMLAddMode addMode,
+checkUnresolvedNamespaces(char *tree, XMLScan xscan, XMLNodeHdr targNode, XMLAddMode addMode,
 						  char **unresolved, unsigned int unresolvedCount)
 {
 	XMLScanOneLevel scanLevel;
@@ -705,7 +702,7 @@ checkUnresolvedNamespaces(XMLScan xscan, XMLNodeHdr targNode, XMLAddMode addMode
 
 		if (parentNode->common.kind == XMLNODE_ELEMENT)
 		{						/* Otherwise it must be XMLNODE_DOC. */
-			collectXMLNamespaceDeclarations(parentNode, NULL, NULL, &declarations, true,
+			collectXMLNamespaceDeclarations(tree, parentNode, NULL, NULL, &declarations, true,
 											NULL, NULL);
 		}
 		scanLevel = scanLevel->up;
@@ -718,7 +715,7 @@ checkUnresolvedNamespaces(XMLScan xscan, XMLNodeHdr targNode, XMLAddMode addMode
 	 */
 	if (addMode == XMLADD_INTO && targNode->kind == XMLNODE_ELEMENT)
 	{
-		collectXMLNamespaceDeclarations((XMLCompNodeHdr) targNode, NULL, NULL, &declarations, true,
+		collectXMLNamespaceDeclarations(tree, (XMLCompNodeHdr) targNode, NULL, NULL, &declarations, true,
 										NULL, NULL);
 	}
 
