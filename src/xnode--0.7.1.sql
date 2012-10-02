@@ -97,7 +97,7 @@ CREATE TYPE pathval (
 	internallength = variable,
 	input = pathval_in,
 	output =pathval_out,
-	alignment = int,
+	alignment = double,
 	storage = extended
 );
 

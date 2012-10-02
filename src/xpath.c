@@ -21,8 +21,7 @@ static xpathval getXPathExprValue(XPathExprState exprState, xmldoc document, boo
 				  XPathExprOperandValue res);
 static XPathValue getXPathValue(xpathval raw);
 static char *getBoolValueString(bool value);
-
-static char *getMemoryForXPathVal(unsigned int size, XPathValue *xpval, char **outData);
+static char *getStorageForXPathValue(unsigned int totalSize, XPathValue *xpv, char **cursor);
 
 /* The order must follow XPathValueType */
 char	   *xpathValueTypes[] = {"boolean", "number", "string", "nodeset"};
@@ -1024,8 +1023,7 @@ getXPathExprValue(XPathExprState exprState, xmldoc document, bool *notNull, XPat
 	xpathval	retValue = NULL;
 	XPathValue	xpval = NULL;
 	unsigned int resSize = 0;
-	char	   *outData,
-			   *output = NULL;
+	char	   *output = NULL;
 
 	*notNull = false;
 
@@ -1049,7 +1047,7 @@ getXPathExprValue(XPathExprState exprState, xmldoc document, bool *notNull, XPat
 			unsigned int sizeOrig,
 						sizeNewEst;
 			char	   *output,
-					   *targ,
+					   *outTmp,
 					   *after;
 
 			rootOffOrig = XNODE_ROOT_OFFSET(document);
@@ -1057,24 +1055,16 @@ getXPathExprValue(XPathExprState exprState, xmldoc document, bool *notNull, XPat
 			sizeOrig = VARSIZE(document);
 			sizeNewEst = (rootOrig->flags & XNODE_DOC_XMLDECL) ? sizeOrig - sizeof(XMLDeclData) : sizeOrig;
 
-			/*
-			 * Offset of the XPathValue structure (how far it will be from
-			 * 'outData'.
-			 */
-			sizeNewEst++;
 			/* The new root node may need padding. */
 			sizeNewEst += MAX_PADDING(XNODE_ALIGNOF_XPATHVAL) + sizeof(XPathValueData) +
 				MAX_PADDING(XNODE_ALIGNOF_COMPNODE);
 
-			output = getMemoryForXPathVal(sizeNewEst, &xpval, &outData);
-
-			xpval->type = XPATH_VAL_NODESET;
-
-			targ = (char *) xpval + sizeof(XPathValueData);
-			copyXMLNode(rootOrig, targ, false, &rootOffNew);
-			node = (XMLNodeHdr) (targ + rootOffNew);
+			output = getStorageForXPathValue(sizeNewEst, &xpval, &outTmp);
+			copyXMLNode(rootOrig, outTmp, false, &rootOffNew);
+			node = (XMLNodeHdr) (outTmp + rootOffNew);
 			node->kind = XMLNODE_DOC_FRAGMENT;
 			node->flags = 0;
+			xpval->type = XPATH_VAL_NODESET;
 			xpval->v.nodeSetRoot = (char *) node - (char *) xpval;
 
 			after = (char *) node + getXMLNodeSize(node, false);
@@ -1111,10 +1101,7 @@ getXPathExprValue(XPathExprState exprState, xmldoc document, bool *notNull, XPat
 					resSize = VARHDRSZ + 1 + MAX_PADDING(XNODE_ALIGNOF_XPATHVAL) +
 						sizeof(XPathValueData) + MAX_PADDING(XNODE_ALIGNOF_COMPNODE) +
 						nodeSize;
-					output = getMemoryForXPathVal(resSize, &xpval, &outData);
-
-					outTmp = (char *) xpval + sizeof(XPathValueData);
-
+					output = getStorageForXPathValue(resSize, &xpval, &outTmp);
 					copyXMLNode(firstNode, outTmp, false, &root);
 					nodeCopyPtr = outTmp + root;
 					xpval->type = XPATH_VAL_NODESET;
@@ -1162,10 +1149,7 @@ getXPathExprValue(XPathExprState exprState, xmldoc document, bool *notNull, XPat
 						sizeof(XPathValueData) + nodeSizeTotal +
 						MAX_PADDING(XNODE_ALIGNOF_COMPNODE) +
 						sizeof(XMLCompNodeHdrData) + bwidth * j;
-					output = getMemoryForXPathVal(resSize, &xpval, &outData);
-
-					outTmp = (char *) xpval + sizeof(XPathValueData);
-
+					output = getStorageForXPathValue(resSize, &xpval, &outTmp);
 					offsAbs = (XMLNodeOffset *) palloc(j * sizeof(XMLNodeOffset));
 					nodeArray = (XMLNodeHdr *) getXPathOperandValue(exprState,
 						 res->v.nodeSet.nodes.arrayId, XPATH_VAR_NODE_ARRAY);
@@ -1183,7 +1167,7 @@ getXPathExprValue(XPathExprState exprState, xmldoc document, bool *notNull, XPat
 						node = nodeArray[k];
 						copyXMLNode(node, outTmp, false, &root);
 						nodeCopyPtr = outTmp + root;
-						offsAbs[k] = nodeCopyPtr - outData;
+						offsAbs[k] = nodeCopyPtr - output;
 						outTmp = nodeCopyPtr + getXMLNodeSize((XMLNodeHdr) nodeCopyPtr, false);
 					}
 
@@ -1193,7 +1177,7 @@ getXPathExprValue(XPathExprState exprState, xmldoc document, bool *notNull, XPat
 					XNODE_SET_REF_BWIDTH(fragmentHdr, bwidth);
 					fragmentHdr->children = j;
 					refTarget = XNODE_FIRST_REF(fragmentHdr);
-					offAbsFrag = (char *) fragmentHdr - outData;
+					offAbsFrag = (char *) fragmentHdr - output;
 
 					for (k = 0; k < j; k++)
 					{
@@ -1219,7 +1203,7 @@ getXPathExprValue(XPathExprState exprState, xmldoc document, bool *notNull, XPat
 		{
 			resSize = VARHDRSZ + 1 + MAX_PADDING(XNODE_ALIGNOF_XPATHVAL) +
 				sizeof(XPathValueData);
-			output = getMemoryForXPathVal(resSize, &xpval, &outData);
+			output = getStorageForXPathValue(resSize, &xpval, NULL);
 
 			xpval->type = res->type;
 
@@ -1244,7 +1228,7 @@ getXPathExprValue(XPathExprState exprState, xmldoc document, bool *notNull, XPat
 
 			resSize = VARHDRSZ + 1 + MAX_PADDING(XNODE_ALIGNOF_XPATHVAL) +
 				sizeof(XPathValueData) + len;
-			output = getMemoryForXPathVal(resSize, &xpval, &outData);
+			output = getStorageForXPathValue(resSize, &xpval, NULL);
 
 			strcpy(xpval->v.strVal, resStr);
 			xpval->type = res->type;
@@ -1263,11 +1247,11 @@ getXPathExprValue(XPathExprState exprState, xmldoc document, bool *notNull, XPat
 static XPathValue
 getXPathValue(xpathval raw)
 {
-	char	   *inData = VARDATA(raw);
-	uint8	   *xpvOff = (uint8 *) inData;
-	XPathValue	result = (XPathValue) (inData + *xpvOff);
+	char	   *inData;
 
-	return result;
+	inData = VARDATA(raw);
+	inData = (char *) TYPEALIGN(XNODE_ALIGNOF_XPATHVAL, inData);
+	return (XPathValue) inData;
 }
 
 static char *
@@ -1383,16 +1367,27 @@ xpathval_to_xmlnode(PG_FUNCTION_ARGS)
 	}
 }
 
+/*
+ * Returns block of memory initialized for 'pathval' storage.
+ *
+ * 'xpv' is set to point to the XPathValue header
+ * 'cursor' is set to address where the actual value should be placed.
+ */
 static char *
-getMemoryForXPathVal(unsigned int size, XPathValue *xpval, char **outData)
+getStorageForXPathValue(unsigned int totalSize, XPathValue *xpv, char **cursor)
 {
-	char	   *output;
-	uint8	   *xpvOff;
+	char	   *output,
+			   *outTmp;
 
-	output = (char *) palloc(size);
-	*outData = VARDATA(output);
-	xpvOff = (uint8 *) *outData;
-	*xpval = (XPathValue) TYPEALIGN(XNODE_ALIGNOF_XPATHVAL, (xpvOff + 1));
-	*xpvOff = (char *) *xpval - *outData;
+	output = (char *) palloc(totalSize);
+	outTmp = VARDATA(output);
+	outTmp = (char *) TYPEALIGN(XNODE_ALIGNOF_XPATHVAL, outTmp);
+	*xpv = (XPathValue) outTmp;
+	outTmp += sizeof(XPathValueData);
+
+	if (cursor != NULL)
+	{
+		*cursor = outTmp;
+	}
 	return output;
 }
