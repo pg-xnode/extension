@@ -1486,8 +1486,7 @@ processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowe
 				 * checked too: some of them may reference parameters in the
 				 * value.
 				 */
-				attrsNew = preprocessXNTAttrValues(attrOffsetsNew, attributes, state->tree, &newSize, &state->paramNames,
-												   &state->substNodes);
+				attrsNew = preprocessXNTAttrValues(attrOffsetsNew, attributes, state->tree, &newSize, &state->paramNames);
 				newCount = attributes;
 			}
 
@@ -1518,16 +1517,34 @@ processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowe
 				for (i = 0; i < newCount; i++)
 				{
 					XNodeListItem *itemNew = attrOffsetsNew + i;
+					XMLNodeOffset attrOffNew = itemNew->value.singleOff + padding;
 
 					if (i < attributes)
 					{
 						XNodeListItem *itemOrig = attrOffsets + i;
 
-						itemOrig->value.singleOff = itemNew->value.singleOff + padding;
+						itemOrig->value.singleOff = attrOffNew;
 					}
 					else
 					{
-						xmlnodePushSingleNode(&state->stack, itemNew->value.singleOff + padding);
+						xmlnodePushSingleNode(&state->stack, attrOffNew);
+					}
+
+					/*
+					 * If attribute of an 'ordinary' element contains
+					 * parameter it's considered a 'substitution node'.
+					 * Special node is a substitution node itself, so we don't
+					 * pay attention to its attributes.
+					 */
+					if (!isSpecialNode)
+					{
+						XMLNodeHdr	attrNode = (XMLNodeHdr) (state->tree + attrOffNew);
+
+						/* Not all attributes are special (binary) */
+						if (attrNode->flags & XNODE_ATTR_VALUE_BINARY)
+						{
+							xmlnodePushSingleNode(&state->substNodes, attrOffNew);
+						}
 					}
 				}
 
@@ -1560,6 +1577,7 @@ processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowe
 					}
 				}
 				pfree(attrsNew);
+
 				children = attributes = newCount;
 
 				/*

@@ -98,7 +98,7 @@ extern char *preprocessXNTAttributes(XNodeListItem *attrOffsets, unsigned short 
 						XMLNodeKind specNodeKind, bool *offsetsValid, unsigned int *specAttrCount, unsigned int *outSize,
 						unsigned int *outCount, XMLNodeContainer paramNames);
 extern char *preprocessXNTAttrValues(XNodeListItem *attrOffsets, unsigned short attrCount, char *parserOutput, unsigned int *outSize,
-				   XMLNodeContainer paramNames, XMLNodeContainer substNodes);
+						XMLNodeContainer paramNames);
 extern char *dumpBinaryAttrValue(char *binValue, char **paramNames, XPathExprOperandValue paramValues,
 					unsigned short *paramMap, XPathExprState exprState);
 

@@ -460,7 +460,7 @@ preprocessXNTAttributes(XNodeListItem *attrOffsets, unsigned short attrCount, ch
  */
 char *
 preprocessXNTAttrValues(XNodeListItem *attrOffsets, unsigned short attrCount, char *parserOutput,
-						unsigned int *outSize, XMLNodeContainer paramNames, XMLNodeContainer substNodes)
+						unsigned int *outSize, XMLNodeContainer paramNames)
 {
 	unsigned short i;
 	bool		workToDo = false;
@@ -579,12 +579,6 @@ preprocessXNTAttrValues(XNodeListItem *attrOffsets, unsigned short attrCount, ch
 			attrNew->flags |= XNODE_ATTR_VALUE_BINARY;
 			memcpy(resCursor, valuesNew[i], valueSizes[i]);
 			pfree(valuesNew[i]);
-
-			/*
-			 * This node needs special attention when the template is being
-			 * used.
-			 */
-			xmlnodePushSingleNode(substNodes, offNew);
 		}
 		else
 		{
