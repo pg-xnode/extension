@@ -8,7 +8,7 @@
 #include "xpath.h"
 #include "xmlnode_util.h"
 
-static unsigned int evaluateXPathOperand(XPathExprState exprState, XPathExprOperand operand,
+static void evaluateXPathOperand(XPathExprState exprState, XPathExprOperand operand,
 				unsigned short recursionLevel, XPathExprOperandValue result);
 static void evaluateXPathFunction(XPathExprState exprState, XPathExpression funcExpr,
 				unsigned short recursionLevel, XPathExprOperandValue result);
@@ -640,9 +640,7 @@ evaluateXPathExpression(XPathExprState exprState, XPathExpression expr, unsigned
 	unsigned short i;
 	char	   *currentPtr = (char *) expr;
 	XPathExprOperand currentOpnd;
-	unsigned int currentSize;
 	XPathExprOperator operator;
-	XPathExprOperatorId firstOp = 0;
 	bool		neg;
 
 	currentPtr += sizeof(XPathExpressionData);
@@ -655,40 +653,48 @@ evaluateXPathExpression(XPathExprState exprState, XPathExpression expr, unsigned
 		currentPtr += varSize;
 	}
 
-	currentPtr = (char *) TYPEALIGN(XPATH_ALIGNOF_OPERAND, currentPtr);
-	currentOpnd = (XPathExprOperand) currentPtr;
-	prepareLiteral(exprState, currentOpnd);
-	currentSize = evaluateXPathOperand(exprState, currentOpnd, recursionLevel, result);
-
-	for (i = 0; i < expr->members - 1; i++)
+	for (i = 0; i < expr->members; i++)
 	{
 		XPathExprOperandValueData resTmp,
 					currentVal;
 
-		currentPtr += currentSize;
-		operator = XPATH_EXPR_OPERATOR(currentPtr);
-		currentSize = sizeof(XPathExprOperatorStorageData);
-		currentPtr += currentSize;
-		if (i == 0)
+		if (i > 0)
 		{
-			firstOp = operator->id;
+			operator = XPATH_EXPR_OPERATOR(currentPtr);
+			currentPtr += sizeof(XPathExprOperatorStorageData);
 		}
+
 		currentPtr = (char *) TYPEALIGN(XPATH_ALIGNOF_OPERAND, currentPtr);
 		currentOpnd = (XPathExprOperand) currentPtr;
-		prepareLiteral(exprState, currentOpnd);
+		currentPtr += currentOpnd->common.size;
 
-		currentSize = evaluateXPathOperand(exprState, currentOpnd, recursionLevel, &currentVal);
+		prepareLiteral(exprState, currentOpnd);
+		evaluateXPathOperand(exprState, currentOpnd, recursionLevel, &currentVal);
+
+		if (i == 0)
+		{
+			memcpy(result, &currentVal, sizeof(XPathExprOperandValueData));
+		}
+
+		if (expr->members == 1)
+		{
+			break;
+		}
+
+		if (i == 0)
+			continue;
+
 		evaluateBinaryOperator(exprState, result, &currentVal, operator, &resTmp);
 		memcpy(result, &resTmp, sizeof(XPathExprOperandValueData));
 
 		/*
 		 * Short evaluation.
 		 *
-		 * If the first operator is OR, then all operators on the same level
-		 * must be OR too. The same applies to AND. These operators are unique
-		 * in terms of precedence.
+		 * If the operator is OR, then all operators on the same level must be
+		 * OR too. The same applies to AND. These operators are unique in
+		 * terms of precedence.
 		 */
-		if (firstOp == XPATH_EXPR_OPERATOR_OR)
+		if (operator->id == XPATH_EXPR_OPERATOR_OR)
 		{
 			Assert(result->type == XPATH_VAL_BOOLEAN);
 			if (!result->isNull && result->v.boolean)
@@ -696,7 +702,7 @@ evaluateXPathExpression(XPathExprState exprState, XPathExpression expr, unsigned
 				break;
 			}
 		}
-		else if (firstOp == XPATH_EXPR_OPERATOR_AND)
+		else if (operator->id == XPATH_EXPR_OPERATOR_AND)
 		{
 			Assert(result->type == XPATH_VAL_BOOLEAN);
 			if (result->isNull || (!result->isNull && !result->v.boolean))
@@ -757,29 +763,18 @@ freeExpressionState(XPathExprState state)
 	pfree(state);
 }
 
-static unsigned int
+static void
 evaluateXPathOperand(XPathExprState exprState, XPathExprOperand operand, unsigned short recursionLevel,
 					 XPathExprOperandValue result)
 {
-	unsigned int resSize;
 	XPathExpression expr = (XPathExpression) operand;
 
 	if (operand->common.type == XPATH_OPERAND_EXPR_SUB)
-	{
 		evaluateXPathExpression(exprState, expr, recursionLevel + 1, result);
-		resSize = expr->common.size;
-	}
 	else if (operand->common.type == XPATH_OPERAND_FUNC)
-	{
 		evaluateXPathFunction(exprState, expr, recursionLevel + 1, result);
-		resSize = expr->common.size;
-	}
 	else
-	{
 		memcpy(result, &operand->value, sizeof(XPathExprOperandValueData));
-		resSize = operand->common.size;
-	}
-	return resSize;
 }
 
 
