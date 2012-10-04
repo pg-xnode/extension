@@ -122,7 +122,7 @@ static char *getEncodingSimplified(const char *original);
 static bool isPredefinedEntity(char *refStart, char *value);
 
 static void evaluateWhitespace(XMLParserState state);
-static void ensureSpace(unsigned int size, XMLParserState state);
+static void ensureSpaceIn(unsigned int size, XMLParserState state);
 static unsigned int saveNodeHeader(XMLParserState state, XMLNodeInternal nodeInfo, char flags);
 static void saveContent(XMLParserState state, XMLNodeInternal nodeInfo);
 static void saveReferences(XMLParserState state, XMLNodeInternal nodeInfo, XMLCompNodeHdr compNode,
@@ -132,10 +132,11 @@ static void saveRootNodeHeader(XMLParserState state, XMLNodeKind kind);
 
 static void checkNamespaces(XMLParserState state, XMLNodeInternal nodeInfo, unsigned int attrsPrefixedCount,
 				bool *elNmspIsSpecial);
-static unsigned int dumpAttributes(XMLCompNodeHdr element, char *input, char **output, unsigned int *pos, char **paramNames);
-static void dumpContentEscaped(XMLNodeKind kind, char **output, char *input, unsigned int inputLen,
-				   unsigned int *outPos);
-static void dumpSpecString(char **output, char *outNew, unsigned int *outPos, unsigned int *incrInput);
+static unsigned int dumpAttributes(XMLCompNodeHdr element, StringInfo output,
+			   char **paramNames);
+static void dumpContentEscaped(XMLNodeKind kind, StringInfo output, char *input, unsigned int inputLen);
+static void dumpSpecString(StringInfo output, char *outNew, unsigned int *incrInput);
+static char *ensureSpaceOut(StringInfo output, unsigned int toWrite);
 
 typedef struct PredefinedEntity
 {
@@ -365,7 +366,7 @@ xmlnodeParseNode(XMLParserState state)
 		ptrUnaligned = state->tree + state->dstPos;
 		rootOffPtr = (XMLNodeOffset *) TYPEALIGN(XNODE_ALIGNOF_NODE_OFFSET, ptrUnaligned);
 		padding = (char *) rootOffPtr - ptrUnaligned;
-		ensureSpace(padding + sizeof(XMLNodeOffset), state);
+		ensureSpaceIn(padding + sizeof(XMLNodeOffset), state);
 
 		*rootOffPtr = xmlnodePopOffset(&state->stack);
 		state->dstPos += padding + sizeof(XMLNodeOffset);
@@ -668,7 +669,7 @@ readXMLAttValue(XMLParserState state, bool output, bool *refs)
 				{
 					unsigned int len = strlen(utf8char);
 
-					ensureSpace(len, state);
+					ensureSpaceIn(len, state);
 					memcpy(state->tree + state->dstPos, utf8char, len);
 					state->dstPos += len;
 				}
@@ -683,7 +684,7 @@ readXMLAttValue(XMLParserState state, bool output, bool *refs)
 				}
 				if (output)
 				{
-					ensureSpace(1, state);
+					ensureSpaceIn(1, state);
 					*(state->tree + state->dstPos) = predefValue;
 					state->dstPos++;
 				}
@@ -712,7 +713,7 @@ readXMLAttValue(XMLParserState state, bool output, bool *refs)
 			/* 'Ordinary' character, just write it (if the caller wants it). */
 			if (output)
 			{
-				ensureSpace(state->cWidth, state);
+				ensureSpaceIn(state->cWidth, state);
 				memcpy(state->tree + state->dstPos, state->c, state->cWidth);
 				state->dstPos += state->cWidth;
 			}
@@ -723,7 +724,7 @@ readXMLAttValue(XMLParserState state, bool output, bool *refs)
 
 	if (output)
 	{
-		ensureSpace(1, state);
+		ensureSpaceIn(1, state);
 		*(state->tree + state->dstPos) = '\0';
 		state->dstPos++;
 	}
@@ -1095,7 +1096,7 @@ processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowe
 					 */
 					state->dstPos--;
 				}
-				ensureSpace(nodeInfo->cntLength + 1, state);
+				ensureSpaceIn(nodeInfo->cntLength + 1, state);
 				memcpy(state->tree + state->dstPos, refChar, nodeInfo->cntLength);
 			}
 			else if (isPredefinedEntity(start + 1, &valueSingle))
@@ -1110,7 +1111,7 @@ processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowe
 				{
 					state->dstPos--;
 				}
-				ensureSpace(nodeInfo->cntLength + 1, state);
+				ensureSpaceIn(nodeInfo->cntLength + 1, state);
 				*(state->tree + state->dstPos) = valueSingle;
 			}
 			else
@@ -1558,7 +1559,7 @@ processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowe
 					XMLNodeOffset offOrig = attrDataOrig - state->tree;
 					XMLNodeOffset offNew = attrDataNew - state->tree;
 
-					ensureSpace(newSize - attrDataOrigSize, state);
+					ensureSpaceIn(newSize - attrDataOrigSize, state);
 					attrDataOrig = state->tree + offOrig;
 					attrDataNew = state->tree + offNew;
 				}
@@ -2196,7 +2197,7 @@ processTag(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowed,
 						elog(ERROR, "XML declaration may contain %u attributes at maximum.", XNODE_XDECL_MAX_ATTRS);
 					}
 				}
-				ensureSpace(sizeof(XMLNodeHdrData) + nameLength + 1, state);
+				ensureSpaceIn(sizeof(XMLNodeHdrData) + nameLength + 1, state);
 				attrNode = (XMLNodeHdr) (state->tree + state->dstPos);
 				attrNode->kind = XMLNODE_ATTRIBUTE;
 				attrNode->flags = 0;
@@ -2464,7 +2465,7 @@ evaluateWhitespace(XMLParserState state)
 }
 
 static void
-ensureSpace(unsigned int size, XMLParserState state)
+ensureSpaceIn(unsigned int size, XMLParserState state)
 {
 	unsigned int chunks = 0;
 	unsigned int orig = state->sizeOut;
@@ -2517,7 +2518,7 @@ saveNodeHeader(XMLParserState state, XMLNodeInternal nodeInfo, char flags)
 		incr = sizeof(XMLNodeHdrData);
 	}
 
-	ensureSpace(incr, state);
+	ensureSpaceIn(incr, state);
 
 	/*
 	 * 'outPtrAligned can't be used because reallocation might have taken
@@ -2578,7 +2579,7 @@ saveContent(XMLParserState state, XMLNodeInternal nodeInfo)
 	if (nodeInfo->tokenType & (TOKEN_ETAG | TOKEN_EMPTY_ELEMENT |
 							   TOKEN_CDATA | TOKEN_COMMENT | TOKEN_DTD | TOKEN_PI | TOKEN_TEXT | TOKEN_REFERENCE))
 	{
-		ensureSpace(nodeInfo->cntLength + 1, state);
+		ensureSpaceIn(nodeInfo->cntLength + 1, state);
 	}
 	else
 	{
@@ -2607,7 +2608,7 @@ saveReferences(XMLParserState state, XMLNodeInternal nodeInfo, XMLCompNodeHdr co
 	unsigned short int i;
 	XMLNodeOffset elementOff = (char *) compNode - state->tree;
 
-	ensureSpace(refsTotal, state);
+	ensureSpaceIn(refsTotal, state);
 	compNode = (XMLCompNodeHdr) (state->tree + elementOff);
 	XNODE_SET_REF_BWIDTH(compNode, bwidth);
 	childOffTarg = XNODE_LAST_REF(compNode);
@@ -2735,7 +2736,7 @@ saveRootNodeHeader(XMLParserState state, XMLNodeKind kind)
 	rootOffSrc = state->stack.content;
 	bwidth = getXMLNodeOffsetByteWidth(rootNodeOff - rootOffSrc->value.singleOff);
 	refsTotal = childCount * bwidth;
-	ensureSpace(padding + rootHdrSz + refsTotal, state);
+	ensureSpaceIn(padding + rootHdrSz + refsTotal, state);
 	state->dstPos += padding + rootHdrSz;
 
 	rootNode = (XMLCompNodeHdr) (state->tree + rootNodeOff);
@@ -2792,7 +2793,7 @@ saveRootNodeHeader(XMLParserState state, XMLNodeKind kind)
 	}
 
 	extraSize = declSize + xntHdrSize;
-	ensureSpace(extraSize + MAX_PADDING(XNODE_ALIGNOF_NODE_OFFSET) + sizeof(XMLNodeOffset), state);
+	ensureSpaceIn(extraSize + MAX_PADDING(XNODE_ALIGNOF_NODE_OFFSET) + sizeof(XMLNodeOffset), state);
 	/* re-initialize the 'rootNode', re-allocation might have taken place. */
 	rootNode = (XMLCompNodeHdr) (state->tree + rootNodeOff);
 
@@ -2861,21 +2862,18 @@ saveRootNodeHeader(XMLParserState state, XMLNodeKind kind)
 	SET_VARSIZE(state->result, state->dstPos + VARHDRSZ);
 }
 
-/*
- * TODO Estimate length of the output so that the exact length doesn't have
- * to be computed.
- */
 void
-xmlnodeDumpNode(char *input, XMLNodeOffset nodeOff, char **output, unsigned int *pos, char **paramNames)
+xmlnodeDumpNode(char *input, XMLNodeOffset nodeOff, StringInfo output, char **paramNames, bool terminate)
 {
 	char	   *content = NULL;
 	unsigned int cntLen = 0;
-	unsigned int incr;
 	XMLNodeHdr	node = (XMLNodeHdr) (input + nodeOff);
+	char	   *cursor;
 
 	switch (node->kind)
 	{
-			unsigned short int i;
+			unsigned short int i,
+						incr;
 			char	   *childOffPtr,
 					   *lastChild;
 
@@ -2900,23 +2898,14 @@ xmlnodeDumpNode(char *input, XMLNodeOffset nodeOff, char **output, unsigned int 
 					content = XNODE_ELEMENT_NAME(element);
 				}
 				cntLen = strlen(content);
+				cursor = ensureSpaceOut(output, cntLen + 1);
 
 				/*
 				 * STag
 				 */
-				if (*output != NULL)
-				{
-					**output = XNODE_CHAR_LARROW;
-					(*output)++;
-
-					/*
-					 * Tag name
-					 */
-					memcpy(*output, content, cntLen);
-					*output += cntLen;
-				}
-				*pos += cntLen + 1;
-				/* '<' + Name */
+				*cursor++ = XNODE_CHAR_LARROW;
+				memcpy(cursor, content, cntLen);
+				/* '<' + tag name  written so far */
 			}
 
 			childOffPtr = XNODE_FIRST_REF(((XMLCompNodeHdr) node));
@@ -2925,7 +2914,7 @@ xmlnodeDumpNode(char *input, XMLNodeOffset nodeOff, char **output, unsigned int 
 			{
 				XMLCompNodeHdr eh = (XMLCompNodeHdr) node;
 
-				i = dumpAttributes(eh, input, output, pos, paramNames);
+				i = dumpAttributes(eh, output, paramNames);
 				childOffPtr = childOffPtr + i * XNODE_GET_REF_BWIDTH(eh);
 
 				if (node->flags & XNODE_EMPTY)
@@ -2933,47 +2922,32 @@ xmlnodeDumpNode(char *input, XMLNodeOffset nodeOff, char **output, unsigned int 
 					/*
 					 * EmptyElement
 					 */
-					if (*output != NULL)
-					{
-						**output = XNODE_CHAR_SLASH;
-						(*output)++;
-						**output = XNODE_CHAR_RARROW;
-						(*output)++;
-					}
-					*pos += 2;
+					cursor = ensureSpaceOut(output, 2);
+					*cursor++ = XNODE_CHAR_SLASH;
+					*cursor = XNODE_CHAR_RARROW;
 				}
 				else
 				{
 					char	   *lastChild = XNODE_LAST_REF((XMLCompNodeHdr) node);
 
-					if (*output != NULL)
-					{
-						**output = XNODE_CHAR_RARROW;
-						(*output)++;
-					}
-					(*pos)++;
+					cursor = ensureSpaceOut(output, 1);
+					*cursor = XNODE_CHAR_RARROW;
 
 					while (childOffPtr <= lastChild)
 					{
 						xmlnodeDumpNode(input, nodeOff - readXMLNodeOffset(&childOffPtr,
-																		   XNODE_GET_REF_BWIDTH(eh), true), output, pos, paramNames);
+																		   XNODE_GET_REF_BWIDTH(eh), true), output, paramNames, false);
 					}
 
 					/*
 					 * Etag
 					 */
-					if (*output != NULL)
-					{
-						**output = XNODE_CHAR_LARROW;
-						(*output)++;
-						**output = XNODE_CHAR_SLASH;
-						(*output)++;
-						memcpy(*output, content, cntLen);
-						(*output) += cntLen;
-						**output = XNODE_CHAR_RARROW;
-						(*output)++;
-					}
-					*pos += 3 + strlen(content);
+					cursor = ensureSpaceOut(output, cntLen + 3);
+					*cursor++ = XNODE_CHAR_LARROW;
+					*cursor++ = XNODE_CHAR_SLASH;
+					memcpy(cursor, content, cntLen);
+					cursor += cntLen;
+					*cursor = XNODE_CHAR_RARROW;
 					/* '</' + 'Name' + '>' */
 				}
 
@@ -2997,7 +2971,7 @@ xmlnodeDumpNode(char *input, XMLNodeOffset nodeOff, char **output, unsigned int 
 				{
 					xmlnodeDumpNode(input, nodeOff -
 									readXMLNodeOffset(&childOffPtr, XNODE_GET_REF_BWIDTH((XMLCompNodeHdr) node), true),
-									output, pos, paramNames);
+									output, paramNames, false);
 				}
 			}
 			break;
@@ -3005,59 +2979,39 @@ xmlnodeDumpNode(char *input, XMLNodeOffset nodeOff, char **output, unsigned int 
 		case XMLNODE_DTD:
 			content = XNODE_CONTENT(node);
 			cntLen = strlen(content);
-			if (*output != NULL)
-			{
-				unsigned int incr;
 
-				memcpy(*output, specXMLStrings[XNODE_STR_DTD_START], incr
-					   = strlen(specXMLStrings[XNODE_STR_DTD_START]));
-				(*output) += incr;
-				memcpy(*output, content, cntLen);
-				(*output) += cntLen;
-				memcpy(*output, specXMLStrings[XNODE_STR_DTD_END], incr
-					   = strlen(specXMLStrings[XNODE_STR_DTD_END]));
-				(*output) += incr;
-			}
-			cntLen += strlen(specXMLStrings[XNODE_STR_DTD_START]) + strlen(
-										  specXMLStrings[XNODE_STR_DTD_END]);
-			*pos += cntLen;
+			cursor = ensureSpaceOut(output, incr = strlen(specXMLStrings[XNODE_STR_DTD_START]));
+			memcpy(cursor, specXMLStrings[XNODE_STR_DTD_START], incr);
+
+			cursor = ensureSpaceOut(output, cntLen);
+			memcpy(cursor, content, cntLen);
+
+			cursor = ensureSpaceOut(output, incr = strlen(specXMLStrings[XNODE_STR_DTD_END]));
+			memcpy(cursor, specXMLStrings[XNODE_STR_DTD_END], incr);
 			break;
 
 		case XMLNODE_ATTRIBUTE:
 			content = XNODE_CONTENT(node);
 
-			/*
-			 * Skip name
-			 */
+			/* Skip the name. */
 			content += strlen(content) + 1;
+
 			cntLen = strlen(content);
-			if (*output != NULL)
-			{
-				memcpy(*output, content, cntLen);
-				(*output) += cntLen;
-			}
-			*pos += cntLen;
+			cursor = ensureSpaceOut(output, cntLen);
+			memcpy(cursor, content, cntLen);
 			break;
 
 		case XMLNODE_COMMENT:
 			content = XNODE_CONTENT(node);
 			cntLen = strlen(content);
-			if (*output != NULL)
-			{
-				unsigned int incr;
+			cursor = ensureSpaceOut(output, incr = strlen(specXMLStrings[XNODE_STR_CMT_START]));
+			memcpy(cursor, specXMLStrings[XNODE_STR_CMT_START], incr);
 
-				memcpy(*output, specXMLStrings[XNODE_STR_CMT_START], incr
-					   = strlen(specXMLStrings[XNODE_STR_CMT_START]));
-				(*output) += incr;
-				memcpy(*output, content, cntLen);
-				(*output) += cntLen;
-				memcpy(*output, specXMLStrings[XNODE_STR_CMT_END], incr
-					   = strlen(specXMLStrings[XNODE_STR_CMT_END]));
-				(*output) += incr;
-			}
-			cntLen += strlen(specXMLStrings[XNODE_STR_CMT_START]) + strlen(
-										  specXMLStrings[XNODE_STR_CMT_END]);
-			*pos += cntLen;
+			cursor = ensureSpaceOut(output, cntLen);
+			memcpy(cursor, content, cntLen);
+
+			cursor = ensureSpaceOut(output, incr = strlen(specXMLStrings[XNODE_STR_CMT_END]));
+			memcpy(cursor, specXMLStrings[XNODE_STR_CMT_END], incr);
 			break;
 
 		case XMLNODE_PI:
@@ -3065,35 +3019,23 @@ xmlnodeDumpNode(char *input, XMLNodeOffset nodeOff, char **output, unsigned int 
 			cntLen = strlen(content);
 			incr = strlen(specXMLStrings[XNODE_STR_PI_START]);
 
-			if (*output != NULL)
-			{
-				memcpy(*output, specXMLStrings[XNODE_STR_PI_START], incr);
-				(*output) += incr;
-				memcpy(*output, content, cntLen);
-				(*output) += cntLen;
-			}
-			*pos += cntLen + incr;
+			cursor = ensureSpaceOut(output, incr);
+			memcpy(cursor, specXMLStrings[XNODE_STR_PI_START], incr);
+
+			cursor = ensureSpaceOut(output, cntLen);
+			memcpy(cursor, content, cntLen);
 
 			if (node->flags & XNODE_PI_HAS_VALUE)
 			{
 				content += cntLen + 1;
 				cntLen = strlen(content);
-				if (*output != NULL)
-				{
-					**output = ' ';
-					(*output)++;
-					memcpy(*output, content, cntLen);
-					(*output) += cntLen;
-				}
-				*pos += cntLen + 1;
+				cursor = ensureSpaceOut(output, cntLen + 1);
+				*cursor++ = ' ';
+				memcpy(cursor, content, cntLen);
 			}
 			incr = strlen(specXMLStrings[XNODE_STR_PI_END]);
-			if (*output != NULL)
-			{
-				memcpy(*output, specXMLStrings[XNODE_STR_PI_END], incr);
-				(*output) += incr;
-			}
-			*pos += incr;
+			cursor = ensureSpaceOut(output, incr);
+			memcpy(cursor, specXMLStrings[XNODE_STR_PI_END], incr);
 			break;
 
 		case XMLNODE_CDATA:
@@ -3103,16 +3045,12 @@ xmlnodeDumpNode(char *input, XMLNodeOffset nodeOff, char **output, unsigned int 
 
 			if (node->flags & XNODE_TEXT_SPEC_CHARS)
 			{
-				dumpContentEscaped(node->kind, output, content, cntLen, pos);
+				dumpContentEscaped(node->kind, output, content, cntLen);
 			}
 			else
 			{
-				if (*output != NULL)
-				{
-					memcpy(*output, content, cntLen);
-					(*output) += cntLen;
-				}
-				*pos += cntLen;
+				cursor = ensureSpaceOut(output, cntLen);
+				memcpy(cursor, content, cntLen);
 			}
 			break;
 
@@ -3124,7 +3062,7 @@ xmlnodeDumpNode(char *input, XMLNodeOffset nodeOff, char **output, unsigned int 
 				XMLCompNodeHdr eh = (XMLCompNodeHdr) node;
 				XMLNodeOffset offRel = readXMLNodeOffset(&childOffPtr, XNODE_GET_REF_BWIDTH(eh), true);
 
-				xmlnodeDumpNode(input, nodeOff - offRel, output, pos, paramNames);
+				xmlnodeDumpNode(input, nodeOff - offRel, output, paramNames, false);
 			}
 			break;
 
@@ -3132,11 +3070,20 @@ xmlnodeDumpNode(char *input, XMLNodeOffset nodeOff, char **output, unsigned int 
 			elog(ERROR, "unable to dump node: %u", node->kind);
 			break;
 	}
+
+	if (terminate)
+	{
+		cursor = ensureSpaceOut(output, 1);
+		*cursor = '\0';
+	}
 }
 
+/*
+ * Dumps attributes of 'element' and returns their count.
+ */
 static unsigned int
-dumpAttributes(XMLCompNodeHdr element, char *input,
-			   char **output, unsigned int *pos, char **paramNames)
+dumpAttributes(XMLCompNodeHdr element,
+			   StringInfo output, char **paramNames)
 {
 
 	unsigned int i = 0;
@@ -3153,6 +3100,7 @@ dumpAttributes(XMLCompNodeHdr element, char *input,
 		char		qMark;
 		bool		isSpecialAttr = false;
 		bool		valueCopy = false;
+		char	   *cursor;
 
 		if (attrOffset == XMLNodeOffsetInvalid)
 		{
@@ -3188,18 +3136,13 @@ dumpAttributes(XMLCompNodeHdr element, char *input,
 		qMark = (attrNode->flags & XNODE_ATTR_APOSTROPHE) ? XNODE_CHAR_APOSTR : XNODE_CHAR_QUOTMARK;
 
 		attrNameLen = strlen(attrName);
-		if (*output != NULL)
-		{
-			**output = XNODE_CHAR_SPACE;
-			(*output)++;
-			memcpy(*output, attrName, attrNameLen);
-			*output += attrNameLen;
-			**output = XNODE_CHAR_EQ;
-			(*output)++;
-			**output = qMark;
-			(*output)++;
-		}
-		*pos += attrNameLen + 3;
+
+		cursor = ensureSpaceOut(output, attrNameLen + 3);
+		*cursor++ = XNODE_CHAR_SPACE;
+		memcpy(cursor, attrName, attrNameLen);
+		cursor += attrNameLen;
+		*cursor++ = XNODE_CHAR_EQ;
+		*cursor = qMark;
 
 		if (isSpecialAttr)
 		{
@@ -3253,35 +3196,26 @@ dumpAttributes(XMLCompNodeHdr element, char *input,
 
 		if (attrNode->flags & XNODE_ATTR_CONTAINS_REF)
 		{
-			dumpContentEscaped(XMLNODE_ATTRIBUTE, output, attrValue, attrValueLen, pos);
+			dumpContentEscaped(XMLNODE_ATTRIBUTE, output, attrValue, attrValueLen);
 		}
 		else
 		{
-			if (*output != NULL)
-			{
-				memcpy(*output, attrValue, attrValueLen);
-				*output += attrValueLen;
-			}
-			*pos += attrValueLen;
+			cursor = ensureSpaceOut(output, attrValueLen);
+			memcpy(cursor, attrValue, attrValueLen);
 		}
 
 		if (valueCopy)
 		{
 			pfree(attrValue);
 		}
-		if (*output != NULL)
-		{
-			**output = qMark;
-			(*output)++;
-		}
-		(*pos)++;
+		cursor = ensureSpaceOut(output, 1);
+		*cursor = qMark;
 	}
 	return i;
 }
 
 static void
-dumpContentEscaped(XMLNodeKind kind, char **output, char *input, unsigned int inputLen,
-				   unsigned int *outPos)
+dumpContentEscaped(XMLNodeKind kind, StringInfo output, char *input, unsigned int inputLen)
 {
 
 	unsigned int i = 0;
@@ -3301,7 +3235,7 @@ dumpContentEscaped(XMLNodeKind kind, char **output, char *input, unsigned int in
 					char	   *escaped = predefEntities[j].escaped;
 
 					special = true;
-					dumpSpecString(output, escaped, outPos, &incrInput);
+					dumpSpecString(output, escaped, &incrInput);
 					break;
 				}
 			}
@@ -3330,7 +3264,7 @@ dumpContentEscaped(XMLNodeKind kind, char **output, char *input, unsigned int in
 
 			if (special)
 			{
-				dumpSpecString(output, outStr, outPos, &incrInput);
+				dumpSpecString(output, outStr, &incrInput);
 			}
 		}
 		else
@@ -3340,13 +3274,11 @@ dumpContentEscaped(XMLNodeKind kind, char **output, char *input, unsigned int in
 
 		if (!special)
 		{
+			char	   *cursor;
+
 			incrInput = pg_utf_mblen((unsigned char *) input);
-			if (*output != NULL)
-			{
-				memcpy(*output, input, incrInput);
-				*output += incrInput;
-			}
-			*outPos += incrInput;
+			cursor = ensureSpaceOut(output, incrInput);
+			memcpy(cursor, input, incrInput);
 		}
 		i += incrInput;
 		input += incrInput;
@@ -3354,21 +3286,53 @@ dumpContentEscaped(XMLNodeKind kind, char **output, char *input, unsigned int in
 }
 
 static void
-dumpSpecString(char **output, char *outNew, unsigned int *outPos, unsigned int *incrInput)
+dumpSpecString(StringInfo output, char *outNew, unsigned int *incrInput)
 {
 	unsigned short len = strlen(outNew);
+	char	   *cursor = ensureSpaceOut(output, len + 1);
 
-	if (*output != NULL)
-	{
-		**output = XNODE_CHAR_AMPERSAND;
-		(*output)++;
-		memcpy(*output, outNew, len);
-		*output += len;
-	}
-	*outPos += len + 1;
+	*cursor++ = XNODE_CHAR_AMPERSAND;
+	memcpy(cursor, outNew, len);
 	*incrInput = 1;
 }
 
+/*
+ * This function is used instead of stringinfo.c:enlargeStringInfo()
+ * The reason is that we must expect large documents and be able to tune
+ * the amount of memory added. enlargeStringInfo() does not provide any
+ * flexibility - it always allocates twice the original size.
+ *
+ * 'toWrite' is the nuber of bytes the caller is going to add.
+ *
+ * Returns a pointer where the data can be written. On return the 'output->len'
+ * contains the 'toWrite' size.
+ */
+static char *
+ensureSpaceOut(StringInfo output, unsigned int toWrite)
+{
+	char	   *result;
+
+	if (output->len + toWrite > output->maxlen)
+	{
+		unsigned int increment;
+
+		/* Try to add a fraction of the original size. */
+		increment = output->maxlen >> 2;
+		/* If the original size was too low, add it whole again. */
+		if (increment == 0)
+		{
+			increment = output->maxlen;
+		}
+
+		output->maxlen += increment;
+		output->data = (char *) repalloc(output->data, output->maxlen);
+		elog(DEBUG1, "output memory to dump XML data increased from %u to %u bytes",
+			 output->maxlen - increment, output->maxlen);
+	}
+	result = output->data + output->len;
+	output->len += toWrite;
+	return result;
+}
 
 /*
  * Write node offset into a character array. Little-endian byte ordering is

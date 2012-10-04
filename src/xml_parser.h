@@ -185,7 +185,7 @@ extern void readXMLWhitespace(XMLParserState state, bool optional);
 extern unsigned int readXMLComment(XMLParserState state);
 extern bool readXMLReference(XMLParserState state, pg_wchar *value);
 
-extern void xmlnodeDumpNode(char *input, XMLNodeOffset nodeOff, char **output, unsigned int *pos, char **paramNames);
+extern void xmlnodeDumpNode(char *input, XMLNodeOffset nodeOff, StringInfo output, char **paramNames, bool terminate);
 extern char *dumpXMLDecl(XMLDecl decl);
 
 #endif   /* XML_PARSER_H */

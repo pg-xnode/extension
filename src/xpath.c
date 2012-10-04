@@ -795,7 +795,7 @@ castXPathValToStr(XPathValue src)
 				XMLNodeOffset rootNdOff = src->v.nodeSetRoot;
 
 				/* The 'nodeSetRoot' counts from the start of 'src'. */
-				return dumpXMLNode(data, (char *) src - data + rootNdOff);
+				return dumpXMLNode(data, (char *) src - data + rootNdOff, rootNdOff);
 			}
 			break;
 

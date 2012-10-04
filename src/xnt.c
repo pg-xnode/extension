@@ -81,7 +81,7 @@ xnode_template_out(PG_FUNCTION_ARGS)
 	char	   *data = (char *) VARDATA(template);
 	XMLNodeOffset rootNdOff = XNODE_ROOT_OFFSET(template);
 
-	PG_RETURN_CSTRING(dumpXMLNode(data, rootNdOff));
+	PG_RETURN_CSTRING(dumpXMLNode(data, rootNdOff, VARSIZE(template)));
 }
 
 XMLNodeKind

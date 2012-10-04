@@ -117,7 +117,7 @@ xmlnode_out(PG_FUNCTION_ARGS)
 	char	   *data = (char *) VARDATA(node);
 	XMLNodeOffset rootNdOff = XNODE_ROOT_OFFSET(node);
 
-	PG_RETURN_CSTRING(dumpXMLNode(data, rootNdOff));
+	PG_RETURN_CSTRING(dumpXMLNode(data, rootNdOff, VARSIZE(node)));
 }
 
 PG_FUNCTION_INFO_V1(xmlnode_kind);
@@ -179,7 +179,7 @@ xmldoc_out(PG_FUNCTION_ARGS)
 	char	   *data = (char *) VARDATA(doc);
 	XMLNodeOffset rootNdOff = XNODE_ROOT_OFFSET(doc);
 
-	PG_RETURN_CSTRING(dumpXMLNode(data, rootNdOff));
+	PG_RETURN_CSTRING(dumpXMLNode(data, rootNdOff, VARSIZE(doc)));
 }
 
 
@@ -362,16 +362,15 @@ xmldoc_to_xmlnode(PG_FUNCTION_ARGS)
 }
 
 char *
-dumpXMLNode(char *data, XMLNodeOffset rootNdOff)
+dumpXMLNode(char *data, XMLNodeOffset rootNdOff, unsigned int binarySize)
 {
-	unsigned int resultPos;
-	char	   *result,
-			   *resultTmp;
 	XMLNodeHdr	root = (XMLNodeHdr) (data + rootNdOff);
 	char	   *declStr = NULL;
 	unsigned short declSize = 0;
 	char	   *srcCursor = NULL;
 	char	  **paramNames = NULL;
+	StringInfo	output;
+	unsigned int outSizeEst;
 
 	if (root->kind == XMLNODE_DOC_FRAGMENT)
 	{
@@ -414,25 +413,31 @@ dumpXMLNode(char *data, XMLNodeOffset rootNdOff)
 		}
 	}
 
-	resultTmp = NULL;
-	resultPos = 0;
-	xmlnodeDumpNode(data, rootNdOff, &resultTmp, &resultPos, paramNames);
+	/* This estimate may need improvement to avoid too frequent reallocations. */
+	outSizeEst = (binarySize <= 1024) ? 1024 : binarySize;
+	outSizeEst += declSize;
 
-	result = (char *) palloc(declSize + resultPos + 1);
+	/*
+	 * StringInfoData structure is used here, but we manage reallocations in a
+	 * custom (less) aggressive way than the in-core functions. (It's not good
+	 * to double the output memory if the document very large.)
+	 */
+	output = makeStringInfo();
+	xnodeInitStringInfo(output, outSizeEst);
+
 	if (declSize > 0)
 	{
-		memcpy(result, declStr, declSize);
+		memcpy(output->data, declStr, declSize);
 		pfree(declStr);
+		output->len = declSize;
 	}
-	resultPos = declSize;
-	resultTmp = result + resultPos;
-	xmlnodeDumpNode(data, rootNdOff, &resultTmp, &resultPos, paramNames);
+	xmlnodeDumpNode(data, rootNdOff, output, paramNames, true);
+
 	if (paramNames != NULL)
 	{
 		pfree(paramNames);
 	}
-	result[resultPos] = '\0';
-	return result;
+	return output->data;
 }
 
 /*
