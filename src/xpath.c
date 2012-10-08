@@ -336,13 +336,11 @@ xpath_array(PG_FUNCTION_ARGS)
 {
 	FuncCallContext *fctx;
 	XMLScan		baseScan;
-	XMLNodeHdr	baseNode;
 	XMLScanContext xScanCtx;
 
 	if (SRF_IS_FIRSTCALL())
 	{
 		int		   *dimv;
-		XMLNodeKind baseTarget;
 		Oid			resultType;
 
 		xpath		xpathBasePtr = (xpath) PG_GETARG_POINTER(0);
@@ -388,13 +386,6 @@ xpath_array(PG_FUNCTION_ARGS)
 		xScanCtx->baseScan = (XMLScan) palloc(sizeof(XMLScanData));
 		initXMLScan(xScanCtx->baseScan, NULL, xpathBase, xpHdrBase, docRoot, doc, xpathBase->descendants > 0);
 
-		baseTarget = xScanCtx->baseScan->xpath->targNdKind;
-
-		if (baseTarget != XMLNODE_DOC && baseTarget != XMLNODE_ELEMENT)
-		{
-			elog(ERROR, "base path must point to element or document");
-		}
-
 		xScanCtx->columns = *dimv;
 		xScanCtx->colHeaders = (XPathHeader *) palloc(xScanCtx->columns * sizeof(XPathHeader));
 		xScanCtx->colExpressions = (XPathExpression *) palloc(xScanCtx->columns * sizeof(XPathExpression));
@@ -431,7 +422,15 @@ xpath_array(PG_FUNCTION_ARGS)
 	}
 	if (!baseScan->done)
 	{
-		baseNode = getNextXMLNode(baseScan);
+		XMLNodeHdr	baseNode;
+
+		/* Only element makes sense as a base context for column paths. */
+		while ((baseNode = getNextXMLNode(baseScan)) != NULL)
+		{
+			if (baseNode->kind == XMLNODE_ELEMENT)
+				break;
+		}
+
 		if (baseNode != NULL)
 		{
 			XMLNodeOffset baseNdOff = (char *) baseNode - VARDATA(xScanCtx->baseScan->document);
