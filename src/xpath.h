@@ -451,22 +451,24 @@ typedef struct XPathExpressionData
 
 	bool		negative;
 
-	/* Only defined where type == XPATH_OPERAND_EXPR_TOP. */
+	/*
+	 * The following are only defined where type == XPATH_OPERAND_EXPR_TOP.
+	 */
 	uint16		variables;
-
 	uint16		members;
-
 	uint16		nlits;			/* Number of string literals. */
-
 	uint16		npaths;
+	uint16		nfuncs;
 
 	/*
-	 * 'true' if there's no relative path in the expression nor an attribute
-	 * operand in the main expression. Set only for the main expression.
+	 * 'true' if the expression or any subexpression contains one of the
+	 * following: relative location path, attribute reference or an XPath
+	 * function having 'needsContext' set to 'true'.
+	 *
+	 * Parser does not set this attribute on subexpressions.
 	 */
-	bool		mainExprAbs;
+	bool		needsContext;
 
-	uint16		nfuncs;
 
 	/*
 	 * Identifier of a function to be applied when the expression (argument
@@ -610,7 +612,7 @@ typedef enum XPathNodeType
 extern XPathExprOperatorStorage parseXPathExpression(XPathExpression exprCurrent, XPathParserState state,
 					 unsigned char termFlags, XPathExprOperatorStorage firstOperatorStorage, char *output,
 		  unsigned short *outPos, bool isSubExpr, bool argList, XPath *paths,
-	 unsigned short *subpathCnt, bool mainExpr, XMLNodeContainer paramNames);
+					 unsigned short *subpathCnt, XMLNodeContainer paramNames);
 
 extern void parseLocationPath(XPath *paths, bool isSubPath, unsigned short *pathCount, char **xpathSrc,
 				  unsigned short *pos, XMLNodeContainer paramNames);
@@ -789,8 +791,9 @@ typedef struct XPathFunctionData
 	}			impl;
 
 	XPathValueType resType;
-	bool		predicateOnly;	/* May the function only appear within a
-								 * predicate? */
+
+	/* The function may only appear in predicate expression or in column path. */
+	bool		needsContext;
 } XPathFunctionData;
 
 typedef struct XPathFunctionData *XPathFunction;

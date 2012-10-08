@@ -688,52 +688,17 @@ getXPathExpression(char *src, unsigned int termFlags, XMLNodeContainer paramName
 	XPathOffset outPos = 0;
 	XPathParserStateData state;
 
+	expr->needsContext = false;
 	state.c = src;
 	state.cWidth = 0;
 	state.pos = 0;
 
-	parseXPathExpression(expr, &state, termFlags, NULL, (char *) expr, &outPos, false, false, NULL, NULL, true,
+	parseXPathExpression(expr, &state, termFlags, NULL, (char *) expr, &outPos, false, false, NULL, NULL,
 						 paramNames);
 
-	if (expr->variables > 0)
+	if (expr->needsContext)
 	{
-		XPathOffset *varOffPtr;
-		unsigned short k;
-
-		/*
-		 * (Location paths are excluded by having passed NULL as 'paths' to
-		 * parseXPathExpression().
-		 */
-		Assert(expr->npaths == 0);
-
-		/*
-		 * Make sure the XPath expression does not contain attributes.
-		 */
-		varOffPtr = (XPathOffset *) ((char *) expr + sizeof(XPathExpressionData));
-		for (k = 0; k < expr->variables; k++)
-		{
-			XPathExprOperand opnd = (XPathExprOperand) ((char *) expr + *varOffPtr);
-
-			if (opnd->common.type == XPATH_OPERAND_ATTRIBUTE)
-			{
-				elog(ERROR, "template expression must not contain attributes");
-			}
-
-			/*
-			 * Functions having no arguments are excluded by passing
-			 * 'mainExpr=true' to parseXPathExpression(). This is just a a
-			 * cross check.
-			 */
-			if (opnd->common.type == XPATH_OPERAND_FUNC_NOARG || opnd->common.type == XPATH_OPERAND_FUNC)
-			{
-				XPathFunction func = &xpathFunctions[opnd->value.v.funcId];
-
-				if (func->predicateOnly)
-				{
-					elog(ERROR, "xnt expression does not accept context-dependent functions");
-				}
-			}
-		}
+		elog(ERROR, "one or more operands of the XPath expression require context");
 	}
 
 	if (endPos != NULL)

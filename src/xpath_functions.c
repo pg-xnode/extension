@@ -411,27 +411,39 @@ getEmptyString(void)
 static void
 nameNoArgs(XMLScan xscan, XPathExprState exprState, bool local, XPathExprOperandValue result)
 {
-	XMLScanOneLevel scanLevel = XMLSCAN_CURRENT_LEVEL(xscan);
-	XMLCompNodeHdr eh = scanLevel->parent;
-	XMLCompNodeHdr contextNode = (XMLCompNodeHdr) ((char *) eh -
-									readXMLNodeOffset(&scanLevel->nodeRefPtr,
-										   XNODE_GET_REF_BWIDTH(eh), false));
-	char	   *elName = XNODE_ELEMENT_NAME(contextNode);
-	char	   *colon,
-			   *elNameCopy;
-
-	Assert(contextNode->common.kind == XMLNODE_ELEMENT);
-
-	if (local && ((colon = strchr(elName, XNODE_CHAR_COLON)) != NULL))
-	{
-		elName = colon + 1;
-	}
-
-	elNameCopy = (char *) palloc(strlen(elName) + 1);
-	strcpy(elNameCopy, elName);
 	result->type = XPATH_VAL_STRING;
-	result->isNull = false;
-	result->v.stringId = getXPathOperandId(exprState, elNameCopy, XPATH_VAR_STRING);
+
+	if (xscan->state != NULL)
+	{
+		XMLScanOneLevel scanLevel = XMLSCAN_CURRENT_LEVEL(xscan);
+		XMLCompNodeHdr eh = scanLevel->parent;
+		XMLNodeOffset ctxNdOffRel = readXMLNodeOffset(&scanLevel->nodeRefPtr,
+											XNODE_GET_REF_BWIDTH(eh), false);
+		XMLCompNodeHdr contextNode = (XMLCompNodeHdr) ((char *) eh - ctxNdOffRel);
+		char	   *elName = XNODE_ELEMENT_NAME(contextNode);
+		char	   *colon,
+				   *elNameCopy;
+
+		Assert(contextNode->common.kind == XMLNODE_ELEMENT);
+
+		if (local && ((colon = strchr(elName, XNODE_CHAR_COLON)) != NULL))
+		{
+			elName = colon + 1;
+		}
+
+		elNameCopy = (char *) palloc(strlen(elName) + 1);
+		strcpy(elNameCopy, elName);
+		result->isNull = false;
+		result->v.stringId = getXPathOperandId(exprState, elNameCopy, XPATH_VAR_STRING);
+	}
+	else
+	{
+		/*
+		 * We should end up here if '/' is the base path. name() is not
+		 * defined in such a contect.
+		 */
+		result->isNull = true;
+	}
 }
 
 static void

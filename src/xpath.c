@@ -37,14 +37,12 @@ xpath_in(PG_FUNCTION_ARGS)
 	XPathHeader xpathHdr;
 	char	   *result,
 			   *out;
-	unsigned short i,
-				resSize,
+	unsigned short resSize,
 				exprOutPos;
 	XPath		paths[XPATH_MAX_SUBPATHS];
 	unsigned short pathCount = 0;
 	XPathExpression expr;
 	XPathParserStateData state;
-	XPathOffset *varOffPtr;
 	XMLNodeContainerData paramNames;
 	char	  **parNamesArray = NULL;
 	unsigned short paramCount = 0;
@@ -55,6 +53,7 @@ xpath_in(PG_FUNCTION_ARGS)
 	}
 	xpathStr = PG_GETARG_CSTRING(0);
 	expr = (XPathExpression) palloc(XPATH_EXPR_BUFFER_SIZE);
+	expr->needsContext = false;
 
 	state.c = xpathStr;
 
@@ -76,36 +75,7 @@ xpath_in(PG_FUNCTION_ARGS)
 	 */
 	exprOutPos = 0;
 	parseXPathExpression(expr, &state, XPATH_TERM_NULL, NULL, (char *) expr, &exprOutPos, false, false, paths,
-						 &pathCount, true, &paramNames);
-
-	/*
-	 * Check if the path may be used as a base path.
-	 */
-	expr->mainExprAbs = true;
-	varOffPtr = (XPathOffset *) ((char *) expr + sizeof(XPathExpressionData));
-	Assert(PointerIsAligned(varOffPtr, XPATH_ALIGNOF_OFFSET));
-
-	for (i = 0; i < expr->variables; i++)
-	{
-		XPathExprOperand opnd = (XPathExprOperand) ((char *) expr + *varOffPtr);
-
-		if (opnd->common.type == XPATH_OPERAND_PATH)
-		{
-			XPath		path = (XPath) TYPEALIGN(XPATH_ALIGNOF_LOC_PATH, paths[opnd->value.v.path]);
-
-			if (path->relative)
-			{
-				expr->mainExprAbs = false;
-				break;
-			}
-		}
-		else if (opnd->common.type == XPATH_OPERAND_ATTRIBUTE)
-		{
-			expr->mainExprAbs = false;
-			break;
-		}
-		varOffPtr++;
-	}
+						 &pathCount, &paramNames);
 
 	resSize = VARHDRSZ + MAX_PADDING(XPATH_ALIGNOF_PATH_HDR) + sizeof(XPathHeaderData) +
 		MAX_PADDING(XPATH_ALIGNOF_EXPR) + expr->common.size;
@@ -334,9 +304,9 @@ xpath_single(PG_FUNCTION_ARGS)
 
 	expr = getXPathExpressionFromStorage(xpathHdr);
 
-	if (!expr->mainExprAbs)
+	if (expr->needsContext)
 	{
-		elog(ERROR, "neither relative paths nor attributes expected in main expression");
+		elog(ERROR, "one or more operands of the XPath expression require context");
 	}
 	exprState = prepareXPathExpression(expr, (XMLCompNodeHdr) XNODE_ROOT(doc), doc, xpathHdr, NULL);
 	evaluateXPathExpression(exprState, exprState->expr, 0, &resData);
