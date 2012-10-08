@@ -494,6 +494,7 @@ parseLocationPath(XPath *paths, bool isSubPath, unsigned short *pathCount, char 
 	output.cursor = output.data = (char *) palloc(output.size);
 	/* No specific alignment required now, the block is MAXALIGNed. */
 	locPath = (XPath) ensureSpace(sizeof(XPathData), 0, &output);
+	locPath->targNdKind = XMLNODE_NODE;
 	locPath->depth = 0;
 	locPath->descendants = 0;
 	locPath->relative = (*xpathStr != XNODE_CHAR_SLASH);

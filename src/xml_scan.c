@@ -640,7 +640,7 @@ evaluateXPathExpression(XPathExprState exprState, XPathExpression expr, unsigned
 	unsigned short i;
 	char	   *currentPtr = (char *) expr;
 	XPathExprOperand currentOpnd;
-	XPathExprOperator operator;
+	XPathExprOperator operator = NULL;
 	bool		neg;
 
 	currentPtr += sizeof(XPathExpressionData);

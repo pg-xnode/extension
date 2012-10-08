@@ -299,6 +299,7 @@ updateXMLDocument(XMLScan xscan, xmldoc doc, XMLNodeAction action, XMLNodeHdr ne
 						break;
 
 					default:
+						max = 0;	/* Just keep the compiler silent. */
 						elog(ERROR, "unrecognized addition mode %u", addMode);
 						break;
 				}
