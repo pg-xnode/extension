@@ -311,6 +311,7 @@ xmldoc_to_xmlnode(PG_FUNCTION_ARGS)
 	xmlnode		node;
 
 	XMLCompNodeHdr root = (XMLCompNodeHdr) XNODE_ROOT(doc);
+	unsigned char bwidth = XNODE_GET_REF_BWIDTH(root);
 
 	Assert(root->common.kind == XMLNODE_DOC);
 
@@ -318,7 +319,6 @@ xmldoc_to_xmlnode(PG_FUNCTION_ARGS)
 	{
 		/* The single child (i.e. root element) will be the result of the cast */
 		char	   *refPtr = XNODE_FIRST_REF(root);
-		unsigned char bwidth = XNODE_GET_REF_BWIDTH(root);
 		XMLNodeOffset rootOff = (char *) root - docData;
 		XMLNodeOffset childOff = rootOff - readXMLNodeOffset(&refPtr, bwidth, false);
 		XMLNodeHdr	child = (XMLNodeHdr) (docData + childOff);
@@ -342,6 +342,7 @@ xmldoc_to_xmlnode(PG_FUNCTION_ARGS)
 		rootNew = (XMLCompNodeHdr) (nodeData + rootOffNew);
 		rootNew->common.kind = XMLNODE_DOC_FRAGMENT;
 		rootNew->common.flags = 0;
+		XNODE_SET_REF_BWIDTH(rootNew, bwidth);
 
 		/*
 		 * The root offset will be stored (aligned) right after the document
@@ -350,12 +351,13 @@ xmldoc_to_xmlnode(PG_FUNCTION_ARGS)
 		ptrUnaligned = (char *) XNODE_ELEMENT_NAME(rootNew);
 		rootOffPtrNew = (XMLNodeOffset *) TYPEALIGN(XNODE_ALIGNOF_NODE_OFFSET, ptrUnaligned);
 		*rootOffPtrNew = rootOffNew;
+		rootOffPtrNew++;
 
 		/*
 		 * If the document contained XMLDeclData, the size is going to be
 		 * decreased.
 		 */
-		SET_VARSIZE(node, (char *) rootOffPtrNew - (char *) node + sizeof(XMLNodeOffset));
+		SET_VARSIZE(node, (char *) rootOffPtrNew - (char *) node);
 	}
 
 	PG_RETURN_POINTER(node);
