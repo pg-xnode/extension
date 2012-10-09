@@ -904,6 +904,10 @@ visitXMLNodeForDump(XMLNodeHdr *stack, unsigned depth, void *userData)
 			str = "<text>";
 			break;
 
+		case XMLNODE_DOC_FRAGMENT:
+			str = "<fragment>";
+			break;
+
 		default:
 			elog(ERROR, "unrecognized node kind %u", node->kind);
 			break;
