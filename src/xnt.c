@@ -606,7 +606,8 @@ preprocessXNTAttrValues(XNodeListItem *attrOffsets, unsigned short attrCount, ch
  * and the function evaluates each expression that the attribute value contains and returns
  * the value as string.
  *
- * If 'paramNames' is NULL then the function returns source text of the contained expression(s).
+ * If 'exprState' is NULL then the function returns source text of the contained expression(s).
+ * Otherwise it uses 'exprState' to evaluate the expression(s).
  */
 char *
 dumpBinaryAttrValue(char *binValue, char **paramNames, XPathExprOperandValue paramValues,
@@ -633,7 +634,7 @@ dumpBinaryAttrValue(char *binValue, char **paramNames, XPathExprOperandValue par
 			cursor = (char *) TYPEALIGN(XPATH_ALIGNOF_EXPR, cursor);
 			expr = (XPathExpression) cursor;
 
-			if (paramNames != NULL)
+			if (exprState == NULL)
 			{
 				appendStringInfoChar(&output, XNODE_CHAR_LBRKT_CUR);
 				dumpXPathExpression(expr, NULL, &output, true, paramNames, false);

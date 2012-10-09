@@ -18,7 +18,8 @@ INSERT INTO templates VALUES
 -- node can also be used as parameter
 (2, '<xnt:template xmlns:xnt="http://www.pg-xnode.org/xnt">
 <area><xnt:copy-of expr="$p1"/></area>
-</xnt:template>');
+</xnt:template>'),
+(3, '<xnt:template xmlns:xnt="http://www.pg-xnode.org/xnt"><point x="{1}" y="{2}"/></xnt:template>');
 
 SELECT id, template
 FROM templates

@@ -16,23 +16,25 @@ INSERT INTO templates VALUES
 -- node can also be used as parameter
 (2, '<xnt:template xmlns:xnt="http://www.pg-xnode.org/xnt">
 <area><xnt:copy-of expr="$p1"/></area>
-</xnt:template>');
+</xnt:template>'),
+(3, '<xnt:template xmlns:xnt="http://www.pg-xnode.org/xnt"><point x="{1}" y="{2}"/></xnt:template>');
 SELECT id, template
 FROM templates
 ORDER BY id;
- id |                                             template                                              
-----+---------------------------------------------------------------------------------------------------
+ id |                                              template                                               
+----+-----------------------------------------------------------------------------------------------------
   0 | <xnt:template xmlns:xnt="http://www.pg-xnode.org/xnt"><point x="{$p1}" y="{$p2}"/></xnt:template>
-  1 | <xnt:template xmlns:xnt="http://www.pg-xnode.org/xnt">                                           +
-    | <xnt:element name="point_{$p1}">                                                                 +
-    |         <xnt:attribute name="x_{$p1}" value="{$p2}"/>                                            +
-    |         <xnt:attribute name="y_{$p2}" value="{$p3}"/>                                            +
-    | </xnt:element>                                                                                   +
+  1 | <xnt:template xmlns:xnt="http://www.pg-xnode.org/xnt">                                             +
+    | <xnt:element name="point_{$p1}">                                                                   +
+    |         <xnt:attribute name="x_{$p1}" value="{$p2}"/>                                              +
+    |         <xnt:attribute name="y_{$p2}" value="{$p3}"/>                                              +
+    | </xnt:element>                                                                                     +
     | </xnt:template>
-  2 | <xnt:template xmlns:xnt="http://www.pg-xnode.org/xnt">                                           +
-    | <area><xnt:copy-of expr="$p1"/></area>                                                           +
+  2 | <xnt:template xmlns:xnt="http://www.pg-xnode.org/xnt">                                             +
+    | <area><xnt:copy-of expr="$p1"/></area>                                                             +
     | </xnt:template>
-(3 rows)
+  3 | <xnt:template xmlns:xnt="http://www.pg-xnode.org/xnt"><point x="{1.00}" y="{2.00}"/></xnt:template>
+(4 rows)
 
 CREATE TABLE points (
 	id integer NOT NULL,
