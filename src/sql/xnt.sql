@@ -63,6 +63,11 @@ FROM fragments f,
 templates t
 WHERE t.id=2;
 
+-- Is unary minus processed correctly when used with expression parameters?
+select xml.node('<xnt:template xmlns:xnt="http://www.pg-xnode.org/xnt"><a i="{-$x}"/></xnt:template>', '{ x }', ROW( 3.14::float ));
+select xml.node('<xnt:template xmlns:xnt="http://www.pg-xnode.org/xnt"><a i="{$x}"/></xnt:template>', '{ x }', ROW( -3.14::float ));
+select xml.node('<xnt:template xmlns:xnt="http://www.pg-xnode.org/xnt"><a i="{-$x}"/></xnt:template>', '{ x }', ROW( -3.14::float ));
+
 DROP TABLE templates;
 DROP TABLE points;
 DROP TABLE point_nodes;

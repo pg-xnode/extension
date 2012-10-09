@@ -41,6 +41,7 @@ static bool isOnIgnoreList(XMLNodeHdr node, XMLScan scan);
 static void getUnion(XPathExprState exprState, XPathNodeSet setLeft, XPathNodeSet setRight, XPathNodeSet setResult);
 static void copyNodeSet(XPathExprState exprState, XPathNodeSet nodeSet, XMLNodeHdr *output, unsigned int *position);
 static int	nodePtrComparator(const void *arg1, const void *arg2);
+static void flipOperandValue(XPathExprOperandValue value, XPathExprState exprState);
 
 /*
  * 'xscan' - the scan to be initialized 'xpath' - location path to be used
@@ -641,7 +642,6 @@ evaluateXPathExpression(XPathExprState exprState, XPathExpression expr, unsigned
 	char	   *currentPtr = (char *) expr;
 	XPathExprOperand currentOpnd;
 	XPathExprOperator operator = NULL;
-	bool		neg;
 
 	currentPtr += sizeof(XPathExpressionData);
 	Assert(PointerIsAligned(currentPtr, XPATH_ALIGNOF_OFFSET));
@@ -713,21 +713,17 @@ evaluateXPathExpression(XPathExprState exprState, XPathExpression expr, unsigned
 	}
 
 	/*
-	 * If the operand has minus sign, then the containing expression will have
-	 * to take it over.
-	 *
-	 * In fact this can only happen for expressions having 1 operand. If there
-	 * are 2 or more, then evaluateBinaryOperator() gives numeric value that
-	 * reflects the sign and it sets 'result->negative' to false.
+	 * Both evaluateXPathOperand() and evaluateBinaryOperator() must ensure
+	 * that the actual value (result->v.num) is negative by now if the
+	 * 'result->negative' was originally 'true'.
 	 */
-	neg = result->negative;
-	Assert((neg && expr->members == 1) || !neg);
-	/* In general, the result has to take the expression's '-'. */
+	Assert(!result->negative);
+
 	result->negative = expr->negative;
-	/* As mentioned above, take over the (single) operand's sign. */
-	if (neg)
+
+	if (result->negative)
 	{
-		result->negative = !result->negative;
+		flipOperandValue(result, exprState);
 	}
 }
 
@@ -774,7 +770,16 @@ evaluateXPathOperand(XPathExprState exprState, XPathExprOperand operand, unsigne
 	else if (operand->common.type == XPATH_OPERAND_FUNC)
 		evaluateXPathFunction(exprState, expr, recursionLevel + 1, result);
 	else
-		memcpy(result, &operand->value, sizeof(XPathExprOperandValueData));
+	{
+		if (operand->value.negative)
+		{
+			castXPathExprOperandToNum(exprState, &operand->value, result, false);
+		}
+		else
+		{
+			memcpy(result, &operand->value, sizeof(XPathExprOperandValueData));
+		}
+	}
 }
 
 
@@ -797,8 +802,6 @@ evaluateXPathFunction(XPathExprState exprState, XPathExpression funcExpr, unsign
 	XpathFuncImpl funcImpl;
 	XPathValueType *argTypesReceived,
 			   *argTypes;
-
-	result->negative = funcExpr->negative;
 
 	argsTmp = args = (XPathExprOperandValue) palloc(funcExpr->members * sizeof(XPathExprOperandValueData));
 	argTypesReceived = (XPathValueType *) palloc(funcExpr->members * sizeof(XPathValueType));
@@ -829,13 +832,8 @@ evaluateXPathFunction(XPathExprState exprState, XPathExpression funcExpr, unsign
 		}
 		else
 		{
-			memcpy(argsTmp, &opnd->value, sizeof(XPathExprOperandValueData));
-
-			if (opnd->common.type == XPATH_OPERAND_LITERAL && opnd->value.type == XPATH_VAL_STRING)
-			{
-				argsTmp->v.stringId = getXPathOperandId(exprState, XPATH_STRING_LITERAL(&opnd->value),
-														XPATH_VAR_STRING);
-			}
+			prepareLiteral(exprState, opnd);
+			evaluateXPathOperand(exprState, opnd, recursionLevel, argsTmp);
 		}
 		argTypesReceived[i] = argsTmp->type;
 
@@ -865,9 +863,21 @@ evaluateXPathFunction(XPathExprState exprState, XPathExpression funcExpr, unsign
 	}
 
 	funcImpl = function->impl.args;
+	result->negative = false;
 	funcImpl(exprState, funcExpr->members, args, result);
+	if (result->negative)
+	{
+		elog(ERROR, "function implementation is not expected to set 'negative' flag");
+	}
+
+	result->negative = funcExpr->negative;
 	pfree(args);
 	pfree(argTypesReceived);
+
+	if (result->negative)
+	{
+		flipOperandValue(result, exprState);
+	}
 }
 
 /*
@@ -2211,5 +2221,29 @@ nodePtrComparator(const void *arg1, const void *arg2)
 	else
 	{
 		return 0;
+	}
+}
+
+/*
+ * If value->negative is 'true', set it to 'false' and ensure the sign is
+ * pushed to the actual value. In some cases the value must first be cast
+ * to number.
+ */
+static void
+flipOperandValue(XPathExprOperandValue value, XPathExprState exprState)
+{
+	if (value->type != XPATH_VAL_NUMBER)
+	{
+		XPathExprOperandValueData valTmp;
+
+		castXPathExprOperandToNum(exprState, value, &valTmp, false);
+		memcpy(value, &valTmp, sizeof(XPathExprOperandValueData));
+		/* The cast above must have processed the 'negative' flag. */
+		Assert(!value->negative);
+	}
+	else
+	{
+		value->v.num *= -1.0f;
+		value->negative = false;
 	}
 }

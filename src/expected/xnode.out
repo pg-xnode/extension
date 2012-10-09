@@ -2101,15 +2101,15 @@ select xml.path('/a/@**/a/@j', '<a i="3" j="2"/>');
 
 -- Unary operator
 select xml.path('boolean(-/root)', '<root/>');
- path 
-------
- true
+ path  
+-------
+ false
 (1 row)
 
 select xml.path('boolean((-/root))', '<root/>');
- path 
-------
- true
+ path  
+-------
+ false
 (1 row)
 
 select xml.path('string(-/root)', '<root/>');

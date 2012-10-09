@@ -480,7 +480,6 @@ xpath_array(PG_FUNCTION_ARGS)
 void
 castXPathExprOperandToBool(XPathExprState exprState, XPathExprOperandValue valueSrc, XPathExprOperandValue valueDst)
 {
-
 	valueDst->type = XPATH_VAL_BOOLEAN;
 	valueDst->isNull = valueSrc->isNull;
 	if (valueSrc->isNull)
@@ -497,7 +496,7 @@ castXPathExprOperandToBool(XPathExprState exprState, XPathExprOperandValue value
 			break;
 
 		case XPATH_VAL_NUMBER:
-			valueDst->v.boolean = (valueSrc->v.num != 0.0);
+			valueDst->v.boolean = (!valueSrc->isNull && valueSrc->v.num != 0.0);
 			break;
 
 		case XPATH_VAL_STRING:
