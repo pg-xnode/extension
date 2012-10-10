@@ -780,9 +780,9 @@ typedef struct XPathFunctionData
 
 	/*
 	 * Some function may have additional arguments, all having the same type
-	 * as last item of 'argTypes'.
+	 * as the last valid item of 'argTypes'.
 	 */
-	bool		nargsSoftLimit;
+	bool		variadic;
 
 	union
 	{

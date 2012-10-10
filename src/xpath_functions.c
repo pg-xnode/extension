@@ -7,6 +7,14 @@
 #include "xpath.h"
 #include "xmlnode_util.h"
 
+#define XFUNC_GET_ARG_STRING(exprState, args, n)\
+	(getXPathOperandValue(exprState, args[n].v.stringId, XPATH_VAR_STRING))
+
+#define XFUNC_SET_RESULT_BOOL(res, value) ((res)->v.boolean = (value))
+#define XFUNC_SET_RESULT_NUMBER(res, value) ((res)->v.num = (value))
+#define XFUNC_SET_RESULT_STRING(res, exprState, value)\
+	(result->v.stringId = getXPathOperandId(exprState, value, XPATH_VAR_STRING))
+
 static char *getEmptyString(void);
 static void nameNoArgs(XMLScan xscan, XPathExprState exprState, bool local, XPathExprOperandValue result);
 static void name(XPathExprState exprState, XPathNodeSet nodeSet, bool local, XPathExprOperandValue result);
@@ -134,17 +142,13 @@ XPathFunctionData xpathFunctions[] = {
 void
 xpathTrue(XMLScan xscan, XPathExprState exprState, XPathExprOperandValue result)
 {
-	result->type = XPATH_VAL_BOOLEAN;
-	result->isNull = false;
-	result->v.boolean = true;
+	XFUNC_SET_RESULT_BOOL(result, true);
 }
 
 void
 xpathFalse(XMLScan xscan, XPathExprState exprState, XPathExprOperandValue result)
 {
-	result->type = XPATH_VAL_BOOLEAN;
-	result->isNull = false;
-	result->v.boolean = false;
+	XFUNC_SET_RESULT_BOOL(result, false);
 }
 
 void
@@ -152,9 +156,7 @@ xpathPosition(XMLScan xscan, XPathExprState exprState, XPathExprOperandValue res
 {
 	XMLScanOneLevel scanLevel = XMLSCAN_CURRENT_LEVEL(xscan);
 
-	result->type = XPATH_VAL_NUMBER;
-	result->isNull = false;
-	result->v.num = scanLevel->contextPosition;
+	XFUNC_SET_RESULT_NUMBER(result, scanLevel->contextPosition);
 }
 
 void
@@ -169,7 +171,6 @@ xpathLast(XMLScan xscan, XPathExprState exprState, XPathExprOperandValue result)
 		unsigned short sblLeft = scanLevel->siblingsLeft;
 		XPathElement xpEl = XPATH_CURRENT_LEVEL(xscan);
 		unsigned short i = 0;
-
 
 		scanLevel->contextSize = scanLevel->contextPosition;
 
@@ -202,12 +203,10 @@ xpathLast(XMLScan xscan, XPathExprState exprState, XPathExprOperandValue result)
 			i++;
 		}
 
-
 		scanLevel->contextSizeKnown = true;
 	}
-	result->type = XPATH_VAL_NUMBER;
-	result->isNull = false;
-	result->v.num = scanLevel->contextSize;
+
+	XFUNC_SET_RESULT_NUMBER(result, scanLevel->contextSize);
 }
 
 void
@@ -231,35 +230,31 @@ xpathLocalNameNoArgs(XMLScan xscan, XPathExprState exprState, XPathExprOperandVa
 void
 xpathBoolean(XPathExprState exprState, unsigned short nargs, XPathExprOperandValue args, XPathExprOperandValue result)
 {
-	XPathExprOperandValue src = args;
-
-	castXPathExprOperandToBool(exprState, src, result);
+	/*
+	 * 'args' is pointer to first element of an array that should contain no
+	 * other elements.
+	 */
+	castXPathExprOperandToBool(exprState, args, result);
 }
 
 void
 xpathNumber(XPathExprState exprState, unsigned short nargs, XPathExprOperandValue args, XPathExprOperandValue result)
 {
-	XPathExprOperandValue src = args;
-
-	castXPathExprOperandToNum(exprState, src, result, true);
+	castXPathExprOperandToNum(exprState, args, result, true);
 }
 
 void
 xpathString(XPathExprState exprState, unsigned short nargs, XPathExprOperandValue args, XPathExprOperandValue result)
 {
-	XPathExprOperandValue src = args;
-
-	if (src->isNull)
+	if (args->isNull)
 	{
 		char	   *emptyStr = getEmptyString();
 
-		result->v.stringId = getXPathOperandId(exprState, emptyStr, XPATH_VAR_STRING);
-		result->type = XPATH_VAL_STRING;
-		result->isNull = false;
+		XFUNC_SET_RESULT_STRING(result, exprState, emptyStr);
 		return;
 	}
 
-	castXPathExprOperandToStr(exprState, src, result);
+	castXPathExprOperandToStr(exprState, args, result);
 }
 
 void
@@ -287,19 +282,12 @@ xpathStartsWith(XPathExprState exprState, unsigned short nargs, XPathExprOperand
 				XPathExprOperandValue result)
 {
 
-	XPathExprOperandValueData containing;
-	XPathExprOperandValueData start;
 	char	   *containingStr,
 			   *startStr;
 
-	castXPathExprOperandToStr(exprState, args++, &containing);
-	containingStr = getXPathOperandValue(exprState, containing.v.stringId, XPATH_VAR_STRING);
-	castXPathExprOperandToStr(exprState, args, &start);
-	startStr = getXPathOperandValue(exprState, start.v.stringId, XPATH_VAR_STRING);
-
-	result->v.boolean = (strstr(containingStr, startStr) == containingStr);
-	result->type = XPATH_VAL_BOOLEAN;
-	result->isNull = false;
+	containingStr = XFUNC_GET_ARG_STRING(exprState, args, 0);
+	startStr = XFUNC_GET_ARG_STRING(exprState, args, 1);
+	XFUNC_SET_RESULT_BOOL(result, strstr(containingStr, startStr) == containingStr);
 }
 
 void
@@ -307,63 +295,47 @@ xpathCount(XPathExprState exprState, unsigned short nargs, XPathExprOperandValue
 {
 	XPathNodeSet nodeSet = &args->v.nodeSet;
 
-	result->type = XPATH_VAL_NUMBER;
-	result->isNull = false;
-
 	if (nodeSet->isDocument)
-	{
-		result->v.num = 1;
-	}
+		XFUNC_SET_RESULT_NUMBER(result, 1);
 	else
-	{
-		result->v.num = args->isNull ? 0 : nodeSet->count;
-	}
+		XFUNC_SET_RESULT_NUMBER(result, args->isNull ? 0 : nodeSet->count);
 }
 
 void
 xpathContains(XPathExprState exprState, unsigned short nargs, XPathExprOperandValue args,
 			  XPathExprOperandValue result)
 {
-	XPathExprOperandValueData argLeft,
+	XPathExprOperandValue argLeft,
 				argRight;
 	bool		leftEmpty,
 				rightEmpty;
 	char	   *argLeftStr = NULL,
 			   *argRightStr = NULL;
 
-	castXPathExprOperandToStr(exprState, args, &argLeft);
-	if (!argLeft.isNull)
-	{
-		argLeftStr = (char *) getXPathOperandValue(exprState, argLeft.v.stringId, XPATH_VAR_STRING);
-	}
-	leftEmpty = (argLeft.isNull || strlen(argLeftStr) == 0);
+	argLeft = &args[0];
+	argRight = &args[1];
 
-	castXPathExprOperandToStr(exprState, args + 1, &argRight);
-	if (!argRight.isNull)
-	{
-		argRightStr = (char *) getXPathOperandValue(exprState, argRight.v.stringId, XPATH_VAR_STRING);
-	}
-	rightEmpty = (argRight.isNull || strlen(argRightStr) == 0);
+	if (!argLeft->isNull)
+		argLeftStr = XFUNC_GET_ARG_STRING(exprState, args, 0);
 
-	result->type = XPATH_VAL_BOOLEAN;
-	result->isNull = false;
+	leftEmpty = (argLeft->isNull || strlen(argLeftStr) == 0);
+
+	if (!argRight->isNull)
+		argRightStr = XFUNC_GET_ARG_STRING(exprState, args, 1);
+
+	rightEmpty = (argRight->isNull || strlen(argRightStr) == 0);
 
 	if (leftEmpty && rightEmpty)
-	{
-		result->v.boolean = true;
-	}
+		XFUNC_SET_RESULT_BOOL(result, true);
 	else if (leftEmpty || rightEmpty)
-	{
+
 		/*
-		 * Right is the 'contained', left is 'containing'. Empty string always
-		 * contained in non-empty.
+		 * The right is the 'contained', left is 'containing'. Empty string
+		 * always contained in non-empty.
 		 */
-		result->v.boolean = rightEmpty;
-	}
+		XFUNC_SET_RESULT_BOOL(result, rightEmpty);
 	else
-	{
-		result->v.boolean = (strstr(argLeftStr, argRightStr) != NULL);
-	}
+		XFUNC_SET_RESULT_BOOL(result, strstr(argLeftStr, argRightStr) != NULL);
 }
 
 void
@@ -373,7 +345,6 @@ xpathConcat(XPathExprState exprState, unsigned short nargs, XPathExprOperandValu
 
 	unsigned short i;
 	StringInfoData out;
-	XPathExprOperandValue currentArg = args;
 
 	Assert(nargs > 1);
 
@@ -383,20 +354,14 @@ xpathConcat(XPathExprState exprState, unsigned short nargs, XPathExprOperandValu
 	{
 		char	   *part;
 
-		if (!currentArg->isNull)
+		if (!args[i].isNull)
 		{
-			XPathExprOperandValueData argStr;
-
-			castXPathExprOperandToStr(exprState, currentArg, &argStr);
-			part = (char *) getXPathOperandValue(exprState, argStr.v.stringId, XPATH_VAR_STRING);
+			part = XFUNC_GET_ARG_STRING(exprState, args, i);
 			appendStringInfoString(&out, part);
 		}
-		currentArg++;
 	}
 
-	result->type = XPATH_VAL_STRING;
-	result->isNull = false;
-	result->v.stringId = getXPathOperandId(exprState, out.data, XPATH_VAR_STRING);
+	XFUNC_SET_RESULT_STRING(result, exprState, out.data);
 }
 
 static char *
@@ -411,8 +376,6 @@ getEmptyString(void)
 static void
 nameNoArgs(XMLScan xscan, XPathExprState exprState, bool local, XPathExprOperandValue result)
 {
-	result->type = XPATH_VAL_STRING;
-
 	if (xscan->state != NULL)
 	{
 		XMLScanOneLevel scanLevel = XMLSCAN_CURRENT_LEVEL(xscan);
@@ -433,8 +396,7 @@ nameNoArgs(XMLScan xscan, XPathExprState exprState, bool local, XPathExprOperand
 
 		elNameCopy = (char *) palloc(strlen(elName) + 1);
 		strcpy(elNameCopy, elName);
-		result->isNull = false;
-		result->v.stringId = getXPathOperandId(exprState, elNameCopy, XPATH_VAR_STRING);
+		XFUNC_SET_RESULT_STRING(result, exprState, elNameCopy);
 	}
 	else
 	{
@@ -494,7 +456,7 @@ name(XPathExprState exprState, XPathNodeSet nodeSet, bool local, XPathExprOperan
 	if (nameStr == NULL)
 	{
 		nameStr = getEmptyString();
-		result->v.stringId = getXPathOperandId(exprState, nameStr, XPATH_VAR_STRING);
+		XFUNC_SET_RESULT_STRING(result, exprState, nameStr);
 	}
 	else
 	{
@@ -502,9 +464,6 @@ name(XPathExprState exprState, XPathNodeSet nodeSet, bool local, XPathExprOperan
 
 		nameStrCopy = (char *) palloc(strlen(nameStr) + 1);
 		strcpy(nameStrCopy, nameStr);
-		result->v.stringId = getXPathOperandId(exprState, nameStrCopy, XPATH_VAR_STRING);
+		XFUNC_SET_RESULT_STRING(result, exprState, nameStrCopy);
 	}
-
-	result->type = XPATH_VAL_STRING;
-	result->isNull = false;
 }

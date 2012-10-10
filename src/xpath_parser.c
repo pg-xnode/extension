@@ -1623,11 +1623,9 @@ parseFunctionArgList(XPathParserState state, XPathFunction func, char *output, u
 
 	XPathExpression exprTop = (XPathExpression) output;
 	bool		done = false;
-	unsigned short argsMax;
 	unsigned short i = 0;
 
 	Assert(func->nargs > 0);
-	argsMax = func->nargs + func->nargsSoftLimit;
 
 	do
 	{
@@ -1680,7 +1678,7 @@ parseFunctionArgList(XPathParserState state, XPathFunction func, char *output, u
 		nextChar(state, done);
 	} while (!done);
 
-	if (!func->nargsSoftLimit)
+	if (!func->variadic)
 	{
 		if (i != func->nargs)
 		{

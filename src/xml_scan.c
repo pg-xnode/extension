@@ -796,21 +796,32 @@ evaluateXPathFunction(XPathExprState exprState, XPathExpression funcExpr, unsign
 	char	   *c;
 	unsigned short i;
 	XPathExprOperandValue args,
-				argsTmp;
+				argCursor;
 	XPathFunctionId funcId;
 	XPathFunction function;
 	XpathFuncImpl funcImpl;
-	XPathValueType *argTypesReceived,
-			   *argTypes;
+	XPathValueType *argTypes;
 
-	argsTmp = args = (XPathExprOperandValue) palloc(funcExpr->members * sizeof(XPathExprOperandValueData));
-	argTypesReceived = (XPathValueType *) palloc(funcExpr->members * sizeof(XPathValueType));
+	argCursor = args = (XPathExprOperandValue) palloc(funcExpr->members * sizeof(XPathExprOperandValueData));
 
 	c = (char *) funcExpr + sizeof(XPathExpressionData);
 
+	funcId = funcExpr->funcId;
+	function = &xpathFunctions[funcId];
+	argTypes = function->argTypes;
+
+	/*
+	 * Prepare each argument: evaluate it if it's expression or function or
+	 * just copy if it's a single operand.
+	 *
+	 * 'args' will contain the arguments to pass..
+	 *
+	 */
 	for (i = 0; i < funcExpr->members; i++)
 	{
 		XPathExprOperand opnd;
+		XPathExprOperandValueData argValue;
+		XPathValueType targetType;
 
 		c = (char *) TYPEALIGN(XPATH_ALIGNOF_OPERAND, c);
 		opnd = (XPathExprOperand) c;
@@ -823,57 +834,92 @@ evaluateXPathFunction(XPathExprState exprState, XPathExpression funcExpr, unsign
 			if (opnd->common.type == XPATH_OPERAND_FUNC)
 			{
 				/* In this case, 'subExpr' means 'argument list'. */
-				evaluateXPathFunction(exprState, subExpr, recursionLevel, argsTmp);
+				evaluateXPathFunction(exprState, subExpr, recursionLevel, &argValue);
 			}
 			else
 			{
-				evaluateXPathExpression(exprState, subExpr, recursionLevel, argsTmp);
+				evaluateXPathExpression(exprState, subExpr, recursionLevel, &argValue);
 			}
 		}
 		else
 		{
 			prepareLiteral(exprState, opnd);
-			evaluateXPathOperand(exprState, opnd, recursionLevel, argsTmp);
+			evaluateXPathOperand(exprState, opnd, recursionLevel, &argValue);
 		}
-		argTypesReceived[i] = argsTmp->type;
+
+		/*
+		 * Cast the argument now so that implementation function can assume
+		 * having received the desired type(s).
+		 */
+
+		if (i < function->nargs)
+		{
+			targetType = argTypes[i];
+		}
+		else if (function->variadic)
+		{
+			targetType = argTypes[function->nargs - 1];
+		}
+		else
+		{
+			/* Parser should not allow this if working as supposed to. */
+			elog(ERROR, "too many arguments passed to a function");
+		}
+
+		switch (targetType)
+		{
+			case XPATH_VAL_BOOLEAN:
+				castXPathExprOperandToBool(exprState, &argValue, argCursor);
+				break;
+
+			case XPATH_VAL_NUMBER:
+				castXPathExprOperandToNum(exprState, &argValue, argCursor, false);
+				break;
+
+			case XPATH_VAL_STRING:
+				castXPathExprOperandToStr(exprState, &argValue, argCursor);
+				break;
+
+			case XPATH_VAL_NODESET:
+				if (argValue.type == XPATH_VAL_NODESET)
+				{
+					memcpy(argCursor, &argValue, sizeof(XPathExprOperandValueData));
+				}
+				else
+					elog(ERROR, "%s type cannot be cast to nodeset. check argument %u of %s() function",
+						 xpathValueTypes[argValue.type], i, function->name);
+				break;
+
+			case XPATH_VAL_OBJECT:
+				/* Function accepts anything, so just copy it. */
+				memcpy(argCursor, &argValue, sizeof(XPathExprOperandValueData));
+				break;
+
+			default:
+				elog(ERROR, "unrecognized type to cast to: %u", targetType);
+				break;
+
+		}
 
 		c += opnd->common.size;
-		argsTmp++;
-	}
-
-	funcId = funcExpr->funcId;
-	function = &xpathFunctions[funcId];
-
-	/*
-	 * Parser has already checked for such cast, but incompatible argument
-	 * might sneak-in as parameter (parameter type is unknown at parse time).
-	 *
-	 * Even if we check here, the check at parse time is not redundant. It
-	 * makes sense for expressions that have no parameters and yet break this
-	 * condition to be excluded from parsing because such would always cause
-	 * error here.
-	 */
-	argTypes = function->argTypes;
-	for (i = 0; i < function->nargs; i++)
-	{
-		if (argTypes[i] == XPATH_VAL_NODESET && argTypesReceived[i] != XPATH_VAL_NODESET)
-		{
-			elog(ERROR, "argument %u of function '%s'() cannot be cast to nodeset", i + 1, function->name);
-		}
+		argCursor++;
 	}
 
 	funcImpl = function->impl.args;
 	result->negative = false;
+	/* The implementation function may set this to 'true'. */
+	result->isNull = false;
+	/* Call the function. */
 	funcImpl(exprState, funcExpr->members, args, result);
+	pfree(args);
+
+	result->type = function->resType;
+
 	if (result->negative)
 	{
 		elog(ERROR, "function implementation is not expected to set 'negative' flag");
 	}
-
 	result->negative = funcExpr->negative;
-	pfree(args);
-	pfree(argTypesReceived);
-
 	if (result->negative)
 	{
 		flipOperandValue(result, exprState);
@@ -1547,9 +1593,15 @@ substituteFunctions(XPathExpression expression, XPathExprState exprState, XMLSca
 			Assert(func->nargs == 0);
 
 			funcImpl = func->impl.noargs;
+			/* Assume not null result. The implementation may change it. */
+			opnd->value.isNull = false;
+
+			/* Call the function. */
 			funcImpl(xscan, exprState, &opnd->value);
 
+			opnd->value.type = func->resType;
 			opnd->substituted = true;
+
 			processed++;
 			if (processed == expression->nfuncs)
 			{
