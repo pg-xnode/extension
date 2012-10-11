@@ -9,11 +9,14 @@
 
 #define XFUNC_GET_ARG_STRING(exprState, args, n)\
 	(getXPathOperandValue(exprState, args[n].v.stringId, XPATH_VAR_STRING))
+#define XFUNC_GET_ARG_NODESET(args, n) (&args[n].v.nodeSet)
+
 
 #define XFUNC_SET_RESULT_BOOL(res, value) ((res)->v.boolean = (value))
 #define XFUNC_SET_RESULT_NUMBER(res, value) ((res)->v.num = (value))
 #define XFUNC_SET_RESULT_STRING(res, exprState, value)\
 	(result->v.stringId = getXPathOperandId(exprState, value, XPATH_VAR_STRING))
+#define XFUNC_SET_RESULT_NULL(res) ((res)->isNull = true)
 
 static char *getEmptyString(void);
 static void nameNoArgs(XMLScan xscan, XPathExprState exprState, bool local, XPathExprOperandValue result);
@@ -128,6 +131,13 @@ XPathFunctionData xpathFunctions[] = {
 		"count", 1,
 		{XPATH_VAL_NODESET, 0, 0, 0}, false,
 		{.args = xpathCount},
+		XPATH_VAL_NUMBER, false
+	},
+	{
+		XPATH_FUNC_SUM,
+		"sum", 1,
+		{XPATH_VAL_NODESET}, false,
+		{.args = xpathSum},
 		XPATH_VAL_NUMBER, false
 	},
 	{
@@ -466,4 +476,33 @@ name(XPathExprState exprState, XPathNodeSet nodeSet, bool local, XPathExprOperan
 		strcpy(nameStrCopy, nameStr);
 		XFUNC_SET_RESULT_STRING(result, exprState, nameStrCopy);
 	}
+}
+
+extern void
+xpathSum(XPathExprState exprState, unsigned short nargs, XPathExprOperandValue args,
+		 XPathExprOperandValue result)
+{
+
+	XPathNodeSet nodeSet = XFUNC_GET_ARG_NODESET(args, 0);
+	XMLNodeHdr *nodes = getArrayFromNodeSet(exprState, nodeSet);
+	unsigned int i;
+	float8		sum = 0.0f;
+
+	for (i = 0; i < nodeSet->count; i++)
+	{
+		char	   *nodeStr = XNODE_GET_STRING(nodes[i]);
+		bool		isNum = false;
+		double		numValue = xnodeGetNumValue(nodeStr, false, &isNum);
+
+		if (isNum)
+			sum += numValue;
+		else
+		{
+			result->isNull = true;
+			XFUNC_SET_RESULT_NULL(result);
+			return;
+		}
+	}
+
+	XFUNC_SET_RESULT_NUMBER(result, sum);
 }

@@ -254,6 +254,7 @@ typedef enum XPathFunctionId
 	XPATH_FUNC_STARTS_WITH,
 
 	XPATH_FUNC_COUNT,
+	XPATH_FUNC_SUM,
 	XPATH_FUNC_CONCAT
 } XPathFunctionId;
 
@@ -761,6 +762,7 @@ extern char *castXPathValToStr(XPathValue src);
 
 extern unsigned short getXPathOperandId(XPathExprState exprState, void *value, XPathExprVar varKind);
 extern void *getXPathOperandValue(XPathExprState exprState, unsigned short id, XPathExprVar varKind);
+extern XMLNodeHdr *getArrayFromNodeSet(XPathExprState exprState, XPathNodeSet ns);
 extern XPathHeader getXPathHeader(xpath xpathValue);
 extern XPathExpression getXPathExpressionFromStorage(XPathHeader xpathHeader);
 extern char **getXPathParameterArray(XPathHeader xpathHeader);
@@ -799,7 +801,7 @@ typedef struct XPathFunctionData
 typedef struct XPathFunctionData *XPathFunction;
 
 /* Total number of XPath functions the parser can recognize. */
-#define XPATH_FUNCTIONS			15
+#define XPATH_FUNCTIONS			16
 
 XPathFunctionData xpathFunctions[XPATH_FUNCTIONS];
 
@@ -835,5 +837,7 @@ extern void xpathContains(XPathExprState exprState, unsigned short nargs, XPathE
 			  XPathExprOperandValue result);
 extern void xpathConcat(XPathExprState exprState, unsigned short nargs, XPathExprOperandValue args,
 			XPathExprOperandValue result);
+extern void xpathSum(XPathExprState exprState, unsigned short nargs, XPathExprOperandValue args,
+		 XPathExprOperandValue result);
 
 #endif   /* XPATH_H_ */

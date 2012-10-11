@@ -36,6 +36,11 @@ extern double xnodeGetNumValue(char *str, bool raiseError, bool *isNumber);
 extern char *getElementNodeStr(XMLCompNodeHdr element);
 extern char *getNonElementNodeStr(XMLNodeHdr node);
 
+#define XNODE_GET_STRING(node) (\
+		((node)->kind == XMLNODE_ELEMENT || (node)->kind == XMLNODE_DOC ||\
+			(node)->kind == XMLNODE_DOC_FRAGMENT) ?\
+			getElementNodeStr((XMLCompNodeHdr) node) : getNonElementNodeStr(node))
+
 /*
  * Abstracted functionality to walk through the XML document tree recursively.
  *

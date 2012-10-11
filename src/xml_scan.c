@@ -1482,6 +1482,10 @@ substitutePaths(XPathExpression expression, XPathExprState exprState, XMLCompNod
 			{
 				opnd->value.isNull = false;
 				opnd->value.v.nodeSet.isDocument = true;
+				opnd->value.v.nodeSet.nodes.nodeId =
+					getXPathOperandId(exprState, XNODE_ROOT(document),
+									  XPATH_VAR_NODE_SINGLE);
+				opnd->value.v.nodeSet.count = 1;
 			}
 			else if (!subPath->relative && subPath->depth == 1 &&
 					 subPath->descendants == 0 && subPath->targNdKind == XMLNODE_ATTRIBUTE)

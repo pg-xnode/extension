@@ -565,13 +565,20 @@ select path('/root[contains(a, b)]', '<root><a>xy</a><a>z</a></root>');
 select path('/root[contains(b, c)]', '<root><a>xy</a><a>z</a></root>');
 select path('contains("c", /root/a)', '<root><a/><a/></root>');
 select path('/state[contains(@name, "rep") and (@area<=100000 or @population>11000000)]', '{@name, @area, @population}', data) 
-
 from states
 order by id;
 
 select id, path('count(/state/region)', data)
 from states
 order by id;
+
+select path('sum(/)', '<a>1<b>2</b><b>3<c/>1 </b></a>');
+select path('sum(/a)', '<a>1<b>2</b><b>3<c/>1 </b></a>');
+select path('sum(/a/b)', '<a>1<b>2</b><b>3<c/>1 </b></a>');
+select path('sum(/a/b)', '<a>1<b>2</b><b>3<c/> 1 </b></a>');
+select path('sum(//@*)', '<a i="3.5" j="0.4">1<b i=".1"/></a>');
+-- Special case: the node-set is empty
+select path('sum(/a/x)', '<a i="3.5" j="0.4">1<b i=".1"/></a>');
 
 select path('/root//a[position()=last()]', '<root><a i="3"/><a i="4"/><b><d/><a i="1"/><a i="2"/><c/><a i="5"/><d/></b><a/></root>');
 select path('/root//a[position()=last() and @i]', '<root><a i="3"/><a i="4"/><b><a i="1"/><a i="2"/><c/><a i="5"/><d/></b><a/></root>');

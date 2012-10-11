@@ -825,6 +825,22 @@ getXPathOperandValue(XPathExprState exprState, unsigned short id, XPathExprVar v
 	}
 }
 
+/*
+ * Returns array of XMLNodeHdr, whether array is actually stored
+ * or a single node.
+ */
+XMLNodeHdr *
+getArrayFromNodeSet(XPathExprState exprState, XPathNodeSet ns)
+{
+	if (ns->count == 0)
+		return NULL;
+
+	if (ns->count == 1)
+		return &(exprState->nodes[ns->nodes.nodeId]);
+	else
+		return getXPathOperandValue(exprState, ns->nodes.arrayId, XPATH_VAR_NODE_ARRAY);
+}
+
 XPathHeader
 getXPathHeader(xpath xpathValue)
 {

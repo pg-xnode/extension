@@ -2662,6 +2662,43 @@ order by id;
   3 | 3
 (3 rows)
 
+select path('sum(/)', '<a>1<b>2</b><b>3<c/>1 </b></a>');
+ path 
+------
+ 1231
+(1 row)
+
+select path('sum(/a)', '<a>1<b>2</b><b>3<c/>1 </b></a>');
+ path 
+------
+ 1231
+(1 row)
+
+select path('sum(/a/b)', '<a>1<b>2</b><b>3<c/>1 </b></a>');
+ path 
+------
+ 33
+(1 row)
+
+select path('sum(/a/b)', '<a>1<b>2</b><b>3<c/> 1 </b></a>');
+ path 
+------
+ 
+(1 row)
+
+select path('sum(//@*)', '<a i="3.5" j="0.4">1<b i=".1"/></a>');
+ path 
+------
+ 4
+(1 row)
+
+-- Special case: the node-set is empty
+select path('sum(/a/x)', '<a i="3.5" j="0.4">1<b i=".1"/></a>');
+ path 
+------
+ 0
+(1 row)
+
 select path('/root//a[position()=last()]', '<root><a i="3"/><a i="4"/><b><d/><a i="1"/><a i="2"/><c/><a i="5"/><d/></b><a/></root>');
       path      
 ----------------
