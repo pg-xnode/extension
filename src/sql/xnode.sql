@@ -551,6 +551,9 @@ select path('//x//b', '<root><x><b><test1/><x><b><test2/></b></x></b><a><b><test
 
 -- Functions
 
+-- string() as such tested above. In this special case it's applied on document.
+select path('string(/)', '<a>x</a>');
+
 select path('/root/b[count(a)>1]', '<root><a i="1"><b/></a><a i="2"><b/><b/></a></root>');
 select path('/root/b[count(c)=0]', '<root><a i="1"><b/></a><a i="2"><b/><b/></a></root>');
 

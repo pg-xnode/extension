@@ -696,7 +696,7 @@ getNonElementNodeStr(XMLNodeHdr node)
 			}
 
 		default:
-			elog(ERROR, "unable to compare node set element of type %u", node->kind);
+			elog(ERROR, "unable to convert node of kind %u to string", node->kind);
 			break;
 	}
 	return NULL;

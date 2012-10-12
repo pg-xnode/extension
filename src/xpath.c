@@ -616,40 +616,22 @@ castXPathExprOperandToStr(XPathExprState exprState, XPathExprOperandValue valueS
 			break;
 
 		case XPATH_VAL_NODESET:
-			if (valueSrc->v.nodeSet.isDocument)
-			{
-				char	   *emptyStr = (char *) palloc(1);
-
-				*emptyStr = '\0';
-				valueDst->v.stringId = getXPathOperandId(exprState, emptyStr, XPATH_VAR_STRING);
-				valueDst->isNull = false;
-				return;
-			}
-
 			{
 				XPathNodeSet ns = &valueSrc->v.nodeSet;
 				char	   *nodeStr;
+				XMLNodeHdr *nodes;
+				XMLNodeHdr	node;
+
+				nodes = getArrayFromNodeSet(exprState, ns);
 
 				/*
 				 * If the node-set contains multiple nodes, only the first one
 				 * is used (http://www.w3.org/TR/1999/REC-xpath-19991116/#sect
 				 * ion-String-Functions)
 				 */
-				XMLNodeHdr	node;
+				node = nodes[0];
 
-				if (ns->count == 1)
-				{
-					node = (XMLNodeHdr) getXPathOperandValue(exprState, ns->nodes.nodeId, XPATH_VAR_NODE_SINGLE);
-				}
-				else
-				{
-					XMLNodeHdr *array = (XMLNodeHdr *) getXPathOperandValue(exprState, ns->nodes.arrayId,
-													   XPATH_VAR_NODE_ARRAY);
-
-					node = array[0];
-				}
-
-				if (node->kind == XMLNODE_ELEMENT)
+				if (node->kind == XMLNODE_ELEMENT || node->kind == XMLNODE_DOC)
 				{
 					nodeStr = getElementNodeStr((XMLCompNodeHdr) node);
 				}
@@ -662,7 +644,7 @@ castXPathExprOperandToStr(XPathExprState exprState, XPathExprOperandValue valueS
 			break;
 
 		default:
-			elog(ERROR, "unable to cast type %u to string", valueSrc->type);
+			elog(ERROR, "unable to cast node of kind %u to string", valueSrc->type);
 			break;
 	}
 }
