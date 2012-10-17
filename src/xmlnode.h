@@ -81,6 +81,9 @@ typedef uint32 XMLNodeOffset;
 
 /*
  * Zero is only invalid if interpreted as *relative* offset.
+ *
+ * It's used to indicate that optional attribute of special document (e.g. XNT)
+ * is missing.
  */
 #define XMLNodeOffsetInvalid	0
 

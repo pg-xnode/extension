@@ -15,7 +15,7 @@
  */
 XNTAttrNames xntAttributeInfo[] = {
 	/* XNTNODE_TEMPLATE */
-	{0, {}, {}},
+	{1, {"preserve-space"}, {false}},
 	/* XNTNODE_COPY_OF */
 	{1, {"expr"}, {true}},
 	/* XNTNODE_ELEMENT */
@@ -31,7 +31,8 @@ static char *getAttrValueTokenized(char *attrValue, unsigned int *valueSize, XML
 static void visitXMLNodeForValidation(XMLNodeHdr *stack, unsigned int depth, void *userData);
 static Datum castParameterValue(Datum value, Oid sourceType, Oid targetType);
 static void buildNewNodeTree(XMLNodeHdr node, XNodeInternal parent, unsigned int *storageSize,
-				 XPathExprOperandValue paramValues, unsigned short *paramMap, XPathExprState exprState);
+				 XPathExprOperandValue paramValues, unsigned short *paramMap, XPathExprState exprState,
+				 bool preserveSpace);
 static XMLNodeHdr getNewAttribute(char *name, uint8 flags, char *value, char decideOnDelim, unsigned int *size);
 static XNodeInternal getInternalNode(XMLNodeHdr node, bool copy);
 static void freeTemplateTree(XNodeInternal root);
@@ -87,11 +88,11 @@ xnode_template_out(PG_FUNCTION_ARGS)
 XMLNodeKind
 getXNTNodeKind(char *name)
 {
-	unsigned int xslNmspPrefLen = strlen(XNTNODE_NAMESPACE_PREFIX);
+	unsigned int xntNmspPrefLen = strlen(XNTNODE_NAMESPACE_PREFIX);
 
-	Assert(strncmp(name, XNTNODE_NAMESPACE_PREFIX, xslNmspPrefLen) == 0 && name[xslNmspPrefLen] == XNODE_CHAR_COLON);
-	/* skip the 'xsl */
-	name += xslNmspPrefLen + 1;
+	Assert(strncmp(name, XNTNODE_NAMESPACE_PREFIX, xntNmspPrefLen) == 0 && name[xntNmspPrefLen] == XNODE_CHAR_COLON);
+	/* skip the 'xnt:' */
+	name += xntNmspPrefLen + 1;
 
 	if (strcmp(name, XNT_TEMPLATE) == 0)
 	{
@@ -821,7 +822,7 @@ visitXMLNodeForValidation(XMLNodeHdr *stack, unsigned int depth, void *userData)
 		return;
 	}
 
-	if (depth >= 2)
+	if (depth >= 1)
 	{
 		parent = stack[depth - 1];
 	}
@@ -1220,7 +1221,8 @@ xnode_from_template(PG_FUNCTION_ARGS)
 	newTreeRoot->copy = false;
 	xmlnodeContainerInit(&newTreeRoot->children);
 
-	buildNewNodeTree((XMLNodeHdr) templNode, newTreeRoot, &resSizeEstimate, parValues, paramMap, exprState);
+	buildNewNodeTree((XMLNodeHdr) templNode, newTreeRoot, &resSizeEstimate,
+					 parValues, paramMap, exprState, false);
 
 	/* Template node is the only child. */
 	Assert(newTreeRoot->children.position == 1);
@@ -1348,9 +1350,9 @@ castParameterValue(Datum value, Oid sourceType, Oid targetType)
  */
 static void
 buildNewNodeTree(XMLNodeHdr node, XNodeInternal parent, unsigned int *storageSize,
-				 XPathExprOperandValue paramValues, unsigned short *paramMap, XPathExprState exprState)
+				 XPathExprOperandValue paramValues, unsigned short *paramMap, XPathExprState exprState,
+				 bool preserveSpace)
 {
-
 	XNodeInternal nodeInternal = NULL;
 
 	/* Process children if the node has some. */
@@ -1359,6 +1361,7 @@ buildNewNodeTree(XMLNodeHdr node, XNodeInternal parent, unsigned int *storageSiz
 		XMLCompNodeHdr compNode = (XMLCompNodeHdr) node;
 		XMLNodeIteratorData iterator;
 		XMLNodeHdr	childNode;
+		unsigned int children = 0;
 
 		nodeInternal = getInternalNode(node, false);
 
@@ -1368,17 +1371,37 @@ buildNewNodeTree(XMLNodeHdr node, XNodeInternal parent, unsigned int *storageSiz
 
 		while ((childNode = getNextXMLNodeChild(&iterator)) != NULL)
 		{
-			/*
-			 * The template can currently have no other attribute than
-			 * 'xmlns:...'. For other (non-root) special nodes such cases will
-			 * be treated separate.
-			 */
-			if (node->kind == XNTNODE_TEMPLATE && childNode->kind == XMLNODE_ATTRIBUTE)
+			children++;
+
+			if (node->kind == XNTNODE_TEMPLATE)
 			{
-				continue;
+				XNTAttrNames *attrInfo = xntAttributeInfo;
+				XMLNodeOffset childRef;
+
+				if (children <= attrInfo->number)
+				{
+					childRef = (char *) node - (char *) childNode;
+
+					if (childRef == XMLNodeOffsetInvalid)
+						/* Unused optional attribute. */
+						continue;
+
+					if ((children - 1) == XNT_TEMPLATE_PRESERVE)
+					{
+						char	   *valueStr = XNODE_CONTENT(childNode);
+						Datum		boolDatum = DirectFunctionCall1Coll(boolin, InvalidOid, CStringGetDatum(valueStr));
+
+						preserveSpace = DatumGetBool(boolDatum);
+						continue;
+					}
+				}
+				else if (childNode->kind == XMLNODE_ATTRIBUTE)
+					/* Only namespace declaration should make this happen. */
+					continue;
 			}
 
-			if (childNode->kind == XMLNODE_TEXT && whitespacesOnly(XNODE_CONTENT(childNode)))
+			if ((childNode->kind == XMLNODE_TEXT || childNode->kind == XMLNODE_CDATA) &&
+				!preserveSpace && whitespacesOnly(XNODE_CONTENT(childNode)))
 			{
 				continue;
 			}
@@ -1388,7 +1411,7 @@ buildNewNodeTree(XMLNodeHdr node, XNodeInternal parent, unsigned int *storageSiz
 				continue;
 			}
 
-			buildNewNodeTree(childNode, nodeInternal, storageSize, paramValues, paramMap, exprState);
+			buildNewNodeTree(childNode, nodeInternal, storageSize, paramValues, paramMap, exprState, preserveSpace);
 		}
 	}
 
@@ -1477,7 +1500,8 @@ buildNewNodeTree(XMLNodeHdr node, XNodeInternal parent, unsigned int *storageSiz
 									 * We're only interested in the child
 									 * node.
 									 */
-									buildNewNodeTree(singleNode, parent, storageSize, paramValues, paramMap, exprState);
+									buildNewNodeTree(singleNode, parent, storageSize, paramValues, paramMap, exprState,
+													 preserveSpace);
 								}
 							}
 							else
@@ -1619,7 +1643,8 @@ buildNewNodeTree(XMLNodeHdr node, XNodeInternal parent, unsigned int *storageSiz
 								continue;
 							}
 
-							buildNewNodeTree(childNode, nodeInternal, storageSize, paramValues, paramMap, exprState);
+							buildNewNodeTree(childNode, nodeInternal, storageSize, paramValues, paramMap, exprState,
+											 preserveSpace);
 						}
 
 						if (nodeInternal->children.position == elNodeAttrs)

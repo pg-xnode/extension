@@ -583,6 +583,33 @@ name(/article/sect1/@id)
    Instead, if XNT tag needs an XML node to work with, it must always receive it as template
    parameter. 
    </para>
+   
+   <note>
+    <para>
+     It's necessary for the <literal>xnt</literal> namespace to be bound to
+     <literal>http://www.pg-xnode.org/xnt</literal>
+     Any tag failing to do so won't be considered XNT tag and parser will
+     report error where XNT tag is the only option (typically
+     <link linkend="template_tags_template"><literal>xnt:template</literal></link>).
+    </para>
+   </note>
+   
+   <sect3 id="template_tags_template">
+    <title><literal>xnt:template</literal></title>
+    <para>
+     Mandatory root tag of the template. The template document must contain
+     exactly one <literal>xnt:template</literal>.
+    </para>
+    <para>
+     Currently this tag has one (optional) attribute:
+     <literal>preserve-space</literal>.
+     If it's set to <literal>true</literal> then whitespace-only
+     descendant (i.e. both direct and indirect children of the template)
+     text nodes  are copied to the resulting node. Otherwise they are
+     discarded.
+    </para>
+   </sect3>
+   
     <sect3>
      <title><literal>xnt:copy-of</literal></title>
      <para>

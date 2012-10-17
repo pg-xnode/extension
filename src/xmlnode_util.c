@@ -5,6 +5,7 @@
 #include "xmlnode.h"
 #include "xmlnode_util.h"
 #include "xml_update.h"
+#include "xnt.h"
 
 static void xmlTreeWalker(XMLTreeWalkerContext *context);
 static unsigned int getNodePadding(char *start, XMLNodeOffset offAbs, XMLNodeHdr node);
@@ -828,6 +829,13 @@ xmlTreeWalker(XMLTreeWalkerContext *context)
 		XMLCompNodeHdr compNode = (XMLCompNodeHdr) node;
 		XMLNodeIteratorData iterator;
 		XMLNodeHdr	child;
+		unsigned int childNr = 0;
+		XNTAttrNames *specAttrInfo = NULL;
+
+		if (node->kind >= XNTNODE_ROOT)
+		{
+			specAttrInfo = xntAttributeInfo + (node->kind - XNTNODE_TEMPLATE);
+		}
 
 		context->depth++;
 		if (context->depth == XMLTREE_WALKER_MAX_DEPTH)
@@ -845,12 +853,23 @@ xmlTreeWalker(XMLTreeWalkerContext *context)
 
 		while ((child = getNextXMLNodeChild(&iterator)) != NULL)
 		{
+			if (specAttrInfo != NULL && childNr < specAttrInfo->number)
+			{
+				XMLNodeOffset nodeOff;
+
+				nodeOff = (char *) compNode - (char *) child;
+				/* Optional special node, currently not used. */
+				if (nodeOff == XMLNodeOffsetInvalid)
+					continue;
+			}
+
 			if (child->kind == XMLNODE_ATTRIBUTE && !context->attributes)
 			{
 				continue;
 			}
 			context->stack[context->depth] = child;
 			xmlTreeWalker(context);
+			childNr++;
 		}
 		context->depth--;
 	}

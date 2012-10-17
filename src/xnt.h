@@ -20,6 +20,7 @@
 #define XNTNODE_NAMESPACE_VALUE			"http://www.pg-xnode.org/xnt"
 
 #define XNT_TEMPLATE			"template"
+#define XNT_TEMPLATE_PRESERVE	0
 
 #define XNT_COPY_OF				"copy-of"
 #define XNT_COPY_OF_EXPR		0
@@ -50,6 +51,8 @@ typedef struct XNTAttrNames
 	char	   *names[XNT_SPECIAL_ATTRS_MAX];
 	bool		required[XNT_SPECIAL_ATTRS_MAX];
 } XNTAttrNames;
+
+extern XNTAttrNames xntAttributeInfo[];
 
 /*
  * If attribute value contains xpath expressions, it's understood as a sequence of
