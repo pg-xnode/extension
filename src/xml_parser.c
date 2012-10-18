@@ -129,6 +129,11 @@ static void saveReferences(XMLParserState state, XMLNodeInternal nodeInfo, XMLCo
   unsigned short children, bool *specAttrsValid, unsigned int specAttrCount);
 static char *getContentToLog(char *input, unsigned int offset, unsigned int length, unsigned int maxLen);
 static void saveRootNodeHeader(XMLParserState state, XMLNodeKind kind);
+static void replaceAttributes(XMLParserState state, bool specialNode, XNodeListItem *attrOffsets,
+	   unsigned int attrCount, char *attrsNew, XNodeListItem *attrOffsetsNew,
+				  unsigned int attrCountNew, unsigned int *newSize);
+static void adjustNamespaceDeclarations(XMLParserState state, unsigned int nmspDecls,
+					  unsigned int newAttrCount, unsigned int specAttrCount);
 
 static void checkNamespaces(XMLParserState state, XMLNodeInternal nodeInfo, unsigned int attrsPrefixedCount,
 				bool *elNmspIsSpecial);
@@ -1374,7 +1379,7 @@ processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowe
 		XMLNodeToken tagType;
 		unsigned int stackPosOrig = state->stack.position;
 		unsigned short int children,
-					attributes;
+					attrCount;
 		unsigned int nmspDecls = 0;
 		unsigned int attrsPrefixedCount = 0;
 		bool		isSpecialNode = false;
@@ -1427,7 +1432,7 @@ processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowe
 		/*
 		 * The initial number of children equals to number of attributes
 		 */
-		attributes = children = state->stack.position - stackPosOrig;
+		attrCount = children = state->stack.position - stackPosOrig;
 
 		if (isSpecialNode || state->targetKind == XNTNODE_ROOT)
 		{
@@ -1436,7 +1441,7 @@ processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowe
 					   *attrOffsetsNew;
 			char	   *attrsNew = NULL;
 			unsigned int newSize = 0;
-			unsigned int newAttrCount = 0;
+			unsigned int attrCountNew = 0;
 
 			/*
 			 * One may think processTag() can do this, but it does not have
@@ -1456,14 +1461,14 @@ processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowe
 			 * algorithm is different.
 			 */
 
-			attrsNewMaxCount = attributes + XNT_SPECIAL_ATTRS_MAX;
+			attrsNewMaxCount = attrCount + XNT_SPECIAL_ATTRS_MAX;
 			attrOffsets = state->stack.content + stackPosOrig;
 			attrOffsetsNew = (XNodeListItem *) palloc(attrsNewMaxCount * sizeof(XNodeListItem));
 
-			if (attributes > 0)
+			if (attrCount > 0)
 			{
 				/* Prepare input data for preprocessXNTAttributes(). */
-				memcpy(attrOffsetsNew, attrOffsets, attributes * sizeof(XNodeListItem));
+				memcpy(attrOffsetsNew, attrOffsets, attrCount * sizeof(XNodeListItem));
 			}
 
 			if (isSpecialNode)
@@ -1477,8 +1482,8 @@ processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowe
 				 * have the (invalid) offset set at the appropriate position.
 				 */
 				specAttrsValid = (bool *) palloc(attrsNewMaxCount * sizeof(bool));
-				attrsNew = preprocessXNTAttributes(attrOffsetsNew, attributes, state->tree, specialNodeKind,
-												   specAttrsValid, &specAttrCount, &newSize, &newAttrCount, &state->paramNames);
+				attrsNew = preprocessXNTAttributes(attrOffsetsNew, attrCount, state->tree, specialNodeKind,
+												   specAttrsValid, &specAttrCount, &newSize, &attrCountNew, &state->paramNames);
 			}
 			else if (state->targetKind == XNTNODE_ROOT)
 			{
@@ -1487,99 +1492,18 @@ processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowe
 				 * checked too: some of them may reference parameters in the
 				 * value.
 				 */
-				attrsNew = preprocessXNTAttrValues(attrOffsetsNew, attributes, state->tree, &newSize, &state->paramNames);
-				newAttrCount = attributes;
+				attrsNew = preprocessXNTAttrValues(attrOffsetsNew, attrCount, state->tree, &newSize,
+												   &state->paramNames);
+				attrCountNew = attrCount;
 			}
 
 			if (attrsNew != NULL)
 			{
-				unsigned int i;
-				char	   *attrDataOrig,
-						   *attrDataNew;
-				unsigned int attrDataOrigSize,
-							padding;
-
-				attrDataOrig = state->tree + attrOffsets->value.singleOff;
-
-				/*
-				 * The new binary data are more restrictive, because of XPath
-				 * expressions.
-				 */
-				attrDataNew = (char *) TYPEALIGN(XPATH_ALIGNOF_EXPR, attrDataOrig);
-				padding = attrDataNew - attrDataOrig;
-				attrDataOrigSize = state->dstPos - attrOffsets->value.singleOff;
-
-				Assert(newAttrCount > 0 && newAttrCount >= attributes);
-
-				/*
-				 * Copy the possibly adjusted values back into the stack and
-				 * add new if appropriate.
-				 */
-				for (i = 0; i < newAttrCount; i++)
-				{
-					XNodeListItem *itemNew = attrOffsetsNew + i;
-					XMLNodeOffset attrOffNew = itemNew->value.singleOff + padding;
-
-					if (i < attributes)
-					{
-						XNodeListItem *itemOrig = attrOffsets + i;
-
-						itemOrig->value.singleOff = attrOffNew;
-					}
-					else
-					{
-						xmlnodePushSingleNode(&state->stack, attrOffNew);
-					}
-
-					/*
-					 * If attribute of an 'ordinary' element contains
-					 * parameter it's considered a 'substitution node'.
-					 * Special node is a substitution node itself, so we don't
-					 * pay attention to its attributes.
-					 */
-					if (!isSpecialNode)
-					{
-						XMLNodeHdr	attrNode = (XMLNodeHdr) (state->tree + attrOffNew);
-
-						/* Not all attributes are special (binary) */
-						if (attrNode->flags & XNODE_ATTR_VALUE_BINARY)
-						{
-							xmlnodePushSingleNode(&state->substNodes, attrOffNew);
-						}
-					}
-				}
-
-				/*
-				 * Replace the original attribute data with those (possibly)
-				 * changed.
-				 */
-				newSize += padding;
-				if (newSize > attrDataOrigSize)
-				{				/* Reallocation must be anticipated. */
-					XMLNodeOffset offOrig = attrDataOrig - state->tree;
-					XMLNodeOffset offNew = attrDataNew - state->tree;
-
-					ensureSpaceIn(newSize - attrDataOrigSize, state);
-					attrDataOrig = state->tree + offOrig;
-					attrDataNew = state->tree + offNew;
-				}
-
-				memcpy(attrDataOrig + padding, attrsNew, newSize - padding);
-
-				if (newSize != attrDataOrigSize)
-				{
-					if (newSize > attrDataOrigSize)
-					{
-						state->dstPos += newSize - attrDataOrigSize;
-					}
-					else
-					{
-						state->dstPos -= attrDataOrigSize - newSize;
-					}
-				}
+				replaceAttributes(state, isSpecialNode, attrOffsets, attrCount,
+						   attrsNew, attrOffsetsNew, attrCountNew, &newSize);
 				pfree(attrsNew);
 
-				children = attributes = newAttrCount;
+				children = attrCount = attrCountNew;
 
 				/*
 				 * If all the attributes of the current node have been
@@ -1587,51 +1511,7 @@ processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowe
 				 * declaration pointers.
 				 */
 				if (state->nmspDecl.content != NULL && state->nmspDecl.position > 0)
-				{
-					unsigned short i;
-					unsigned int declsTotal = state->nmspDecl.position;
-					XNodeListItem *declItem,
-							   *newAttrItem;
-					unsigned int declsUpdated = 0;
-					unsigned int newAttrsToCheck;
-
-					Assert(nmspDecls <= declsTotal);
-
-					/*
-					 * Start at the first namespace declaration that the
-					 * current node has introduced.
-					 */
-					declItem = state->nmspDecl.content + declsTotal - nmspDecls;
-
-					/* First non-special attribute the current node contains. */
-					Assert(specAttrCount <= newAttrCount);
-					newAttrsToCheck = newAttrCount - specAttrCount;
-					newAttrItem = state->stack.content + state->stack.position - newAttrsToCheck;
-
-					for (i = 0; i < newAttrsToCheck; i++)
-					{
-						unsigned int nmspPrefLen = strlen(XNODE_NAMESPACE_DEF_PREFIX);
-						XMLNodeHdr	attrNode = (XMLNodeHdr) (state->tree + newAttrItem->value.singleOff);
-						char	   *attrName;
-
-						if ((attrNode->flags & XNODE_ATTR_VALUE_BINARY) ||
-							(!(attrNode->flags & XNODE_NMSP_PREFIX)))
-							/* Can't be namespace declaration. */
-							continue;
-
-						attrName = XNODE_CONTENT(attrNode);
-
-						if (strncmp(attrName, XNODE_NAMESPACE_DEF_PREFIX, nmspPrefLen) == 0 &&
-							attrName[nmspPrefLen] == XNODE_CHAR_COLON)
-						{
-							declItem->value.singleOff = newAttrItem->value.singleOff;
-							declItem++;
-							declsUpdated++;
-						}
-						newAttrItem++;
-					}
-					Assert(declsUpdated == nmspDecls);
-				}
+					adjustNamespaceDeclarations(state, nmspDecls, attrCountNew, specAttrCount);
 			}
 			pfree(attrOffsetsNew);
 		}
@@ -1816,7 +1696,7 @@ processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowe
 			 */
 			nodeInfo->nodeOut = state->dstPos;
 			nodeInfo->tokenType = childTag.tokenType;
-			padding = saveNodeHeader(state, nodeInfo, children == attributes ? XNODE_EMPTY : 0);
+			padding = saveNodeHeader(state, nodeInfo, children == attrCount ? XNODE_EMPTY : 0);
 			nodeInfo->nodeOut += padding;
 			elementOff = nodeInfo->nodeOut;
 			element = (XMLCompNodeHdr) (state->tree + elementOff);
@@ -2899,6 +2779,155 @@ saveRootNodeHeader(XMLParserState state, XMLNodeKind kind)
 	state->dstPos += padding + sizeof(XMLNodeOffset);
 	SET_VARSIZE(state->result, state->dstPos + VARHDRSZ);
 }
+
+/*
+ * Copy preprocessed attributes from 'attrsNew' (aligned) to replace the
+ * original ones and adjust references in parser stack accordingly.
+ */
+static void
+replaceAttributes(XMLParserState state, bool specialNode, XNodeListItem *attrOffsets,
+	   unsigned int attrCount, char *attrsNew, XNodeListItem *attrOffsetsNew,
+				  unsigned int attrCountNew, unsigned int *newSize)
+{
+	unsigned int i;
+	char	   *attrDataOrig,
+			   *attrDataNew;
+	unsigned int attrDataOrigSize,
+				padding;
+
+	attrDataOrig = state->tree + attrOffsets->value.singleOff;
+
+	/*
+	 * As for alignment, the new binary data are more restrictive, because of
+	 * XPath expressions.
+	 */
+	attrDataNew = (char *) TYPEALIGN(XPATH_ALIGNOF_EXPR, attrDataOrig);
+	padding = attrDataNew - attrDataOrig;
+	attrDataOrigSize = state->dstPos - attrOffsets->value.singleOff;
+
+	Assert(attrCountNew > 0 && attrCountNew >= attrCount);
+
+	/*
+	 * Copy the possibly adjusted values back into the stack and add new if
+	 * appropriate.
+	 */
+	for (i = 0; i < attrCountNew; i++)
+	{
+		XNodeListItem *itemNew = attrOffsetsNew + i;
+		XMLNodeOffset attrOffNew = itemNew->value.singleOff + padding;
+
+		if (i < attrCount)
+		{
+			XNodeListItem *itemOrig = attrOffsets + i;
+
+			itemOrig->value.singleOff = attrOffNew;
+		}
+		else
+		{
+			xmlnodePushSingleNode(&state->stack, attrOffNew);
+		}
+
+		/*
+		 * If attribute of an 'ordinary' element contains parameter it's
+		 * considered a 'substitution node'. Special node is a substitution
+		 * node itself, so we don't pay attention to its attributes.
+		 */
+		if (!specialNode)
+		{
+			XMLNodeHdr	attrNode = (XMLNodeHdr) (state->tree + attrOffNew);
+
+			/* Not all attributes are special (binary) */
+			if (attrNode->flags & XNODE_ATTR_VALUE_BINARY)
+			{
+				xmlnodePushSingleNode(&state->substNodes, attrOffNew);
+			}
+		}
+	}
+
+	/*
+	 * Replace the original attribute data with those (possibly) changed.
+	 */
+	*newSize += padding;
+	if (*newSize > attrDataOrigSize)
+	{							/* Reallocation must be anticipated. */
+		XMLNodeOffset offOrig = attrDataOrig - state->tree;
+		XMLNodeOffset offNew = attrDataNew - state->tree;
+
+		ensureSpaceIn(*newSize - attrDataOrigSize, state);
+		attrDataOrig = state->tree + offOrig;
+		attrDataNew = state->tree + offNew;
+	}
+
+	memcpy(attrDataOrig + padding, attrsNew, *newSize - padding);
+
+	if (*newSize != attrDataOrigSize)
+	{
+		if (*newSize > attrDataOrigSize)
+		{
+			state->dstPos += *newSize - attrDataOrigSize;
+		}
+		else
+		{
+			state->dstPos -= attrDataOrigSize - *newSize;
+		}
+	}
+}
+
+/*
+ * Preprocessing changes order of attributes: the special ones are moved to
+ * reserved positions, whereas the other, including namespace declarations,
+ * are moved behind. Therefore references pointing to the namespace
+ * declarations must be fixed.
+ */
+static void
+adjustNamespaceDeclarations(XMLParserState state, unsigned int nmspDecls,
+					   unsigned int newAttrCount, unsigned int specAttrCount)
+{
+	unsigned short i;
+	unsigned int declsTotal = state->nmspDecl.position;
+	XNodeListItem *declItem,
+			   *newAttrItem;
+	unsigned int declsUpdated = 0;
+	unsigned int newAttrsToCheck;
+
+	Assert(nmspDecls <= declsTotal);
+
+	/*
+	 * Start at the first namespace declaration that the current node has
+	 * introduced.
+	 */
+	declItem = state->nmspDecl.content + declsTotal - nmspDecls;
+
+	/* First non-special attribute the current node contains. */
+	Assert(specAttrCount <= newAttrCount);
+	newAttrsToCheck = newAttrCount - specAttrCount;
+	newAttrItem = state->stack.content + state->stack.position - newAttrsToCheck;
+
+	for (i = 0; i < newAttrsToCheck; i++)
+	{
+		unsigned int nmspPrefLen = strlen(XNODE_NAMESPACE_DEF_PREFIX);
+		XMLNodeHdr	attrNode = (XMLNodeHdr) (state->tree + newAttrItem->value.singleOff);
+		char	   *attrName;
+
+		if ((attrNode->flags & XNODE_ATTR_VALUE_BINARY) ||
+			(!(attrNode->flags & XNODE_NMSP_PREFIX)))
+			/* Can't be namespace declaration. */
+			continue;
+
+		attrName = XNODE_CONTENT(attrNode);
+
+		if (strncmp(attrName, XNODE_NAMESPACE_DEF_PREFIX, nmspPrefLen) == 0 &&
+			attrName[nmspPrefLen] == XNODE_CHAR_COLON)
+		{
+			declItem->value.singleOff = newAttrItem->value.singleOff;
+			declItem++;
+			declsUpdated++;
+		}
+		newAttrItem++;
+	}
+	Assert(declsUpdated == nmspDecls);
+}
+
 
 void
 xmlnodeDumpNode(char *input, XMLNodeOffset nodeOff, StringInfo output, char **paramNames, bool terminate)
