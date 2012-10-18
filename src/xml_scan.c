@@ -158,6 +158,7 @@ getNextXMLNode(XMLScan xscan)
 			XPathElement xpEl;
 			XMLCompNodeHdr eh = scanLevel->parent;
 			XMLNodeHdr	currentNode = NULL;
+			XMLNodeKind cKind;
 
 			/*
 			 * Indicates later in the loop whether sub-scan has finished in
@@ -208,6 +209,9 @@ getNextXMLNode(XMLScan xscan)
 			currentNode = (XMLNodeHdr) ((char *) eh -
 										readXMLNodeOffset(&scanLevel->nodeRefPtr, XNODE_GET_REF_BWIDTH(eh), false));
 
+			/* CDATA should be treated as text node. */
+			cKind = currentNode->kind == XMLNODE_CDATA ? XMLNODE_TEXT : currentNode->kind;
+
 			if (xscan->skip)
 			{
 				/*
@@ -238,7 +242,7 @@ getNextXMLNode(XMLScan xscan)
 			/*
 			 * Evaluate the node according to its type
 			 */
-			if (currentNode->kind == XMLNODE_ELEMENT &&
+			if (cKind == XMLNODE_ELEMENT &&
 				!(XPATH_LAST_LEVEL(xscan) && xscan->xpath->targNdKind != XMLNODE_ELEMENT))
 			{
 				XMLCompNodeHdr currentElement = (XMLCompNodeHdr) currentNode;
@@ -373,15 +377,16 @@ getNextXMLNode(XMLScan xscan)
 				 * not. In such a case we're not interested in the current
 				 * node anymore.
 				 */
-				if (currentNode->kind == xscan->xpath->targNdKind && xscan->xpath->targNdKind != XMLNODE_ELEMENT)
+
+				if (cKind == xscan->xpath->targNdKind && xscan->xpath->targNdKind != XMLNODE_ELEMENT)
 				{
-					if (currentNode->kind == XMLNODE_TEXT || currentNode->kind == XMLNODE_COMMENT)
+					if (cKind == XMLNODE_TEXT || cKind == XMLNODE_COMMENT)
 					{
 						xscan->skip = true;
 						addNodeToIgnoreList(currentNode, xscan);
 						return currentNode;
 					}
-					else if (currentNode->kind == XMLNODE_PI)
+					else if (cKind == XMLNODE_PI)
 					{
 						char	   *piTarget = (char *) (currentNode + 1);
 						char	   *piTargTest = xpEl->name;
@@ -403,7 +408,7 @@ getNextXMLNode(XMLScan xscan)
 						}
 
 					}
-					else if (currentNode->kind == XMLNODE_ATTRIBUTE)
+					else if (cKind == XMLNODE_ATTRIBUTE)
 					{
 						if (xscan->xpath->allAttributes)
 						{
@@ -1506,9 +1511,6 @@ substitutePaths(XPathExpression expression, XPathExprState exprState, XMLCompNod
 				while ((matching = getNextXMLNode(&xscanSub)) != NULL)
 				{
 					XMLNodeHdr *array = NULL;
-
-					Assert((matching->kind == xscanSub.xpath->targNdKind && xscanSub.xpath->targNdKind != XMLNODE_NODE)
-						   ||xscanSub.xpath->targNdKind == XMLNODE_NODE);
 
 					if (count == 0)
 					{
