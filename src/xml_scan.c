@@ -868,6 +868,7 @@ evaluateXPathFunction(XPathExprState exprState, XPathExpression funcExpr, unsign
 		else
 		{
 			/* Parser should not allow this if working as supposed to. */
+			targetType = XPATH_VAL_OBJECT;		/* Keep the compiler silent. */
 			elog(ERROR, "too many arguments passed to a function");
 		}
 
