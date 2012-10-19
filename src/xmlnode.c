@@ -442,6 +442,8 @@ dumpXMLNode(char *data, XMLNodeOffset rootNdOff, unsigned int binarySize)
 	return output->data;
 }
 
+
+
 /*
  * Write 'node' and it's descendants to storage, starting at '*output'.
  * When finished, '*output' points to the first byte following the storage
@@ -680,9 +682,7 @@ Datum
 xmlnode_children(PG_FUNCTION_ARGS)
 {
 	xmlnode		nodeRaw = (xmlnode) PG_GETARG_VARLENA_P(0);
-	char	   *data = (char *) VARDATA(nodeRaw);
-	XMLNodeOffset rootNdOff = XNODE_ROOT_OFFSET(nodeRaw);
-	XMLNodeHdr	node = (XMLNodeHdr) (data + rootNdOff);
+	XMLNodeHdr	node = (XMLNodeHdr) XNODE_ROOT(nodeRaw);
 	TypeInfo	nodeType;
 	ArrayType  *result;
 
@@ -697,7 +697,7 @@ xmlnode_children(PG_FUNCTION_ARGS)
 
 	initXNodeTypeInfo(fcinfo->flinfo->fn_oid, 0, &nodeType);
 
-	if (node->kind == XMLNODE_DOC || node->kind == XMLNODE_ELEMENT || node->kind == XMLNODE_DOC_FRAGMENT)
+	if (XNODE_IS_COMPOUND(node))
 	{
 		XMLCompNodeHdr root = (XMLCompNodeHdr) node;
 		unsigned short children = root->children;

@@ -223,6 +223,8 @@ extern Datum xmldoc_to_xmlnode(PG_FUNCTION_ARGS);
 extern XMLNodeOffset readXMLNodeOffset(char **input, unsigned char bytes, bool step);
 extern void writeXMLNodeOffset(XMLNodeOffset ref, char **output, unsigned char bytes, bool step);
 
+#define XNODE_IS_COMPOUND(node) ((node)->kind == XMLNODE_DOC ||\
+		(node)->kind == XMLNODE_ELEMENT || (node)->kind == XMLNODE_DOC_FRAGMENT)
 
 #define XNODE_CONTAINER_CHUNK	16
 
