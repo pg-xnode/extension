@@ -837,5 +837,21 @@ FROM trees_xml;
     </listitem>
    </itemizedlist>
   </sect1>
+  
+  <sect1>
+   <title>Release 0.7.2</title>
+   <itemizedlist>
+    <listitem>
+     <para>
+      Ensured that all data types are correctly aligned.
+     </para>
+    </listitem>
+    <listitem>
+     <para>
+      Added XPath functions <literal>local-name()</literal> and <literal>sum()</literal>.
+     </para>
+    </listitem>
+   </itemizedlist>
+  </sect1>
 </appendix>
 </article>

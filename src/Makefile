@@ -3,7 +3,7 @@ OBJS = xmlnode.o xpath.o xpath_parser.o xml_parser.o xmlnode_util.o xpath_functi
 xml_scan.o xml_update.o xnt.o dtd.o namespace.o
 
 EXTENSION = xnode
-DATA = xnode--0.7.1.sql
+DATA = xnode--0.7.2.sql
 
 REGRESS = xnode update xnt
 REGRESS_OPTS += --user=postgres

@@ -2,7 +2,7 @@
    "name": "pg_xnode",
    "abstract": "Extension to support binary XML",
    "description": "This extension contains set of data types to store XML document, its parts (nodes) as well as XPath expression. Document Object Model (DOM) concepts are used to access and modify the XML documents.",
-   "version": "0.7.1",
+   "version": "0.7.2",
    "maintainer": [
       "Antonin Houska <antonin.houska@gmail.com>"
    ],
@@ -11,12 +11,13 @@
     },
    "provides": {
       "pg_xnode": {
-         "file": "src/xnode--0.7.1.sql",
-         "docfile": "doc/pg_xnode_0.7.1.pdf",
-         "version": "0.7.1"
+         "file": "src/xnode--0.7.2.sql",
+         "docfile": "doc/pg_xnode_0.7.2.pdf",
+         "version": "0.7.2"
       }
    },
    "resources": {
+      "homepage": "http://www.pg-xnode.org",
       "bugtracker": {
          "web": "https://github.com/pg-xnode/extension/issues/"
       },
