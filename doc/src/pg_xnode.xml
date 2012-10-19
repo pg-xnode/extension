@@ -96,7 +96,7 @@
    	   <para>
    	    If earlier version already exists where version number &lt;=1.0, then the extension
    	    must be dropped (with <literal>CASCADE</literal> option) and re-created.
-   	    If the <literal>CREATE</literal> command step is skipped in such a case instead, then
+   	    If the <literal>CREATE</literal> command step is skipped in such a case, then
    	    data in obsolete format remain in the database and <productname>pg_node</productname>'s
    	    behaviour becomes undefined.   
    	   </para>
@@ -124,8 +124,13 @@
    <para>
     <literal>node</literal> type represents a node of XML document tree.
     Following are the valid node kinds: <firstterm>document</firstterm>,
-    <firstterm>document type declaration (DTD)</firstterm>, <firstterm>element</firstterm>,
-    <firstterm>attribute</firstterm>, <firstterm>comment</firstterm>,
+    <firstterm>document type declaration (DTD)</firstterm>
+    <footnote>
+     <para>The current version of <productname>pg_xnode</productname>
+      does recognize syntax of the DTD, but does not perform any validation.
+     </para>
+    </footnote>,
+    <firstterm>element</firstterm>, <firstterm>attribute</firstterm>, <firstterm>comment</firstterm>,
     <firstterm>character data (CDATA)</firstterm>, <firstterm>processing instruction (PI)</firstterm>
     and <firstterm>text node</firstterm>.
    </para>
@@ -740,6 +745,18 @@ FROM trees_xml;
 </screen>
    </para>
   </sect2>
+  
+  <sect2 id="template_xhtml">
+   <title>XNT and XHTML</title>
+   <para>
+    As XHTML is understood by XML parsers, it's possible to use <productname>pg_xnode</productname>
+    and its templates (XNT) to generate XHTML web pages.
+    <ulink url="https://github.com/pg-xnode/web">Web site of the
+    <productname>pg_xnode</productname> project</ulink> uses this approach and
+    as such it can be used for reference.
+    
+   </para>
+  </sect2>  
  </sect1>
  
  <appendix id="release">
