@@ -207,6 +207,7 @@ extern Datum xmldoc_in(PG_FUNCTION_ARGS);
 extern Datum xmldoc_out(PG_FUNCTION_ARGS);
 
 extern Datum xmlnode_to_xmldoc(PG_FUNCTION_ARGS);
+extern Datum xmlnode_to_json(PG_FUNCTION_ARGS);
 extern Datum xmldoc_to_xmlnode(PG_FUNCTION_ARGS);
 
 

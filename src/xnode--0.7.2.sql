@@ -266,3 +266,13 @@ CREATE FUNCTION node(xnt, text[], record)
 	STRICT;
 
 
+CREATE FUNCTION node_to_json(node) RETURNS json 
+	as 'MODULE_PATHNAME', 'xmlnode_to_json'
+	LANGUAGE C
+	IMMUTABLE
+	STRICT;
+
+CREATE CAST (node as json)
+	WITH FUNCTION node_to_json(node)
+	AS IMPLICIT;
+
