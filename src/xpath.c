@@ -2,6 +2,8 @@
  * Copyright (C) 2012, Antonin Houska
  */
 
+#include <math.h>
+
 #include "postgres.h"
 #include "fmgr.h"
 #include "funcapi.h"
@@ -887,7 +889,7 @@ retrieveColumnPaths(XMLScanContext xScanCtx, ArrayType *pathsColArr, int columns
 {
 	int			colIndex;
 	Oid			arrTypeOid;
-	int2		elTypLen,
+	int16		elTypLen,
 				arrTypLen;
 	bool		elByVal;
 	char		elTypAlign;

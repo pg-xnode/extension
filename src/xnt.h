@@ -2,7 +2,6 @@
  * Copyright (C) 2012, Antonin Houska
  */
 
-#include "access/htup.h"
 #include "access/tupdesc.h"
 #include "catalog/pg_cast.h"
 #include "catalog/pg_proc.h"

@@ -297,7 +297,7 @@ getNextXMLNode(XMLScan xscan)
 								}
 								else
 								{
-									int2		posInt2 = DatumGetInt16(DirectFunctionCall1Coll(dtoi2, InvalidOid, Float8GetDatum(resSigned.v.num)));
+									int16		posInt2 = DatumGetInt16(DirectFunctionCall1Coll(dtoi2, InvalidOid, Float8GetDatum(resSigned.v.num)));
 
 									passed = (scanLevel->contextPosition == posInt2);
 								}
@@ -950,8 +950,6 @@ static void
 evaluateBinaryOperator(XPathExprState exprState, XPathExprOperandValue valueLeft,
 					   XPathExprOperandValue valueRight, XPathExprOperator operator, XPathExprOperandValue result)
 {
-
-
 	/* If numeric value is the output, the value will reflect the sign itself */
 	result->negative = false;
 
@@ -1682,7 +1680,6 @@ static void
 compareNumbers(double numLeft, double numRight, XPathExprOperator operator,
 			   XPathExprOperandValue result)
 {
-
 	result->type = XPATH_VAL_BOOLEAN;
 	result->isNull = false;
 	switch (operator->id)

@@ -10,6 +10,10 @@
 #include "fmgr.h"
 #include "utils/elog.h"
 
+#if (PG_VERSION_NUM >= 90300)
+#include "access/htup_details.h"
+#endif
+
 #define XNODE_CHAR_SPACE		0x20
 #define XNODE_CHAR_EXCLMARK		0x21
 #define XNODE_CHAR_QUOTMARK		0x22
