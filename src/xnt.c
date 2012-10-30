@@ -53,6 +53,11 @@ static XNodeInternal xntProcessAttribute(XMLNodeHdr node,
 				 XPathExprOperandValue paramValues, unsigned short *paramMap,
 					XPathExprState exprState, unsigned int *storageSize);
 
+XNTParamNameSorted *getParameterNames(ArrayType *parNameArray, unsigned int templateParamCount,
+				  char **templParNames, unsigned short *paramMap);
+static XPathExprOperandValue getParameterValues(Datum row,
+	   unsigned int templateParamCount, XPathExprState exprState, Oid fnOid);
+
 PG_FUNCTION_INFO_V1(xnode_template_in);
 
 Datum
@@ -217,7 +222,6 @@ preprocessXNTAttributes(XNodeListItem *attrOffsets, unsigned short attrCount, ch
 						XMLNodeKind specNodeKind, bool *offsetsValid, unsigned int *specAttrCount, unsigned int *outSize,
 						unsigned int *outCount, XMLNodeContainer paramNames)
 {
-
 	unsigned short i;
 	XNTAttrNames *attrInfo = xntAttributeInfo + (specNodeKind - XNTNODE_TEMPLATE);
 	XMLNodeHdr *attrsSorted = NULL;
@@ -916,17 +920,8 @@ xnode_from_template(PG_FUNCTION_ARGS)
 	unsigned int substNodeCount = 0;
 	XMLNodeOffset *substNodes = NULL;
 	Datum		row;
-	HeapTupleHeader tupHdr;
-	Oid			tupType;
-	int32		tupTypmod;
-	TupleDesc	tupDesc;
-	unsigned int i;
-	HeapTupleData tmpTup,
-			   *tup;
 	XPathExprOperandValue parValues = NULL;
 	unsigned short *paramMap = NULL;
-	Form_pg_proc procStruct;
-	Oid			nodeOid;
 	XNodeInternal newTreeRoot = NULL;
 	XNodeInternal templRootInternal;
 	unsigned int resSizeEstimate = 0;
@@ -978,159 +973,8 @@ xnode_from_template(PG_FUNCTION_ARGS)
 
 	/* Retrieve names of the attributes that the function caller provides. */
 	parNameArr = PG_GETARG_ARRAYTYPE_P(1);
-
-	if (ARR_NDIM(parNameArr) == 0)
-	{
-		parNameCount = 0;
-	}
-	else if (ARR_NDIM(parNameArr) == 1)
-	{
-		int		   *attrArrDims = ARR_DIMS(parNameArr);
-
-		parNameCount = attrArrDims[0];
-	}
-	else
-	{
-		elog(ERROR, "parameter names must be passed in 1-dimensional array");
-	}
-
-	if (parNameCount != templHdr->paramCount)
-	{
-		elog(ERROR, "number of parameter names passed must be equal to the number of parameters that the template references");
-	}
-
-	if (parNameCount > 0)
-	{
-		Oid			elType,
-					arrType;
-		int16		arrTypLen,
-					elTypLen;
-		bool		elByVal;
-		char		elAlign;
-		XNTParamNameSorted *parNamesTmp;
-
-		elType = parNameArr->elemtype;
-		arrType = get_array_type(elType);
-		Assert(arrType != InvalidOid);
-		arrTypLen = get_typlen(arrType);
-		get_typlenbyvalalign(elType, &elTypLen, &elByVal, &elAlign);
-
-		/*
-		 * Get the parameter names from the array. There's no need to validate
-		 * characters. The validation is performed when parsing the template,
-		 * so invalid parameter names simply won't match.
-		 */
-		parNames = parNamesTmp = (XNTParamNameSorted *) palloc(parNameCount * sizeof(XNTParamNameSorted));
-
-		for (i = 0; i < parNameCount; i++)
-		{
-			int			subscr[1];
-			Datum		elDatum;
-			bool		elIsNull;
-			char	   *parName;
-
-			subscr[0] = i + 1;
-			elDatum = array_ref(parNameArr, 1, subscr, arrTypLen, elTypLen, elByVal, elAlign, &elIsNull);
-			if (elIsNull)
-			{
-				elog(ERROR, "all parameter names must be not-NULL");
-			}
-			parName = TextDatumGetCString(elDatum);
-			if (strlen(parName) == 0)
-			{
-				elog(ERROR, "all parameter names must have non-zero length");
-			}
-			parNamesTmp->order = i;
-			parNamesTmp->name = parName;
-			parNamesTmp++;
-		}
-
-		if (parNameCount > 0)
-		{
-			char	   *prev;
-
-			if (parNameCount > 1)
-			{
-				/* Sort by the name. */
-				qsort(parNames, parNameCount, sizeof(XNTParamNameSorted), paramNameComparator);
-
-				/* Check if there's no duplicate. */
-				parNamesTmp = parNames;
-				prev = parNamesTmp->name;
-				parNamesTmp++;
-
-				for (i = 1; i < parNameCount; i++)
-				{
-					if (strcmp(prev, parNamesTmp->name) == 0)
-					{
-						elog(ERROR, "parameter '%s' is passed more than once", prev);
-					}
-					prev = parNamesTmp->name;
-					parNamesTmp++;
-				}
-			}
-
-			Assert(parNameCount == templHdr->paramCount);
-
-			paramMap = (unsigned short *) palloc(templHdr->paramCount * sizeof(unsigned short));
-
-			/* Match the template parameters to those passed to the function. */
-			for (i = 0; i < templHdr->paramCount; i++)
-			{
-				XNTParamNameSorted key;
-				XNTParamNameSorted *matching;
-
-				key.name = templParNames[i];
-				matching = (XNTParamNameSorted *) bsearch(&key, parNames, parNameCount,
-							sizeof(XNTParamNameSorted), paramNameComparator);
-
-				if (matching != NULL)
-				{
-					/*
-					 * 'i' is the order that template expressions use to
-					 * reference parameter names (i. e. the order of given
-					 * parameter in the list stored in template header).
-					 *
-					 * paramMap[i] says at which position the user passes the
-					 * corresponding parameter in the function argument list.
-					 */
-					paramMap[i] = matching->order;
-				}
-				else
-				{
-					elog(ERROR, "the template references parameter '%s' but it's not passed", key.name);
-				}
-			}
-		}
-	}
-
-	/* Retrieve values of the parameters. */
-	row = PG_GETARG_DATUM(2);
-	tupHdr = DatumGetHeapTupleHeader(row);
-	tupType = HeapTupleHeaderGetTypeId(tupHdr);
-	tupTypmod = HeapTupleHeaderGetTypMod(tupHdr);
-	tupDesc = lookup_rowtype_tupdesc(tupType, tupTypmod);
-
-	if (tupDesc->natts != parNameCount)
-	{
-		elog(ERROR, "the number of parameter names must be equal to that of values");
-	}
-
-	/*
-	 * As there are no fixed OIDs for our types, let's get it from catalog.
-	 * 'node' is the return type.
-	 */
-	tup = SearchSysCache1(PROCOID, ObjectIdGetDatum(fcinfo->flinfo->fn_oid));
-	Assert(HeapTupleIsValid(tup));
-	procStruct = (Form_pg_proc) GETSTRUCT(tup);
-	nodeOid = procStruct->prorettype;
-	ReleaseSysCache(tup);
-
-	tmpTup.t_len = HeapTupleHeaderGetDatumLength(tupHdr);
-	tmpTup.t_data = tupHdr;
-	tup = &tmpTup;
-
-	parValues = (XPathExprOperandValue) palloc(tupDesc->natts * sizeof(XPathExprOperandValueData));
+	paramMap = (unsigned short *) palloc(templHdr->paramCount * sizeof(unsigned short));
+	parNames = getParameterNames(parNameArr, templHdr->paramCount, templParNames, paramMap);
 
 	/*
 	 * More than the default size because it will be used for all expressions
@@ -1139,92 +983,10 @@ xnode_from_template(PG_FUNCTION_ARGS)
 	 */
 	exprState = createXPathVarCache(4 * XPATH_VAR_CACHE_DEF_SIZE);
 
-	for (i = 0; i < tupDesc->natts; i++)
-	{
-		Oid			attTyp;
-		Datum		attValue;
-		bool		isnull = false;
-		XPathExprOperandValue parValue;
+	/* Retrieve values of the parameters. */
+	row = PG_GETARG_DATUM(2);
+	parValues = getParameterValues(row, templHdr->paramCount, exprState, fcinfo->flinfo->fn_oid);
 
-		attTyp = tupDesc->attrs[i]->atttypid;
-		attValue = heap_getattr(tup, i + 1, tupDesc, &isnull);
-
-		if (isnull)
-		{
-			elog(ERROR, "NULL value passed to parameter %u", i + 1);
-		}
-		parValue = parValues + i;
-
-		/*
-		 * Set default values. 'negative' is not set because
-		 * substituteParameters() ignores it anyway, in order to preserver
-		 * sign that the source expression might contain.
-		 */
-		parValue->isNull = false;
-		parValue->castToNumber = false;
-
-		/* 'nodeOid' is not a constant so can't be used with 'switch'. */
-		if (attTyp == nodeOid)
-		{
-			xmlnode		node = PG_DETOAST_DATUM(attValue);
-			XMLNodeHdr	root = XNODE_ROOT(node);
-
-			parValue->v.nodeSet.count = 1;
-			parValue->v.nodeSet.isDocument = false;
-			parValue->v.nodeSet.nodes.nodeId = getXPathOperandId(exprState, (void *) root, XPATH_VAR_NODE_SINGLE);
-			parValue->type = XPATH_VAL_NODESET;
-		}
-		else
-		{
-			switch (attTyp)
-			{
-				case BOOLOID:
-					parValue->v.boolean = DatumGetBool(castParameterValue(attValue, attTyp, BOOLOID));
-					parValue->type = XPATH_VAL_BOOLEAN;
-					break;
-
-				case INT2OID:
-				case INT4OID:
-				case INT8OID:
-				case NUMERICOID:
-				case FLOAT4OID:
-				case FLOAT8OID:
-					parValue->v.num = DatumGetFloat8(castParameterValue(attValue, attTyp, FLOAT8OID));
-					parValue->type = XPATH_VAL_NUMBER;
-					break;
-
-				case BPCHAROID:
-				case VARCHAROID:
-				case TEXTOID:
-					{
-						char	   *valStr;
-
-						valStr = TextDatumGetCString(castParameterValue(attValue, attTyp, TEXTOID));
-
-						/*
-						 * Maybe too restrictive, but that's not a problem.
-						 * Only the resulting document is restricted by XML
-						 * specification, whereas the XNT parameters are not.
-						 * Thus so this check may be more strict if simplicity
-						 * demands it.
-						 */
-						if (strchr(valStr, XNODE_CHAR_LARROW) || strchr(valStr, XNODE_CHAR_RARROW) ||
-							strchr(valStr, XNODE_CHAR_AMPERSAND))
-						{
-							elog(ERROR, "the following characters are is not allowed in text parameter: '<', '>', '&'.");
-						}
-						parValue->v.stringId = getXPathOperandId(exprState, (void *) valStr, XPATH_VAR_STRING);
-						parValue->type = XPATH_VAL_STRING;
-						break;
-					}
-
-				default:
-					elog(ERROR, "value of parameter %u has unrecognized type", i + 1);
-					break;
-			}
-		}
-	}
-	ReleaseTupleDesc(tupDesc);
 
 	templNode = getTemplateFromDoc(templDocRoot);
 
@@ -1802,7 +1564,6 @@ xntProcessCopyOf(XMLNodeHdr node, XNodeInternal parent,
 				 unsigned short *paramMap, XPathExprState exprState,
 				 unsigned int *storageSize)
 {
-
 	XMLCompNodeHdr xntNode;
 	XPathExpression expr,
 				exprCopy;
@@ -1914,7 +1675,6 @@ xntProcessElement(XMLNodeHdr node, bool preserveSpace,
 				  XPathExprOperandValue paramValues, unsigned short *paramMap,
 				  XPathExprState exprState, unsigned int *storageSize)
 {
-
 	XMLCompNodeHdr xntNode;
 	char	   *refPtr;
 	char		bwidth;
@@ -2041,7 +1801,6 @@ xntProcessAttribute(XMLNodeHdr node,
 				 XPathExprOperandValue paramValues, unsigned short *paramMap,
 					XPathExprState exprState, unsigned int *storageSize)
 {
-
 	XMLCompNodeHdr xntNode;
 	char	   *refPtr;
 	char		bwidth;
@@ -2115,4 +1874,298 @@ xntProcessAttribute(XMLNodeHdr node,
 	*storageSize += resultNodeSize + sizeof(XMLNodeOffset);
 
 	return resultInternal;
+}
+
+/*
+ * Get parameter values out of the input row.
+ *
+ *
+ * 'parNameArray' - the array of parameter names that user passes.
+ *
+ * 'paraNameCount' - how many elements that array contains.
+ *
+ * 'templateParamCount' - how many parameters the template contains.
+ *
+ *	'paramMap' - receives array mapping template parameters to names of the
+ *	parameters passed by user for substitution. Size of this array must not
+ *	be less than 'templateParamCount'
+ *
+ *	Returns array of parameter names passed by user for substitution.
+ */
+XNTParamNameSorted *
+getParameterNames(ArrayType *parNameArray, unsigned int templateParamCount,
+				  char **templParNames, unsigned short *paramMap)
+{
+
+	XNTParamNameSorted *parNames = NULL;
+	unsigned int parNameCount;
+
+	if (ARR_NDIM(parNameArray) == 0)
+	{
+		parNameCount = 0;
+	}
+	else if (ARR_NDIM(parNameArray) == 1)
+	{
+		int		   *attrArrDims = ARR_DIMS(parNameArray);
+
+		parNameCount = attrArrDims[0];
+	}
+	else
+	{
+		elog(ERROR, "parameter names must be passed in 1-dimensional array");
+	}
+
+	if (parNameCount != templateParamCount)
+	{
+		elog(ERROR, "number of parameter names passed must be equal to the number of parameters that the template references");
+	}
+
+	if (parNameCount > 0)
+	{
+		Oid			elType,
+					arrType;
+		int16		arrTypLen,
+					elTypLen;
+		bool		elByVal;
+		char		elAlign;
+		XNTParamNameSorted *parNamesTmp;
+		unsigned int i;
+
+		elType = parNameArray->elemtype;
+		arrType = get_array_type(elType);
+		Assert(arrType != InvalidOid);
+		arrTypLen = get_typlen(arrType);
+		get_typlenbyvalalign(elType, &elTypLen, &elByVal, &elAlign);
+
+		/*
+		 * Get the parameter names from the array. There's no need to validate
+		 * characters. The validation is performed when parsing the template,
+		 * so invalid parameter names simply won't match.
+		 */
+		parNames = parNamesTmp = (XNTParamNameSorted *) palloc(parNameCount * sizeof(XNTParamNameSorted));
+
+		for (i = 0; i < parNameCount; i++)
+		{
+			int			subscr[1];
+			Datum		elDatum;
+			bool		elIsNull;
+			char	   *parName;
+
+			subscr[0] = i + 1;
+			elDatum = array_ref(parNameArray, 1, subscr, arrTypLen, elTypLen, elByVal, elAlign, &elIsNull);
+			if (elIsNull)
+			{
+				elog(ERROR, "all parameter names must be not-NULL");
+			}
+			parName = TextDatumGetCString(elDatum);
+			if (strlen(parName) == 0)
+			{
+				elog(ERROR, "all parameter names must have non-zero length");
+			}
+			parNamesTmp->order = i;
+			parNamesTmp->name = parName;
+			parNamesTmp++;
+		}
+
+		if (parNameCount > 0)
+		{
+			char	   *prev;
+
+			if (parNameCount > 1)
+			{
+				/* Sort by the name. */
+				qsort(parNames, parNameCount, sizeof(XNTParamNameSorted), paramNameComparator);
+
+				/* Check if there's no duplicate. */
+				parNamesTmp = parNames;
+				prev = parNamesTmp->name;
+				parNamesTmp++;
+
+				for (i = 1; i < parNameCount; i++)
+				{
+					if (strcmp(prev, parNamesTmp->name) == 0)
+					{
+						elog(ERROR, "parameter '%s' is passed more than once", prev);
+					}
+					prev = parNamesTmp->name;
+					parNamesTmp++;
+				}
+			}
+
+			/* Match the template parameters to those passed to the function. */
+			for (i = 0; i < templateParamCount; i++)
+			{
+				XNTParamNameSorted key;
+				XNTParamNameSorted *matching;
+
+				key.name = templParNames[i];
+				matching = (XNTParamNameSorted *) bsearch(&key, parNames, parNameCount,
+							sizeof(XNTParamNameSorted), paramNameComparator);
+
+				if (matching != NULL)
+				{
+					/*
+					 * 'i' is the order that template expressions use to
+					 * reference parameter names (i. e. the order of given
+					 * parameter in the list stored in template header).
+					 *
+					 * paramMap[i] says at which position user passes the
+					 * corresponding parameter in the function argument list.
+					 */
+					paramMap[i] = matching->order;
+				}
+				else
+				{
+					elog(ERROR, "the template references parameter '%s' but it's not passed", key.name);
+				}
+			}
+		}
+	}
+
+	return parNames;
+}
+
+/*
+ * Get parameter values out of the input row.
+ *
+ *
+ * 'templateParamCount' - number of parameters the template requires.
+ *
+ * 'exprState' - variable cache to be used to evaluate template expressions.
+ *
+ * 'fnOid' - OID of the function that performs the substitution. It's needed
+ * to identify type of the input row.
+ *
+ */
+static XPathExprOperandValue
+getParameterValues(Datum row,
+		unsigned int templateParamCount, XPathExprState exprState, Oid fnOid)
+{
+
+	Form_pg_proc procStruct;
+	HeapTupleData tmpTup,
+			   *tup;
+	Oid			nodeOid;
+	unsigned int i;
+	HeapTupleHeader tupHdr = DatumGetHeapTupleHeader(row);
+	Oid			tupType = HeapTupleHeaderGetTypeId(tupHdr);
+	int32		tupTypmod = HeapTupleHeaderGetTypMod(tupHdr);
+	TupleDesc	tupDesc = lookup_rowtype_tupdesc(tupType, tupTypmod);
+	XPathExprOperandValue parValues;
+
+	/*
+	 * It must have already been verified that the template has the number of
+	 * parameters equal to the number of parameter names passed by user.
+	 */
+	if (tupDesc->natts != templateParamCount)
+	{
+		elog(ERROR, "the number of parameter values must be equal to that of names");
+	}
+
+	/*
+	 * As there are no fixed OIDs for our types, let's get it from catalog.
+	 * 'node' is the return type.
+	 */
+	tup = SearchSysCache1(PROCOID, ObjectIdGetDatum(fnOid));
+	Assert(HeapTupleIsValid(tup));
+	procStruct = (Form_pg_proc) GETSTRUCT(tup);
+	nodeOid = procStruct->prorettype;
+	ReleaseSysCache(tup);
+
+	tmpTup.t_len = HeapTupleHeaderGetDatumLength(tupHdr);
+	tmpTup.t_data = tupHdr;
+	tup = &tmpTup;
+
+	parValues = (XPathExprOperandValue) palloc(tupDesc->natts * sizeof(XPathExprOperandValueData));
+
+	for (i = 0; i < tupDesc->natts; i++)
+	{
+		Oid			attTyp;
+		Datum		attValue;
+		bool		isnull = false;
+		XPathExprOperandValue parValue;
+
+		attTyp = tupDesc->attrs[i]->atttypid;
+		attValue = heap_getattr(tup, i + 1, tupDesc, &isnull);
+
+		if (isnull)
+		{
+			elog(ERROR, "NULL value passed to parameter %u", i + 1);
+		}
+		parValue = parValues + i;
+
+		/*
+		 * Set default values. 'negative' is not set because
+		 * substituteParameters() ignores it anyway, in order to preserver
+		 * sign that the source expression might contain.
+		 */
+		parValue->isNull = false;
+		parValue->castToNumber = false;
+
+		/* 'nodeOid' is not a constant so can't be used with 'switch'. */
+		if (attTyp == nodeOid)
+		{
+			xmlnode		node = PG_DETOAST_DATUM(attValue);
+			XMLNodeHdr	root = XNODE_ROOT(node);
+
+			parValue->v.nodeSet.count = 1;
+			parValue->v.nodeSet.isDocument = false;
+			parValue->v.nodeSet.nodes.nodeId = getXPathOperandId(exprState,
+									   (void *) root, XPATH_VAR_NODE_SINGLE);
+			parValue->type = XPATH_VAL_NODESET;
+		}
+		else
+		{
+			switch (attTyp)
+			{
+				case BOOLOID:
+					parValue->v.boolean = DatumGetBool(
+							  castParameterValue(attValue, attTyp, BOOLOID));
+					parValue->type = XPATH_VAL_BOOLEAN;
+					break;
+
+				case INT2OID:
+				case INT4OID:
+				case INT8OID:
+				case NUMERICOID:
+				case FLOAT4OID:
+				case FLOAT8OID:
+					parValue->v.num = DatumGetFloat8(castParameterValue(attValue, attTyp, FLOAT8OID));
+					parValue->type = XPATH_VAL_NUMBER;
+					break;
+
+				case BPCHAROID:
+				case VARCHAROID:
+				case TEXTOID:
+					{
+						char	   *valStr;
+
+						valStr = TextDatumGetCString(castParameterValue(attValue, attTyp, TEXTOID));
+
+						/*
+						 * Maybe too restrictive, but that's not a problem.
+						 * Only the resulting document is restricted by XML
+						 * specification, whereas the XNT parameters are not.
+						 * Thus so this check may be more strict if simplicity
+						 * demands it.
+						 */
+						if (strchr(valStr, XNODE_CHAR_LARROW) || strchr(valStr, XNODE_CHAR_RARROW) ||
+							strchr(valStr, XNODE_CHAR_AMPERSAND))
+						{
+							elog(ERROR, "the following characters are is not allowed in text parameter: '<', '>', '&'.");
+						}
+						parValue->v.stringId = getXPathOperandId(exprState, (void *) valStr, XPATH_VAR_STRING);
+						parValue->type = XPATH_VAL_STRING;
+						break;
+					}
+
+				default:
+					elog(ERROR, "value of parameter %u has unrecognized type", i + 1);
+					break;
+			}
+		}
+	}
+
+	ReleaseTupleDesc(tupDesc);
+	return parValues;
 }
