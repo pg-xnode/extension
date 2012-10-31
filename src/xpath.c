@@ -34,7 +34,6 @@ PG_FUNCTION_INFO_V1(xpath_in);
 Datum
 xpath_in(PG_FUNCTION_ARGS)
 {
-	pg_enc		dbEnc = GetDatabaseEncoding();
 	char	   *xpathStr;
 	XPathHeader xpathHdr;
 	char	   *result,
@@ -49,10 +48,6 @@ xpath_in(PG_FUNCTION_ARGS)
 	char	  **parNamesArray = NULL;
 	unsigned short paramCount = 0;
 
-	if (dbEnc != PG_UTF8)
-	{
-		elog(ERROR, "The current version of xpath requires database encoding to be UTF-8.");
-	}
 	xpathStr = PG_GETARG_CSTRING(0);
 	expr = (XPathExpression) palloc(XPATH_EXPR_BUFFER_SIZE);
 	expr->needsContext = false;

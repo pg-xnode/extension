@@ -92,15 +92,9 @@ PG_FUNCTION_INFO_V1(xmlnode_in);
 Datum
 xmlnode_in(PG_FUNCTION_ARGS)
 {
-	pg_enc		dbEnc;
 	XMLNodeParserStateData parserState;
 	char	   *input = PG_GETARG_CSTRING(0);
 
-	if (strlen(input) == 0)
-	{
-		elog(ERROR, "zero length input string");
-	}
-	dbEnc = GetDatabaseEncoding();
 	initXMLParserState(&parserState, input, XMLNODE_NODE, NULL);
 	xmlnodeParseNode(&parserState);
 	finalizeXMLParserState(&parserState);
@@ -113,7 +107,6 @@ PG_FUNCTION_INFO_V1(xmlnode_out);
 Datum
 xmlnode_out(PG_FUNCTION_ARGS)
 {
-
 	xmlnode		node = (xmlnode) PG_GETARG_VARLENA_P(0);
 	char	   *data = (char *) VARDATA(node);
 	XMLNodeOffset rootNdOff = XNODE_ROOT_OFFSET(node);
@@ -152,18 +145,12 @@ PG_FUNCTION_INFO_V1(xmldoc_in);
 Datum
 xmldoc_in(PG_FUNCTION_ARGS)
 {
-	pg_enc		dbEnc;
 	XMLNodeParserStateData parserState;
 	char	   *input = PG_GETARG_CSTRING(0);
 
 	if (strlen(input) == 0)
 	{
 		elog(ERROR, "zero length input string");
-	}
-	dbEnc = GetDatabaseEncoding();
-	if (dbEnc != PG_UTF8)
-	{
-		elog(ERROR, "The current version of xmlnode requires both database encoding to be UTF-8.");
 	}
 	initXMLParserState(&parserState, input, XMLNODE_DOC, NULL);
 	xmlnodeParseDoc(&parserState);

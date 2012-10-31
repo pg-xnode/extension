@@ -63,7 +63,6 @@ PG_FUNCTION_INFO_V1(xnode_template_in);
 Datum
 xnode_template_in(PG_FUNCTION_ARGS)
 {
-	pg_enc		dbEnc;
 	XMLNodeParserStateData parserState;
 	char	   *input = PG_GETARG_CSTRING(0);
 	XMLNodeOffset *rootOffPtr;
@@ -72,11 +71,6 @@ xnode_template_in(PG_FUNCTION_ARGS)
 	if (strlen(input) == 0)
 	{
 		elog(ERROR, "zero length input string");
-	}
-	dbEnc = GetDatabaseEncoding();
-	if (dbEnc != PG_UTF8)
-	{
-		elog(ERROR, "The current version of xmlnode requires both database encoding to be UTF-8.");
 	}
 	initXMLParserState(&parserState, input, XNTNODE_ROOT, getXNTNodeKind);
 	xmlnodeParseDoc(&parserState);
@@ -1896,7 +1890,6 @@ XNTParamNameSorted *
 getParameterNames(ArrayType *parNameArray, unsigned int templateParamCount,
 				  char **templParNames, unsigned short *paramMap)
 {
-
 	XNTParamNameSorted *parNames = NULL;
 	unsigned int parNameCount;
 
@@ -2041,7 +2034,6 @@ static XPathExprOperandValue
 getParameterValues(Datum row,
 		unsigned int templateParamCount, XPathExprState exprState, Oid fnOid)
 {
-
 	Form_pg_proc procStruct;
 	HeapTupleData tmpTup,
 			   *tup;

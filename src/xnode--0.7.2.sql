@@ -1,3 +1,24 @@
+CREATE FUNCTION check_encoding() RETURNS boolean AS $$
+DECLARE
+	e varchar;
+BEGIN
+	SELECT pg_encoding_to_char(encoding) INTO e
+	FROM pg_database
+	WHERE datname=current_database();
+
+	IF e <> 'UTF8' THEN
+	RAISE EXCEPTION 'the pg_xnode extension can only be installed to UTF8-encoded databases';
+	END IF;
+
+	RETURN true;
+END
+$$ LANGUAGE plpgsql;
+
+SELECT check_encoding();
+
+DROP FUNCTION check_encoding();
+
+
 CREATE FUNCTION node_in(cstring) RETURNS node
 	as 'MODULE_PATHNAME', 'xmlnode_in'
 	LANGUAGE C
