@@ -10,14 +10,6 @@
 static void xmlTreeWalker(XMLTreeWalkerContext *context);
 static unsigned int getNodePadding(char *start, XMLNodeOffset offAbs, XMLNodeHdr node);
 
-struct XMLNodeDumpInfo
-{
-	StringInfo	output;
-	char	   *start;			/* where the tree storage starts */
-};
-
-static void visitXMLNodeForDump(XMLNodeHdr *stack, unsigned int depth, void *userData);
-
 #ifdef XNODE_DEBUG
 static void dumpXScanDebug(StringInfo output, XMLScan scan, char *docData, XMLNodeOffset docRootOff);
 #endif
@@ -95,7 +87,6 @@ xmlnodeAddListItem(XMLNodeContainer cont, XNodeListItem *itemNew)
 XMLNodeOffset
 xmlnodePopOffset(XMLNodeContainer cont)
 {
-
 	if (cont->position == 0)
 	{
 		elog(ERROR, "Stack is empty.");
@@ -430,7 +421,6 @@ copyXMLDocFragment(XMLCompNodeHdr fragNode, char **resCursorPtr)
 void
 copyXMLNodeOrDocFragment(XMLNodeHdr newNode, char **resCursor, char **newNdRoot, char ***newNdRoots)
 {
-
 	XMLNodeOffset newNdOff;
 
 	if (newNode->kind == XMLNODE_DOC_FRAGMENT)
@@ -461,7 +451,6 @@ copyXMLNodeOrDocFragment(XMLNodeHdr newNode, char **resCursor, char **newNdRoot,
 XMLNodeHdr
 getFirstXMLNodeLeaf(XMLCompNodeHdr compNode)
 {
-
 	if (!XNODE_HAS_CHILDREN(compNode))
 	{
 		return (XMLNodeHdr) compNode;
@@ -719,17 +708,6 @@ walkThroughXMLTree(XMLNodeHdr rootNode, VisitXMLNode visitor, bool attributes, v
 	pfree(context.stack);
 }
 
-void
-dumpXMLNodeDebug(StringInfo output, char *data, XMLNodeOffset off)
-{
-	XMLNodeHdr	root = (XMLNodeHdr) (data + off);
-	struct XMLNodeDumpInfo userData;
-
-	userData.output = output;
-	userData.start = data;
-	walkThroughXMLTree(root, visitXMLNodeForDump, true, (void *) &userData);
-}
-
 /*
  * Test if a valid number starts at 'str'.
  * If it does, then '*end' is set to the first character after the number.
@@ -872,75 +850,6 @@ xmlTreeWalker(XMLTreeWalkerContext *context)
 			childNr++;
 		}
 		context->depth--;
-	}
-}
-
-static void
-visitXMLNodeForDump(XMLNodeHdr *stack, unsigned depth, void *userData)
-{
-	XMLNodeHdr	node = (XMLNodeHdr) stack[depth];
-	struct XMLNodeDumpInfo *ud = (struct XMLNodeDumpInfo *) userData;
-	StringInfo	output = ud->output;
-	char	   *str;
-	unsigned int size;
-	XMLNodeOffset offAbs = (char *) node - ud->start;
-	XMLNodeOffset offRel = 0;
-
-	appendStringInfoSpaces(output, depth);
-
-	if (depth > 0)
-	{
-		XMLNodeHdr	parent = (XMLNodeHdr) stack[depth - 1];
-
-		offRel = (char *) parent - (char *) node;
-	}
-
-	switch (node->kind)
-	{
-		case XMLNODE_ELEMENT:
-			size = getXMLNodeSize(node, true);
-			appendStringInfo(output, "%s (abs: %u , rel: %u , size: %u)\n",
-			XNODE_ELEMENT_NAME((XMLCompNodeHdr) node), offAbs, offRel, size);
-			break;
-
-		case XMLNODE_ATTRIBUTE:
-			str = XNODE_CONTENT(node);
-			break;
-
-		case XMLNODE_COMMENT:
-			str = "<comment>";
-			break;
-
-		case XMLNODE_CDATA:
-			str = "CDATA";
-			break;
-
-		case XMLNODE_PI:
-			str = "PI";
-			break;
-
-		case XMLNODE_TEXT:
-			str = "<text>";
-			break;
-
-		case XMLNODE_DOC_FRAGMENT:
-			str = "<fragment>";
-			break;
-
-		default:
-			elog(ERROR, "unrecognized node kind %u", node->kind);
-			break;
-
-	}
-
-	if (node->kind != XMLNODE_ELEMENT)
-	{
-		size = getXMLNodeSize(node, true);
-		if (node->kind == XMLNODE_ATTRIBUTE)
-		{
-			appendStringInfoChar(output, '@');
-		}
-		appendStringInfo(output, "%s (abs: %u , rel: %u , size: %u)\n", str, offAbs, offRel, size);
 	}
 }
 

@@ -14,7 +14,6 @@
 
 #include "xmlnode.h"
 #include "xpath.h"
-#include "xml_parser.h"
 #include "xmlnode_util.h"
 
 static void retrieveColumnPaths(XMLScanContext xScanCtx, ArrayType *pathsColArr, int columns);

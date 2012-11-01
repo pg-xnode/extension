@@ -58,6 +58,25 @@ extern char specXMLStrings[][XNODE_SPEC_STR_MAX_LEN];
 #define CHAR_INTERVALS		3
 extern UTF8Interval charIntervals[CHAR_INTERVALS];
 
+extern const char *xmldeclAttNames[XNODE_XDECL_MAX_ATTRS];
+extern const char *xmldeclVersions[XNODE_XDECL_VERSIONS];
+
+#define XMLDECL_STANDALONE_YES	"yes"
+
+typedef struct PredefinedEntity
+{
+	char	   *escaped;
+	char		simple;
+}	PredefinedEntity;
+
+#define XNODE_PREDEFINED_ENTITIES	5
+
+#define XNODE_CHAR_CDATA_LT		"lt;"
+#define XNODE_CHAR_CDATA_GT		"gt;"
+#define XNODE_CHAR_CDATA_AMP	"amp;"
+
+extern PredefinedEntity predefEntities[XNODE_PREDEFINED_ENTITIES];
+
 typedef enum XNodeSpecStringDTD
 {
 	XNODE_STR_DTD_ELEMENT = 0,

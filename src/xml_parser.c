@@ -67,15 +67,13 @@ UTF8Interval charIntervals[CHAR_INTERVALS] =
 };
 
 
-static const char *xmldeclAttNames[XNODE_XDECL_MAX_ATTRS] = {
+const char *xmldeclAttNames[XNODE_XDECL_MAX_ATTRS] = {
 	"version", "encoding", "standalone"
 };
 
-static const char *xmldeclVersions[XNODE_XDECL_VERSIONS] = {
+const char *xmldeclVersions[XNODE_XDECL_VERSIONS] = {
 	"1.0"
 };
-
-#define XMLDECL_STANDALONE_YES	"yes"
 
 /*
  * Parser functions use this structure for output information about nodes.
@@ -122,7 +120,7 @@ static char *getEncodingSimplified(const char *original);
 static bool isPredefinedEntity(char *refStart, char *value);
 
 static void evaluateWhitespace(XMLParserState state);
-static void ensureSpaceIn(unsigned int size, XMLParserState state);
+static void ensureSpace(unsigned int size, XMLParserState state);
 static unsigned int saveNodeHeader(XMLParserState state, XMLNodeInternal nodeInfo, char flags);
 static void saveContent(XMLParserState state, XMLNodeInternal nodeInfo);
 static void saveReferences(XMLParserState state, XMLNodeInternal nodeInfo, XMLCompNodeHdr compNode,
@@ -134,28 +132,11 @@ static void replaceAttributes(XMLParserState state, bool specialNode, XNodeListI
 				  unsigned int attrCountNew, unsigned int *newSize);
 static void adjustNamespaceDeclarations(XMLParserState state, unsigned int nmspDecls,
 					  unsigned int newAttrCount, unsigned int specAttrCount);
-
 static void checkNamespaces(XMLParserState state, XMLNodeInternal nodeInfo, unsigned int attrsPrefixedCount,
 				bool *elNmspIsSpecial);
-static unsigned int dumpAttributes(XMLCompNodeHdr element, StringInfo output,
-			   char **paramNames);
-static void dumpContentEscaped(XMLNodeKind kind, StringInfo output, char *input, unsigned int inputLen);
-static void dumpSpecString(StringInfo output, char *outNew, unsigned int *incrInput);
-static char *ensureSpaceOut(StringInfo output, unsigned int toWrite);
 
-typedef struct PredefinedEntity
-{
-	char	   *escaped;
-	char		simple;
-}	PredefinedEntity;
 
-#define XNODE_PREDEFINED_ENTITIES	5
-
-#define XNODE_CHAR_CDATA_LT		"lt;"
-#define XNODE_CHAR_CDATA_GT		"gt;"
-#define XNODE_CHAR_CDATA_AMP	"amp;"
-
-static PredefinedEntity predefEntities[XNODE_PREDEFINED_ENTITIES] = {
+PredefinedEntity predefEntities[XNODE_PREDEFINED_ENTITIES] = {
 	{XNODE_CHAR_CDATA_LT, XNODE_CHAR_LARROW},
 	{XNODE_CHAR_CDATA_GT, XNODE_CHAR_RARROW},
 	{XNODE_CHAR_CDATA_AMP, XNODE_CHAR_AMPERSAND},
@@ -371,7 +352,7 @@ xmlnodeParseNode(XMLParserState state)
 		ptrUnaligned = state->tree + state->dstPos;
 		rootOffPtr = (XMLNodeOffset *) TYPEALIGN(XNODE_ALIGNOF_NODE_OFFSET, ptrUnaligned);
 		padding = (char *) rootOffPtr - ptrUnaligned;
-		ensureSpaceIn(padding + sizeof(XMLNodeOffset), state);
+		ensureSpace(padding + sizeof(XMLNodeOffset), state);
 
 		*rootOffPtr = xmlnodePopOffset(&state->stack);
 		state->dstPos += padding + sizeof(XMLNodeOffset);
@@ -674,7 +655,7 @@ readXMLAttValue(XMLParserState state, bool output, bool *refs)
 				{
 					unsigned int len = strlen(utf8char);
 
-					ensureSpaceIn(len, state);
+					ensureSpace(len, state);
 					memcpy(state->tree + state->dstPos, utf8char, len);
 					state->dstPos += len;
 				}
@@ -689,7 +670,7 @@ readXMLAttValue(XMLParserState state, bool output, bool *refs)
 				}
 				if (output)
 				{
-					ensureSpaceIn(1, state);
+					ensureSpace(1, state);
 					*(state->tree + state->dstPos) = predefValue;
 					state->dstPos++;
 				}
@@ -718,7 +699,7 @@ readXMLAttValue(XMLParserState state, bool output, bool *refs)
 			/* 'Ordinary' character, just write it (if the caller wants it). */
 			if (output)
 			{
-				ensureSpaceIn(state->cWidth, state);
+				ensureSpace(state->cWidth, state);
 				memcpy(state->tree + state->dstPos, state->c, state->cWidth);
 				state->dstPos += state->cWidth;
 			}
@@ -729,7 +710,7 @@ readXMLAttValue(XMLParserState state, bool output, bool *refs)
 
 	if (output)
 	{
-		ensureSpaceIn(1, state);
+		ensureSpace(1, state);
 		*(state->tree + state->dstPos) = '\0';
 		state->dstPos++;
 	}
@@ -1101,7 +1082,7 @@ processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowe
 					 */
 					state->dstPos--;
 				}
-				ensureSpaceIn(nodeInfo->cntLength + 1, state);
+				ensureSpace(nodeInfo->cntLength + 1, state);
 				memcpy(state->tree + state->dstPos, refChar, nodeInfo->cntLength);
 			}
 			else if (isPredefinedEntity(start + 1, &valueSingle))
@@ -1116,7 +1097,7 @@ processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowe
 				{
 					state->dstPos--;
 				}
-				ensureSpaceIn(nodeInfo->cntLength + 1, state);
+				ensureSpace(nodeInfo->cntLength + 1, state);
 				*(state->tree + state->dstPos) = valueSingle;
 			}
 			else
@@ -2107,7 +2088,7 @@ processTag(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowed,
 						elog(ERROR, "XML declaration may contain %u attributes at maximum.", XNODE_XDECL_MAX_ATTRS);
 					}
 				}
-				ensureSpaceIn(sizeof(XMLNodeHdrData) + nameLength + 1, state);
+				ensureSpace(sizeof(XMLNodeHdrData) + nameLength + 1, state);
 				attrNode = (XMLNodeHdr) (state->tree + state->dstPos);
 				attrNode->kind = XMLNODE_ATTRIBUTE;
 				attrNode->flags = 0;
@@ -2375,7 +2356,7 @@ evaluateWhitespace(XMLParserState state)
 }
 
 static void
-ensureSpaceIn(unsigned int size, XMLParserState state)
+ensureSpace(unsigned int size, XMLParserState state)
 {
 	unsigned int chunks = 0;
 	unsigned int orig = state->sizeOut;
@@ -2428,7 +2409,7 @@ saveNodeHeader(XMLParserState state, XMLNodeInternal nodeInfo, char flags)
 		incr = sizeof(XMLNodeHdrData);
 	}
 
-	ensureSpaceIn(incr, state);
+	ensureSpace(incr, state);
 
 	/*
 	 * 'outPtrAligned can't be used because reallocation might have taken
@@ -2489,7 +2470,7 @@ saveContent(XMLParserState state, XMLNodeInternal nodeInfo)
 	if (nodeInfo->tokenType & (TOKEN_ETAG | TOKEN_EMPTY_ELEMENT |
 							   TOKEN_CDATA | TOKEN_COMMENT | TOKEN_DTD | TOKEN_PI | TOKEN_TEXT | TOKEN_REFERENCE))
 	{
-		ensureSpaceIn(nodeInfo->cntLength + 1, state);
+		ensureSpace(nodeInfo->cntLength + 1, state);
 	}
 	else
 	{
@@ -2518,7 +2499,7 @@ saveReferences(XMLParserState state, XMLNodeInternal nodeInfo, XMLCompNodeHdr co
 	unsigned short int i;
 	XMLNodeOffset elementOff = (char *) compNode - state->tree;
 
-	ensureSpaceIn(refsTotal, state);
+	ensureSpace(refsTotal, state);
 	compNode = (XMLCompNodeHdr) (state->tree + elementOff);
 	XNODE_SET_REF_BWIDTH(compNode, bwidth);
 
@@ -2654,7 +2635,7 @@ saveRootNodeHeader(XMLParserState state, XMLNodeKind kind)
 	rootOffSrc = state->stack.content;
 	bwidth = getXMLNodeOffsetByteWidth(rootNodeOff - rootOffSrc->value.singleOff);
 	refsTotal = childCount * bwidth;
-	ensureSpaceIn(padding + rootHdrSz + refsTotal, state);
+	ensureSpace(padding + rootHdrSz + refsTotal, state);
 	state->dstPos += padding + rootHdrSz;
 
 	rootNode = (XMLCompNodeHdr) (state->tree + rootNodeOff);
@@ -2711,7 +2692,7 @@ saveRootNodeHeader(XMLParserState state, XMLNodeKind kind)
 	}
 
 	extraSize = declSize + xntHdrSize;
-	ensureSpaceIn(extraSize + MAX_PADDING(XNODE_ALIGNOF_NODE_OFFSET) + sizeof(XMLNodeOffset), state);
+	ensureSpace(extraSize + MAX_PADDING(XNODE_ALIGNOF_NODE_OFFSET) + sizeof(XMLNodeOffset), state);
 	/* re-initialize the 'rootNode', re-allocation might have taken place. */
 	rootNode = (XMLCompNodeHdr) (state->tree + rootNodeOff);
 
@@ -2853,7 +2834,7 @@ replaceAttributes(XMLParserState state, bool specialNode, XNodeListItem *attrOff
 		XMLNodeOffset offOrig = attrDataOrig - state->tree;
 		XMLNodeOffset offNew = attrDataNew - state->tree;
 
-		ensureSpaceIn(*newSize - attrDataOrigSize, state);
+		ensureSpace(*newSize - attrDataOrigSize, state);
 		attrDataOrig = state->tree + offOrig;
 		attrDataNew = state->tree + offNew;
 	}
@@ -2929,478 +2910,6 @@ adjustNamespaceDeclarations(XMLParserState state, unsigned int nmspDecls,
 }
 
 
-void
-xmlnodeDumpNode(char *input, XMLNodeOffset nodeOff, StringInfo output, char **paramNames, bool terminate)
-{
-	char	   *content = NULL;
-	unsigned int cntLen = 0;
-	XMLNodeHdr	node = (XMLNodeHdr) (input + nodeOff);
-	char	   *cursor;
-
-	switch (node->kind)
-	{
-			unsigned short int i,
-						incr;
-			char	   *childOffPtr,
-					   *lastChild;
-
-		case XMLNODE_DOC:
-		case XMLNODE_ELEMENT:
-
-		case XNTNODE_ROOT:
-		case XNTNODE_TEMPLATE:
-		case XNTNODE_COPY_OF:
-		case XNTNODE_ELEMENT:
-		case XNTNODE_ATTRIBUTE:
-			if (node->kind == XMLNODE_ELEMENT || (node->flags & XNODE_EL_SPECIAL))
-			{
-				XMLCompNodeHdr element = (XMLCompNodeHdr) node;
-
-				if (node->flags & XNODE_EL_SPECIAL)
-				{
-					content = getXNTNodeName(node->kind);
-				}
-				else
-				{
-					content = XNODE_ELEMENT_NAME(element);
-				}
-				cntLen = strlen(content);
-				cursor = ensureSpaceOut(output, cntLen + 1);
-
-				/*
-				 * STag
-				 */
-				*cursor++ = XNODE_CHAR_LARROW;
-				memcpy(cursor, content, cntLen);
-				/* '<' + tag name  written so far */
-			}
-
-			childOffPtr = XNODE_FIRST_REF(((XMLCompNodeHdr) node));
-
-			if (node->kind == XMLNODE_ELEMENT || (node->flags & XNODE_EL_SPECIAL))
-			{
-				XMLCompNodeHdr eh = (XMLCompNodeHdr) node;
-
-				i = dumpAttributes(eh, output, paramNames);
-				childOffPtr = childOffPtr + i * XNODE_GET_REF_BWIDTH(eh);
-
-				if (node->flags & XNODE_EMPTY)
-				{
-					/*
-					 * EmptyElement
-					 */
-					cursor = ensureSpaceOut(output, 2);
-					*cursor++ = XNODE_CHAR_SLASH;
-					*cursor = XNODE_CHAR_RARROW;
-				}
-				else
-				{
-					char	   *lastChild = XNODE_LAST_REF((XMLCompNodeHdr) node);
-
-					cursor = ensureSpaceOut(output, 1);
-					*cursor = XNODE_CHAR_RARROW;
-
-					while (childOffPtr <= lastChild)
-					{
-						xmlnodeDumpNode(input, nodeOff - readXMLNodeOffset(&childOffPtr,
-																		   XNODE_GET_REF_BWIDTH(eh), true), output, paramNames, false);
-					}
-
-					/*
-					 * Etag
-					 */
-					cursor = ensureSpaceOut(output, cntLen + 3);
-					*cursor++ = XNODE_CHAR_LARROW;
-					*cursor++ = XNODE_CHAR_SLASH;
-					memcpy(cursor, content, cntLen);
-					cursor += cntLen;
-					*cursor = XNODE_CHAR_RARROW;
-					/* '</' + 'Name' + '>' */
-				}
-
-				if (node->flags & XNODE_EL_SPECIAL)
-				{
-					/*
-					 * 'content' is the constructed full name as opposed to
-					 * pointer to the binary tree;
-					 */
-					pfree(content);
-				}
-			}
-			else
-			{
-				/*
-				 * This is a document node.
-				 */
-				char	   *lastChild = XNODE_LAST_REF((XMLCompNodeHdr) node);
-
-				while (childOffPtr <= lastChild)
-				{
-					xmlnodeDumpNode(input, nodeOff -
-									readXMLNodeOffset(&childOffPtr, XNODE_GET_REF_BWIDTH((XMLCompNodeHdr) node), true),
-									output, paramNames, false);
-				}
-			}
-			break;
-
-		case XMLNODE_DTD:
-			content = XNODE_CONTENT(node);
-			cntLen = strlen(content);
-
-			cursor = ensureSpaceOut(output, incr = strlen(specXMLStrings[XNODE_STR_DTD_START]));
-			memcpy(cursor, specXMLStrings[XNODE_STR_DTD_START], incr);
-
-			cursor = ensureSpaceOut(output, cntLen);
-			memcpy(cursor, content, cntLen);
-
-			cursor = ensureSpaceOut(output, incr = strlen(specXMLStrings[XNODE_STR_DTD_END]));
-			memcpy(cursor, specXMLStrings[XNODE_STR_DTD_END], incr);
-			break;
-
-		case XMLNODE_ATTRIBUTE:
-			content = XNODE_CONTENT(node);
-
-			/* Skip the name. */
-			content += strlen(content) + 1;
-
-			cntLen = strlen(content);
-			cursor = ensureSpaceOut(output, cntLen);
-			memcpy(cursor, content, cntLen);
-			break;
-
-		case XMLNODE_COMMENT:
-			content = XNODE_CONTENT(node);
-			cntLen = strlen(content);
-			cursor = ensureSpaceOut(output, incr = strlen(specXMLStrings[XNODE_STR_CMT_START]));
-			memcpy(cursor, specXMLStrings[XNODE_STR_CMT_START], incr);
-
-			cursor = ensureSpaceOut(output, cntLen);
-			memcpy(cursor, content, cntLen);
-
-			cursor = ensureSpaceOut(output, incr = strlen(specXMLStrings[XNODE_STR_CMT_END]));
-			memcpy(cursor, specXMLStrings[XNODE_STR_CMT_END], incr);
-			break;
-
-		case XMLNODE_PI:
-			content = XNODE_CONTENT(node);
-			cntLen = strlen(content);
-			incr = strlen(specXMLStrings[XNODE_STR_PI_START]);
-
-			cursor = ensureSpaceOut(output, incr);
-			memcpy(cursor, specXMLStrings[XNODE_STR_PI_START], incr);
-
-			cursor = ensureSpaceOut(output, cntLen);
-			memcpy(cursor, content, cntLen);
-
-			if (node->flags & XNODE_PI_HAS_VALUE)
-			{
-				content += cntLen + 1;
-				cntLen = strlen(content);
-				cursor = ensureSpaceOut(output, cntLen + 1);
-				*cursor++ = ' ';
-				memcpy(cursor, content, cntLen);
-			}
-			incr = strlen(specXMLStrings[XNODE_STR_PI_END]);
-			cursor = ensureSpaceOut(output, incr);
-			memcpy(cursor, specXMLStrings[XNODE_STR_PI_END], incr);
-			break;
-
-		case XMLNODE_CDATA:
-		case XMLNODE_TEXT:
-			content = XNODE_CONTENT(node);
-			cntLen = strlen(content);
-
-			if (node->flags & XNODE_TEXT_SPEC_CHARS)
-			{
-				dumpContentEscaped(node->kind, output, content, cntLen);
-			}
-			else
-			{
-				cursor = ensureSpaceOut(output, cntLen);
-				memcpy(cursor, content, cntLen);
-			}
-			break;
-
-		case XMLNODE_DOC_FRAGMENT:
-			childOffPtr = XNODE_FIRST_REF(((XMLCompNodeHdr) node));
-			lastChild = XNODE_LAST_REF((XMLCompNodeHdr) node);
-			while (childOffPtr <= lastChild)
-			{
-				XMLCompNodeHdr eh = (XMLCompNodeHdr) node;
-				XMLNodeOffset offRel = readXMLNodeOffset(&childOffPtr, XNODE_GET_REF_BWIDTH(eh), true);
-
-				xmlnodeDumpNode(input, nodeOff - offRel, output, paramNames, false);
-			}
-			break;
-
-		default:
-			elog(ERROR, "unable to dump node: %u", node->kind);
-			break;
-	}
-
-	if (terminate)
-	{
-		cursor = ensureSpaceOut(output, 1);
-		*cursor = '\0';
-	}
-}
-
-/*
- * Dumps attributes of 'element' and returns their count.
- */
-static unsigned int
-dumpAttributes(XMLCompNodeHdr element,
-			   StringInfo output, char **paramNames)
-{
-
-	unsigned int i = 0;
-	char	   *childOffPtr = XNODE_FIRST_REF(element);
-
-	for (i = 0; i < element->children; i++)
-	{
-		XMLNodeOffset attrOffset = readXMLNodeOffset(&childOffPtr, XNODE_GET_REF_BWIDTH(element), true);
-		XMLNodeHdr	attrNode;
-		char	   *attrName = NULL;
-		char	   *attrValue = NULL;
-		unsigned int attrNameLen,
-					attrValueLen;
-		char		qMark;
-		bool		isSpecialAttr = false;
-		bool		valueCopy = false;
-		char	   *cursor;
-
-		if (attrOffset == XMLNodeOffsetInvalid)
-		{
-			/* Empty slot for an optional attribute. */
-			continue;
-		}
-
-		attrNode = (XMLNodeHdr) ((char *) element - attrOffset);
-		if (attrNode->kind != XMLNODE_ATTRIBUTE)
-		{
-			break;
-		}
-
-		if (element->common.flags & XNODE_EL_SPECIAL)
-		{
-			/*
-			 * Special node shouldn't have other-than-special attributes too
-			 * often, so it's not wasting time if we always assume that this
-			 * attribute is special. The worst case is that we receive NULL,
-			 * indicating that it's an ordinary attribute.
-			 */
-			attrName = getXNTAttributeName(element->common.kind, i);
-			if (attrName != NULL)
-			{
-				isSpecialAttr = true;
-			}
-		}
-		if (!isSpecialAttr)
-		{
-			attrName = XNODE_CONTENT(attrNode);
-		}
-
-		qMark = (attrNode->flags & XNODE_ATTR_APOSTROPHE) ? XNODE_CHAR_APOSTR : XNODE_CHAR_QUOTMARK;
-
-		attrNameLen = strlen(attrName);
-
-		cursor = ensureSpaceOut(output, attrNameLen + 3);
-		*cursor++ = XNODE_CHAR_SPACE;
-		memcpy(cursor, attrName, attrNameLen);
-		cursor += attrNameLen;
-		*cursor++ = XNODE_CHAR_EQ;
-		*cursor = qMark;
-
-		if (isSpecialAttr)
-		{
-			/*
-			 * Special attribute has no name stored, value immediately follows
-			 * the header.
-			 */
-			attrValue = XNODE_CONTENT(attrNode);
-
-			if (attrNode->flags & XNODE_ATTR_VALUE_BINARY)
-			{
-				if (element->common.kind == XNTNODE_COPY_OF && i == XNT_COPY_OF_EXPR)
-				{
-					XPathExpression xpExpr = (XPathExpression) attrValue;
-					StringInfoData output;
-
-					xnodeInitStringInfo(&output, 32);
-					dumpXPathExpression(xpExpr, NULL, &output, true, paramNames, false);
-					attrValue = output.data;
-					valueCopy = true;
-				}
-				else if ((element->common.kind == XNTNODE_ELEMENT && i == XNT_ELEMENT_NAME) ||
-						 (element->common.kind == XNTNODE_ATTRIBUTE &&
-					  (i == XNT_ATTRIBUTE_NAME || i == XNT_ATTRIBUTE_VALUE)))
-				{
-					attrValue = dumpBinaryAttrValue(attrValue, paramNames, NULL, NULL, NULL);
-					valueCopy = true;
-				}
-				else
-				{
-					elog(ERROR, "element of kind %u has unrecognized special attribute %u",
-						 element->common.kind, i);
-				}
-			}
-		}
-		else
-		{
-			attrValue = attrName + attrNameLen + 1;
-
-			/*
-			 * Ordinary element can have binary (tokenized) value too. This
-			 * happens when it's used in a template.
-			 */
-			if (attrNode->flags & XNODE_ATTR_VALUE_BINARY)
-			{
-				attrValue = dumpBinaryAttrValue(attrValue, paramNames, NULL, NULL, NULL);
-				valueCopy = true;
-			}
-		}
-		attrValueLen = strlen(attrValue);
-
-		if (attrNode->flags & XNODE_ATTR_CONTAINS_REF)
-		{
-			dumpContentEscaped(XMLNODE_ATTRIBUTE, output, attrValue, attrValueLen);
-		}
-		else
-		{
-			cursor = ensureSpaceOut(output, attrValueLen);
-			memcpy(cursor, attrValue, attrValueLen);
-		}
-
-		if (valueCopy)
-		{
-			pfree(attrValue);
-		}
-		cursor = ensureSpaceOut(output, 1);
-		*cursor = qMark;
-	}
-	return i;
-}
-
-static void
-dumpContentEscaped(XMLNodeKind kind, StringInfo output, char *input, unsigned int inputLen)
-{
-
-	unsigned int i = 0;
-
-	while (i < inputLen)
-	{
-		unsigned char j;
-		unsigned int incrInput;
-		bool		special = false;
-
-		if (kind == XMLNODE_TEXT || kind == XMLNODE_ATTRIBUTE)
-		{
-			for (j = 0; j < XNODE_PREDEFINED_ENTITIES; j++)
-			{
-				if (*input == predefEntities[j].simple)
-				{
-					char	   *escaped = predefEntities[j].escaped;
-
-					special = true;
-					dumpSpecString(output, escaped, &incrInput);
-					break;
-				}
-			}
-		}
-		else if (kind == XMLNODE_CDATA)
-		{
-			char	   *outStr = NULL;
-
-			switch (*input)
-			{
-				case XNODE_CHAR_LARROW:
-					outStr = XNODE_CHAR_CDATA_LT;
-					special = true;
-					break;
-
-				case XNODE_CHAR_RARROW:
-					outStr = XNODE_CHAR_CDATA_GT;
-					special = true;
-					break;
-
-				case XNODE_CHAR_AMPERSAND:
-					outStr = XNODE_CHAR_CDATA_AMP;
-					special = true;
-					break;
-			}
-
-			if (special)
-			{
-				dumpSpecString(output, outStr, &incrInput);
-			}
-		}
-		else
-		{
-			elog(ERROR, "unexpected node kind %u", kind);
-		}
-
-		if (!special)
-		{
-			char	   *cursor;
-
-			incrInput = pg_utf_mblen((unsigned char *) input);
-			cursor = ensureSpaceOut(output, incrInput);
-			memcpy(cursor, input, incrInput);
-		}
-		i += incrInput;
-		input += incrInput;
-	}
-}
-
-static void
-dumpSpecString(StringInfo output, char *outNew, unsigned int *incrInput)
-{
-	unsigned short len = strlen(outNew);
-	char	   *cursor = ensureSpaceOut(output, len + 1);
-
-	*cursor++ = XNODE_CHAR_AMPERSAND;
-	memcpy(cursor, outNew, len);
-	*incrInput = 1;
-}
-
-/*
- * This function is used instead of stringinfo.c:enlargeStringInfo()
- * The reason is that we must expect large documents and be able to tune
- * the amount of memory added. enlargeStringInfo() does not provide any
- * flexibility - it always allocates twice the original size.
- *
- * 'toWrite' is the nuber of bytes the caller is going to add.
- *
- * Returns a pointer where the data can be written. On return the 'output->len'
- * contains the 'toWrite' size.
- */
-static char *
-ensureSpaceOut(StringInfo output, unsigned int toWrite)
-{
-	char	   *result;
-
-	if (output->len + toWrite > output->maxlen)
-	{
-		unsigned int increment;
-
-		/* Try to add a fraction of the original size. */
-		increment = output->maxlen >> 2;
-		/* If the original size was too low, add it whole again. */
-		if (increment == 0)
-		{
-			increment = output->maxlen;
-		}
-
-		output->maxlen += increment;
-		output->data = (char *) repalloc(output->data, output->maxlen);
-		elog(DEBUG1, "output memory to dump XML data increased from %u to %u bytes",
-			 output->maxlen - increment, output->maxlen);
-	}
-	result = output->data + output->len;
-	output->len += toWrite;
-	return result;
-}
-
 /*
  * Write node offset into a character array. Little-endian byte ordering is
  * used, regardless the actual platform endianness.
@@ -3473,35 +2982,4 @@ readXMLNodeOffset(char **input, unsigned char bytes, bool step)
 		*input = inpTmp;
 	}
 	return result;
-}
-
-char *
-dumpXMLDecl(XMLDecl decl)
-{
-	char		qMark;
-	unsigned short i = 0;
-	StringInfoData outDecl;
-
-	xnodeInitStringInfo(&outDecl, 16);
-	qMark = XMLDECL_GET_QUOT_MARK(decl, i);
-	appendStringInfoString(&outDecl, specXMLStrings[XNODE_STR_XDECL_START]);
-	appendStringInfo(&outDecl, " %s=%c%s%c", xmldeclAttNames[XNODE_XDECL_ATNAME_VERSION],
-					 qMark, xmldeclVersions[decl->version], qMark);
-	if (decl->flags & XMLDECL_HAS_ENC)
-	{
-		i++;
-		qMark = XMLDECL_GET_QUOT_MARK(decl, i);
-		appendStringInfo(&outDecl, " %s=%c%s%c", xmldeclAttNames[XNODE_XDECL_ATNAME_ENCODING],
-						 qMark, pg_encoding_to_char(decl->enc), qMark);
-	}
-	if (decl->flags & XMLDECL_HAS_SD_DECL)
-	{
-		i++;
-		qMark = XMLDECL_GET_QUOT_MARK(decl, i);
-		appendStringInfo(&outDecl, " %s=%c%s%c", xmldeclAttNames[XNODE_XDECL_ATNAME_STANDALONE],
-						 qMark, XMLDECL_STANDALONE_YES, qMark);
-	}
-	appendStringInfoString(&outDecl, specXMLStrings[XNODE_STR_XDECL_END]);
-	appendStringInfoChar(&outDecl, '\0');
-	return outDecl.data;
 }
