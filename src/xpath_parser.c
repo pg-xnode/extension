@@ -157,7 +157,6 @@ parseXPathExpression(XPathExpression exprCurrent, XPathParserState state, unsign
 		 bool isSubExpr, bool argList, XPath *paths, unsigned short *pathCnt,
 					 XMLNodeContainer paramNames)
 {
-
 	XPathExpression exprTop = (XPathExpression) output;
 	XPathExprOperand operand = NULL;
 	XPathExprOperatorStorage operatorStorage = NULL;
@@ -1418,7 +1417,6 @@ static void
 nextOperandChar(char *value, XPathParserState state, unsigned short *ind,
 				unsigned short indMax, bool endAllowed)
 {
-
 	if ((*ind + state->cWidth) > indMax)
 	{
 		elog(ERROR, "xpath expression operand is too long or too complex");
@@ -1560,7 +1558,6 @@ getFunctionResultType(XPathExprOperand funcOperand)
 static XPathExprOperatorStorage
 readExpressionOperator(XPathParserState state, char *output, unsigned short *outPos)
 {
-
 	XPathExprOperatorStorage opStorage = (XPathExprOperatorStorage) ((char *) output + *outPos);
 	unsigned char i;
 	unsigned int incr = sizeof(XPathExprOperatorStorageData);
@@ -1620,7 +1617,6 @@ static int
 parseFunctionArgList(XPathParserState state, XPathFunction func, char *output, unsigned short *outPos,
 		  XPath *paths, unsigned short *pathCnt, XMLNodeContainer paramNames)
 {
-
 	XPathExpression exprTop = (XPathExpression) output;
 	bool		done = false;
 	unsigned short i = 0;
@@ -1851,7 +1847,6 @@ void
 dumpXPathExpression(XPathExpression expr, XPathHeader xpathHdr, StringInfo output, bool main,
 					char **paramNames, bool debug)
 {
-
 	char	   *input = (char *) expr;
 
 	if (debug)
@@ -2064,7 +2059,6 @@ static void
 dumpXPathExpressionInternal(char **input, XPathHeader xpathHdr, StringInfo output, unsigned short level,
 							bool main, char **paramNames, bool debug)
 {
-
 	unsigned short i;
 	XPathExpression expr = (XPathExpression) *input;
 
@@ -2097,7 +2091,6 @@ static void
 dumpXPathExprOperand(char **input, XPathHeader xpathHdr, StringInfo output, unsigned short level,
 					 char **paramNames, bool debug)
 {
-
 	unsigned short shortValue;
 	XPathExprOperand operand = (XPathExprOperand) *input;
 	XPathExpression subExpr;
@@ -2129,7 +2122,10 @@ dumpXPathExprOperand(char **input, XPathHeader xpathHdr, StringInfo output, unsi
 
 				if (expr->negative)
 				{
-					appendStringInfo(output, "%c ", XNODE_CHAR_DASH);
+					appendStringInfoChar(output, XNODE_CHAR_DASH);
+
+					if (debug)
+						appendStringInfoSpaces(output, 1);
 				}
 			}
 			break;
