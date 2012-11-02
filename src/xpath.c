@@ -246,7 +246,7 @@ getSingleXPath(XPathExpression expr, XPathHeader xpHdr)
 
 	if (expr->members != 1 || expr->npaths == 0)
 	{
-		elog(ERROR, "xpath expression can't be used as a base path");
+		elog(ERROR, "base XPath expression must be a single location path");
 	}
 
 	opPtr = (char *) expr + sizeof(XPathExpressionData) + XPATH_EXPR_VAR_MAX *
@@ -273,7 +273,7 @@ getSingleXPath(XPathExpression expr, XPathHeader xpHdr)
 
 	if (path->relative)
 	{
-		elog(ERROR, "base XPath must be absolute");
+		elog(ERROR, "base location path must be absolute");
 	}
 	return path;
 }
