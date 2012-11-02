@@ -2079,17 +2079,18 @@ getParameterValues(Datum row,
 
 		attTyp = tupDesc->attrs[i]->atttypid;
 		attValue = heap_getattr(tup, i + 1, tupDesc, &isnull);
+		parValue = parValues + i;
 
 		if (isnull)
 		{
-			elog(ERROR, "NULL value passed to parameter %u", i + 1);
+			parValue->isNull = true;
+			continue;
 		}
-		parValue = parValues + i;
 
 		/*
 		 * Set default values. 'negative' is not set because
-		 * substituteParameters() ignores it anyway, in order to preserver
-		 * sign that the source expression might contain.
+		 * substituteParameters() ignores it anyway, in order to preserve sign
+		 * that the source expression might contain.
 		 */
 		parValue->isNull = false;
 		parValue->castToNumber = false;
