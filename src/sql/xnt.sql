@@ -9,9 +9,13 @@ INSERT INTO templates VALUES
 -- the simplest case: only attribute values are parametrized
 (0, '<xnt:template xmlns:xnt="http://www.pg-xnode.org/xnt"><point x="{$p1}" y="{$p2}"/></xnt:template>'),
 -- in addition, parameter is used to generate the element name as well as attribute names
-(1, '<xnt:template xmlns:xnt="http://www.pg-xnode.org/xnt">
+-- this template also shows that attributes can have different namespace prefixes
+-- as long as they point to the same URI
+(1, '<xnt:template
+	xmlns:xnt="http://www.pg-xnode.org/xnt"
+	xmlns:xnt_2="http://www.pg-xnode.org/xnt">
 <xnt:element name="point_{$p1}">
-	<xnt:attribute name="x_{$p1}" value="{$p2}"/>
+	<xnt:attribute xnt:name="x_{$p1}" xnt_2:value="{$p2}"/>
 	<xnt:attribute name="y_{$p2}" value="{$p3}"/>
 </xnt:element>
 </xnt:template>'),

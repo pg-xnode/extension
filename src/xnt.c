@@ -55,8 +55,11 @@ static XNodeInternal xntProcessAttribute(XMLNodeHdr node,
 
 XNTParamNameSorted *getParameterNames(ArrayType *parNameArray, unsigned int templateParamCount,
 				  char **templParNames, unsigned short *paramMap);
+
 static XPathExprOperandValue getParameterValues(Datum row,
 	   unsigned int templateParamCount, XPathExprState exprState, Oid fnOid);
+static char *getAttributeName(char *prefix, char *attrNamePrefixed,
+				 XMLNodeContainer nmspDecls, char *parserOutput);
 
 PG_FUNCTION_INFO_V1(xnode_template_in);
 
@@ -194,9 +197,15 @@ validateXNTTree(XMLNodeHdr root)
  * Ensure that:
  *
  * 1. Reserved attribute are stored at defined positions.
- * 2. Name is not stored for the reserved attributes.
+ * 2. Name is not stored for the reserved attributes (the position determines
+ * the attribute itself).
  * 3. Where appropriate, the attribute value is stored in special binary format
  * as opposed to NULL-terminated string.
+ *
+ * 'prefix' - namespace prefix of the owning node of the attributes.
+ * The namespace should have been validated when passed here.
+ *
+ * 'nmspDecls' - namespace declarations valid in the current context.
  *
  * 'attrOffsets' - both input and output. It's expected to provide offsets of
  * attributes to be checked. Offsets of the processed attributes are returned.
@@ -212,9 +221,10 @@ validateXNTTree(XMLNodeHdr root)
  *
  */
 char *
-preprocessXNTAttributes(XNodeListItem *attrOffsets, unsigned short attrCount, char *parserOutput,
-						XMLNodeKind specNodeKind, bool *offsetsValid, unsigned int *specAttrCount, unsigned int *outSize,
-						unsigned int *outCount, XMLNodeContainer paramNames)
+preprocessXNTAttributes(char *prefix, XMLNodeContainer nmspDecls,
+	XNodeListItem *attrOffsets, unsigned short attrCount, char *parserOutput,
+   XMLNodeKind specNodeKind, bool *offsetsValid, unsigned int *specAttrCount,
+  unsigned int *outSize, unsigned int *outCount, XMLNodeContainer paramNames)
 {
 	unsigned short i;
 	XNTAttrNames *attrInfo = xntAttributeInfo + (specNodeKind - XNTNODE_TEMPLATE);
@@ -269,9 +279,16 @@ preprocessXNTAttributes(XNodeListItem *attrOffsets, unsigned short attrCount, ch
 		unsigned short j;
 		XNodeListItem *attrItem = attrOffsets + i;
 		XMLNodeHdr	attr = (XMLNodeHdr) (parserOutput + attrItem->value.singleOff);
-		char	   *attrName = XNODE_CONTENT(attr);
-		char	   *attrValue = attrName + strlen(attrName) + 1;
+		char	   *attrName,
+				   *attrValue;
 		bool		found = false;
+
+		attrName = XNODE_CONTENT(attr);
+
+		if (attr->flags & XNODE_NMSP_PREFIX)
+			attrName = getAttributeName(prefix, attrName, nmspDecls, parserOutput);
+
+		attrValue = attrName + strlen(attrName) + 1;
 
 		/* Is this a reserved attribute? */
 		for (j = 0; j < attrInfo->number; j++)
@@ -2161,4 +2178,67 @@ getParameterValues(Datum row,
 
 	ReleaseTupleDesc(tupDesc);
 	return parValues;
+}
+
+/*
+ * If the attribute has the correct prefix, let's ignore the prefix for
+ * simplicity. If the prefix is not correct (e.g. bound to wrong URI), return
+ * the original (prefixed) name, so it fails to match to any attribute
+ * of given special element.
+ */
+static char *
+getAttributeName(char *prefix, char *attrNamePrefixed,
+				 XMLNodeContainer nmspDecls, char *parserOutput)
+{
+	unsigned int prefLenEl = strlen(prefix);
+	char	   *result = attrNamePrefixed;
+
+	if (strncmp(prefix, attrNamePrefixed, prefLenEl) == 0 &&
+		attrNamePrefixed[prefLenEl] == XNODE_CHAR_COLON)
+	{
+		/* Skip both the prefix and colon. */
+		result += prefLenEl + 1;
+	}
+	else
+	{
+		char	   *colon,
+				   *nmspURIAttr,
+				   *nmspURIElement,
+				   *prefAttr;
+		unsigned int prefAttrLen;
+
+		/*
+		 * In rare cases the attribute can have different prefix from that of
+		 * the element, but eventually both might be bound to the same URI.
+		 */
+
+		/*
+		 * The *last* colon because namespace prefix may contain multiple
+		 * colons.
+		 */
+		colon = strrchr(attrNamePrefixed, XNODE_CHAR_COLON);
+		Assert(colon != NULL);
+		prefAttrLen = colon - attrNamePrefixed;
+		prefAttr = pnstrdup(attrNamePrefixed, prefAttrLen);
+
+		if (strcmp(prefAttr, XNODE_NAMESPACE_DEF_PREFIX) == 0)
+		{
+			/* Not interested in namespace declarations. */
+			pfree(prefAttr);
+			return result;
+		}
+
+		nmspURIAttr = getXMLNamespaceURI(prefAttr, nmspDecls, parserOutput);
+		nmspURIElement = getXMLNamespaceURI(
+					prefix != '\0' ? prefix : NULL, nmspDecls, parserOutput);
+
+		if (nmspURIAttr != NULL && nmspURIElement != NULL &&
+			strcmp(nmspURIAttr, nmspURIElement) == 0)
+		{
+			/* Skip both the prefix and colon. */
+			result += prefAttrLen + 1;
+		}
+		pfree(prefAttr);
+	}
+	return result;
 }

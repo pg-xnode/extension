@@ -401,6 +401,8 @@ extern void resolveXMLNamespaces(char *tree, XMLNodeContainer declarations, unsi
 extern void collectXMLNamespaceDeclarations(char *tree, XMLCompNodeHdr currentNode, unsigned int *attrCount,
 								unsigned int *nmspDeclCount, XMLNodeContainer declarations, bool declsOnly, XMLNodeHdr **attrsPrefixed,
 								unsigned int *attrsPrefixedCount);
+extern char *getXMLNamespaceURI(char *prefix, XMLNodeContainer declarations, char *parsed);
+
 
 /*
  * DOM functions

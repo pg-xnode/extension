@@ -1425,6 +1425,9 @@ processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowe
 			unsigned int attrCountNew = 0;
 
 			/*
+			 * Parse special attributes, typically those containing
+			 * parameters.
+			 *
 			 * One may think processTag() can do this, but it does not have
 			 * sufficient information to decide whether given attribute should
 			 * accept a template containing parameters. It's accepted, in most
@@ -1454,6 +1457,8 @@ processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowe
 
 			if (isSpecialNode)
 			{
+				char	   *prefix;
+
 				/*
 				 * preprocessXNTAttributes() is called even if there are no
 				 * attributes:
@@ -1462,9 +1467,16 @@ processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowe
 				 * attribute. 2. To ensure that missing optional attributes
 				 * have the (invalid) offset set at the appropriate position.
 				 */
+
+				prefix = pnstrdup(state->inputText + nodeInfo->cntSrc, nodeInfo->nmspLength);
+
 				specAttrsValid = (bool *) palloc(attrsNewMaxCount * sizeof(bool));
-				attrsNew = preprocessXNTAttributes(attrOffsetsNew, attrCount, state->tree, specialNodeKind,
-												   specAttrsValid, &specAttrCount, &newSize, &attrCountNew, &state->paramNames);
+				attrsNew = preprocessXNTAttributes(prefix, &state->nmspDecl,
+					 attrOffsetsNew, attrCount, state->tree, specialNodeKind,
+					 specAttrsValid, &specAttrCount, &newSize, &attrCountNew,
+												   &state->paramNames);
+
+				pfree(prefix);
 			}
 			else if (state->targetKind == XNTNODE_ROOT)
 			{
@@ -1778,8 +1790,8 @@ checkNamespaces(XMLParserState state, XMLNodeInternal nodeInfo, unsigned int att
 			 * ('xmlns:...')
 			 */
 			if ((attrNode->flags & XNODE_NMSP_PREFIX) &&
-			  !(strncmp(attrName, XNODE_NAMESPACE_DEF_PREFIX, nmspPrefLen) &&
-				attrName[nmspPrefLen] == XNODE_CHAR_COLON))
+				!(strncmp(attrName, XNODE_NAMESPACE_DEF_PREFIX, nmspPrefLen) == 0 &&
+				  attrName[nmspPrefLen] == XNODE_CHAR_COLON))
 			{
 				attrsPrefixed[i] = attrNode;
 				i++;

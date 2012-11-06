@@ -117,7 +117,6 @@ resolveXMLNamespaces(char *tree, XMLNodeContainer declarations, unsigned int dec
 					 bool *elNmspNameResolved, XMLNodeHdr *attrsPrefixed, unsigned int attrsPrefixedCount, bool *attrFlags,
 					 unsigned short *attrsUnresolved, char *specNmspName, char *specNmspValue, bool *elNmspIsSpecial)
 {
-
 	unsigned int i;
 	XNodeListItem *decls = declarations->content;
 
@@ -203,7 +202,6 @@ void
 collectXMLNamespaceDeclarations(char *tree, XMLCompNodeHdr currentNode, unsigned int *attrCount, unsigned int *nmspDeclCount,
 								XMLNodeContainer declarations, bool declsOnly, XMLNodeHdr **attrsPrefixed, unsigned int *attrsPrefixedCount)
 {
-
 	unsigned int defNmspLen = strlen(XNODE_NAMESPACE_DEF_PREFIX);
 	XMLNodeIteratorData iterator;
 	XMLNodeHdr	childNode;
@@ -264,6 +262,78 @@ collectXMLNamespaceDeclarations(char *tree, XMLCompNodeHdr currentNode, unsigned
 			}
 		}
 	}
+}
+
+/*
+ * Return URI of namespace specified by 'prefix' or NULL if not found.
+ *
+ * (prefix == NULL) means default namespace.
+ */
+char *
+getXMLNamespaceURI(char *prefix, XMLNodeContainer declarations, char *parsed)
+{
+	XNodeListItem *declItem;
+	unsigned int i;
+	unsigned int prefLen;
+	XMLNodeHdr	declNode;
+
+	if (declarations->position == 0)
+		return NULL;
+
+	prefLen = (prefix != NULL) ? strlen(prefix) : 0;
+
+	/*
+	 * Search from bottom because declaration at lower level overrides those
+	 * above.
+	 */
+	declItem = declarations->content + declarations->position - 1;
+	for (i = 0; i < declarations->position; i++)
+	{
+
+		char	   *prefixDeclared,
+				   *cursor;
+
+		declNode = (XMLNodeHdr) (parsed + declItem->value.singleOff);
+
+		/* Skip "xmlns" */
+		cursor = XNODE_CONTENT(declNode) + strlen(XNODE_NAMESPACE_DEF_PREFIX);
+		if (*cursor == '\0')
+		{
+			/* xmlns=<namespace URI> */
+
+			if (prefix == NULL)
+
+				/*
+				 * Declaration of default namespace found. The namespace URI
+				 * is the attribute value and as such it starts right after
+				 * the terminating NULL.
+				 */
+				return (cursor + 1);
+			else
+			{
+				/* Not interested in declaration of default namespace. */
+				declItem--;
+				continue;
+			}
+		}
+
+		Assert(*cursor == XNODE_CHAR_COLON);
+		cursor++;
+
+		prefixDeclared = cursor;
+		if (prefix != NULL && strcmp(prefix, prefixDeclared) == 0)
+		{
+			/*
+			 * Namespace URI is value of the declaration (attribute) node. We
+			 * get it by skipping the rest of the name and the terminating
+			 * NULL.
+			 */
+			return prefixDeclared + strlen(prefixDeclared) + 1;
+		}
+		declItem--;
+	}
+
+	return NULL;
 }
 
 /*

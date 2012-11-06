@@ -96,9 +96,10 @@ extern char *getXNTNodeName(XMLNodeKind kind);
 extern char *getXNTAttributeName(XMLNodeKind kind, unsigned short attrNr);
 extern void validateXNTTree(XMLNodeHdr root);
 
-extern char *preprocessXNTAttributes(XNodeListItem *attrOffsets, unsigned short attrCount, char *parserOutput,
-						XMLNodeKind specNodeKind, bool *offsetsValid, unsigned int *specAttrCount, unsigned int *outSize,
-						unsigned int *outCount, XMLNodeContainer paramNames);
+extern char *preprocessXNTAttributes(char *prefix, XMLNodeContainer nmspDecls,
+	XNodeListItem *attrOffsets, unsigned short attrCount, char *parserOutput,
+   XMLNodeKind specNodeKind, bool *offsetsValid, unsigned int *specAttrCount,
+ unsigned int *outSize, unsigned int *outCount, XMLNodeContainer paramNames);
 extern char *preprocessXNTAttrValues(XNodeListItem *attrOffsets, unsigned short attrCount, char *parserOutput, unsigned int *outSize,
 						XMLNodeContainer paramNames);
 extern char *dumpBinaryAttrValue(char *binValue, char **paramNames, XPathExprOperandValue paramValues,
