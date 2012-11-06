@@ -459,13 +459,9 @@ static char *
 getNamespaceName(char *name, char *colon)
 {
 	unsigned int elNmspLen = colon - name;
-	char	   *nmspNameCp;
 
 	Assert(elNmspLen > 0);
-	nmspNameCp = (char *) palloc(elNmspLen + 1);
-	memcpy(nmspNameCp, name, elNmspLen);
-	nmspNameCp[elNmspLen] = '\0';
-	return nmspNameCp;
+	return pnstrdup(name, elNmspLen);
 }
 
 static void
