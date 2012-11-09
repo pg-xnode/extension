@@ -86,3 +86,6 @@ estimating the maxium child offset (and thus the byte width). --></a>',
 'b'
 );
 
+-- Namespaces need to be checked here:
+select xml.add('<a xmlns:x="nmsp_1"/>', '/a', '<x:b/>', 'i');
+

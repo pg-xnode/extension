@@ -8,8 +8,7 @@
 #include "xpath.h"
 
 static void additionChecks(XMLNodeHdr targNode, XMLNodeHdr newNode, XMLAddMode mode);
-static XNodeInternal
-buildTree(XMLNodeHdr srcNode, XNodeInternal parent,
+static XNodeInternal buildTree(XMLNodeHdr srcNode, XNodeInternal parent,
 XMLNodeHdr *targetNodes, unsigned int targNdCount, XNodeInternal * treeNodes,
 		  bool recordParents);
 static void freeTree(XNodeInternal root);
@@ -122,7 +121,6 @@ xmldoc
 updateXMLDocument(XMLScan xscan, xmldoc doc, XMLNodeAction action, XMLNodeHdr newNode,
 				  XMLAddMode addMode)
 {
-
 	XMLNodeHdr	targNode;
 	unsigned int i,
 				unresolvedNmspCount = 0;
@@ -732,9 +730,8 @@ checkUnresolvedNamespaces(char *tree, XMLScan xscan, XMLNodeHdr targNode, XMLAdd
 			XMLNodeHdr	declNode;
 			char	   *decl;
 
-			Assert(declItem->kind == XNODE_LIST_ITEM_SINGLE_PTR);
-
-			declNode = (XMLNodeHdr) declItem->value.singlePtr;
+			Assert(declItem->kind == XNODE_LIST_ITEM_SINGLE_OFF);
+			declNode = (XMLNodeHdr) (tree + declItem->value.singleOff);
 			decl = (char *) XNODE_CONTENT(declNode) + strlen(XNODE_NAMESPACE_DEF_PREFIX) + 1;
 			if (strcmp(namespace, decl) == 0)
 			{

@@ -1117,3 +1117,10 @@ estimating the maxium child offset (and thus the byte width). --></a>',
  estimating the maxium child offset (and thus the byte width). --></a>
 (1 row)
 
+-- Namespaces need to be checked here:
+select xml.add('<a xmlns:x="nmsp_1"/>', '/a', '<x:b/>', 'i');
+              add               
+--------------------------------
+ <a xmlns:x="nmsp_1"><x:b/></a>
+(1 row)
+
