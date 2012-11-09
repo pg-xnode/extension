@@ -131,7 +131,7 @@ static void replaceAttributes(XMLParserState state, bool specialNode, XNodeListI
 	   unsigned int attrCount, char *attrsNew, XNodeListItem *attrOffsetsNew,
 				  unsigned int attrCountNew, unsigned int *newSize);
 static void adjustNamespaceDeclarations(XMLParserState state, unsigned int nmspDecls,
-					  unsigned int newAttrCount, unsigned int specAttrCount);
+						 unsigned int attrCount, unsigned int specAttrCount);
 static void checkNamespaces(XMLParserState state, XMLNodeInternal nodeInfo, unsigned int attrsPrefixedCount,
 				bool *elNmspIsSpecial);
 
@@ -427,16 +427,14 @@ initXMLParserState(XMLParserState state, char *inputText, XMLNodeKind targetKind
 	state->nmspPrefix = false;
 	if (targetKind == XNTNODE_ROOT)
 	{
-		state->nmspSpecialName = XNTNODE_NAMESPACE_PREFIX;
-		state->nmspSpecialValue = XNTNODE_NAMESPACE_VALUE;
+		state->nmspSpecialURI = XNTNODE_NAMESPACE_VALUE;
 		state->getXNodeKindFunc = checkFunc;
 		xmlnodeContainerInit(&state->paramNames);
 		xmlnodeContainerInit(&state->substNodes);
 	}
 	else
 	{
-		state->nmspSpecialName = NULL;
-		state->nmspSpecialValue = NULL;
+		state->nmspSpecialURI = NULL;
 		state->getXNodeKindFunc = NULL;
 	}
 }
@@ -1361,6 +1359,9 @@ processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowe
 		unsigned int stackPosOrig = state->stack.position;
 		unsigned short int children,
 					attrCount;
+		unsigned int attrCountNew = 0;
+
+		/* Namespace declarations added by the current element. */
 		unsigned int nmspDecls = 0;
 		unsigned int attrsPrefixedCount = 0;
 		bool		isSpecialNode = false;
@@ -1389,8 +1390,7 @@ processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowe
 		 * Check if all namespaces are bound. This is only necessary for
 		 * document. Node will be checked if/when it gets added to a document.
 		 */
-		if ((state->targetKind == XMLNODE_DOC || state->targetKind == XNTNODE_ROOT) &&
-			(nodeInfo->nmspLength > 0 || attrsPrefixedCount > 0))
+		if (state->targetKind == XMLNODE_DOC || state->targetKind == XNTNODE_ROOT)
 		{
 
 			checkNamespaces(state, nodeInfo, attrsPrefixedCount, &isSpecialNode);
@@ -1402,9 +1402,7 @@ processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowe
 				Assert(state->targetKind == XNTNODE_ROOT);
 				Assert(state->getXNodeKindFunc != NULL);
 
-				name = (char *) palloc(nodeInfo->cntLength + 1);
-				memcpy(name, state->inputText + nodeInfo->cntSrc, nodeInfo->cntLength);
-				name[nodeInfo->cntLength] = '\0';
+				name = pnstrdup(state->inputText + nodeInfo->cntSrc, nodeInfo->cntLength);
 				specialNodeKind = state->getXNodeKindFunc(name);
 				pfree(name);
 			}
@@ -1422,7 +1420,6 @@ processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowe
 					   *attrOffsetsNew;
 			char	   *attrsNew = NULL;
 			unsigned int newSize = 0;
-			unsigned int attrCountNew = 0;
 
 			/*
 			 * Parse special attributes, typically those containing
@@ -1469,13 +1466,10 @@ processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowe
 				 */
 
 				prefix = pnstrdup(state->inputText + nodeInfo->cntSrc, nodeInfo->nmspLength);
-
 				specAttrsValid = (bool *) palloc(attrsNewMaxCount * sizeof(bool));
 				attrsNew = preprocessXNTAttributes(prefix, &state->nmspDecl,
 					 attrOffsetsNew, attrCount, state->tree, specialNodeKind,
-					 specAttrsValid, &specAttrCount, &newSize, &attrCountNew,
-												   &state->paramNames);
-
+												   specAttrsValid, &specAttrCount, &newSize, &attrCountNew, &state->paramNames);
 				pfree(prefix);
 			}
 			else if (state->targetKind == XNTNODE_ROOT)
@@ -1496,15 +1490,13 @@ processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowe
 						   attrsNew, attrOffsetsNew, attrCountNew, &newSize);
 				pfree(attrsNew);
 
-				children = attrCount = attrCountNew;
-
 				/*
 				 * If all the attributes of the current node have been
 				 * shifted, then we have to update the corresponding namespace
 				 * declaration pointers.
 				 */
 				if (state->nmspDecl.content != NULL && state->nmspDecl.position > 0)
-					adjustNamespaceDeclarations(state, nmspDecls, attrCountNew, specAttrCount);
+					adjustNamespaceDeclarations(state, nmspDecls, attrCount, specAttrCount);
 			}
 			pfree(attrOffsetsNew);
 		}
@@ -1549,7 +1541,22 @@ processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowe
 			element->children = children;
 			if (children > 0)
 			{
-				saveReferences(state, nodeInfo, element, children, specAttrsValid, specAttrCount);
+				unsigned int specAttrsDefined = 0;
+
+				if (isSpecialNode)
+				{
+					XNTAttrNames *attrInfo = xntAttributeInfo + (specialNodeKind - XNTNODE_TEMPLATE);
+
+					specAttrsDefined = attrInfo->number;
+
+					/*
+					 * Empty slots for reserved attributes might have been
+					 * added.
+					 */
+					children += attrCountNew - attrCount;
+					element->children = children;
+				}
+				saveReferences(state, nodeInfo, element, children, specAttrsValid, specAttrsDefined);
 			}
 			if (specAttrsValid != NULL)
 			{
@@ -1708,7 +1715,17 @@ processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowe
 			element->children = children;
 			if (children > 0)
 			{
-				saveReferences(state, nodeInfo, element, children, specAttrsValid, specAttrCount);
+				unsigned int specAttrsDefined = 0;
+
+				if (isSpecialNode)
+				{
+					XNTAttrNames *attrInfo = xntAttributeInfo + (specialNodeKind - XNTNODE_TEMPLATE);
+
+					specAttrsDefined = attrInfo->number;
+					children += attrCountNew - attrCount;
+					element->children = children;
+				}
+				saveReferences(state, nodeInfo, element, children, specAttrsValid, specAttrsDefined);
 			}
 
 			if (specAttrsValid != NULL)
@@ -1751,11 +1768,19 @@ checkNamespaces(XMLParserState state, XMLNodeInternal nodeInfo, unsigned int att
 	 * The element name must be taken from the source text because the element
 	 * is not saved yet.
 	 */
-	char	   *elNmspName = state->inputText + nodeInfo->cntSrc;
-	bool		elNmspNameResolved = (nodeInfo->nmspLength == 0);
+	char	   *elNmspName;
+	bool		elNmspNameResolved;
 	unsigned short attrsUnresolved;
 	XMLNodeHdr *attrsPrefixed = NULL;
 	bool	   *attrFlags = NULL;
+
+	/*
+	 * Initially consider element name unresolved regardless it has prefix or
+	 * not. Even if it has no prefix, default namespace may turn it into a
+	 * special one.
+	 */
+	elNmspNameResolved = false;
+	elNmspName = (nodeInfo->nmspLength > 0) ? state->inputText + nodeInfo->cntSrc : NULL;
 
 	if (attrsPrefixedCount > 0)
 	{
@@ -1787,11 +1812,11 @@ checkNamespaces(XMLParserState state, XMLNodeInternal nodeInfo, unsigned int att
 
 			/*
 			 * Record prefixed attributes but omit namespace declarations
-			 * ('xmlns:...')
+			 * ('xmlns:...', 'xmlns')
 			 */
 			if ((attrNode->flags & XNODE_NMSP_PREFIX) &&
 				!(strncmp(attrName, XNODE_NAMESPACE_DEF_PREFIX, nmspPrefLen) == 0 &&
-				  attrName[nmspPrefLen] == XNODE_CHAR_COLON))
+				  (attrName[nmspPrefLen] == XNODE_CHAR_COLON || attrName[nmspPrefLen] == '\0')))
 			{
 				attrsPrefixed[i] = attrNode;
 				i++;
@@ -1809,12 +1834,19 @@ checkNamespaces(XMLParserState state, XMLNodeInternal nodeInfo, unsigned int att
 
 	if (!elNmspNameResolved || attrsUnresolved > 0)
 	{
-		resolveXMLNamespaces(state->tree, &state->nmspDecl, state->nmspDecl.position, elNmspName, &elNmspNameResolved, attrsPrefixed,
-							 attrsPrefixedCount, attrFlags, &attrsUnresolved, state->nmspSpecialName,
-							 state->nmspSpecialValue, elNmspIsSpecial);
+		resolveXMLNamespaces(state->tree, &state->nmspDecl,
+				   state->nmspDecl.position, elNmspName, &elNmspNameResolved,
+			  attrsPrefixed, attrsPrefixedCount, attrFlags, &attrsUnresolved,
+							 state->nmspSpecialURI, elNmspIsSpecial);
 	}
 
-	if (!elNmspNameResolved)
+	/*
+	 * 'elNmspNameResolved' was initially set to 'false' so that
+	 * resolveXMLNamespaces() tries to find matching namespace even if the tag
+	 * has no prefix (default NS) can match in such a case. However it's no
+	 * disaster not to find the (default) namespace if the tag has no prefix.
+	 */
+	if (!elNmspNameResolved && nodeInfo->nmspLength > 0)
 	{
 		elog(ERROR, "element '%s' references unbound namespace",
 			 getContentToLog(state->inputText, nodeInfo->cntSrc, nodeInfo->cntLength, 16));
@@ -2151,6 +2183,9 @@ processTag(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowed,
 						}
 						else
 						{
+							xmlnodePushSingleNode(&state->nmspDecl, (char *) attrNode - state->tree);
+							if (nmspDecls != NULL)
+								(*nmspDecls)++;
 							defNamespaceDeclared = true;
 						}
 					}
@@ -2166,9 +2201,7 @@ processTag(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowed,
 
 						xmlnodePushSingleNode(&state->nmspDecl, (char *) attrNode - state->tree);
 						if (nmspDecls != NULL)
-						{
 							(*nmspDecls)++;
-						}
 					}
 				}
 
@@ -2528,7 +2561,7 @@ saveReferences(XMLParserState state, XMLNodeInternal nodeInfo, XMLCompNodeHdr co
 		/* The actual subscript (we're proceeding backwards). */
 		unsigned int j = children - i - 1;
 
-		if (specAttrsValid != NULL && !specAttrsValid[j] && j < specAttrCount)
+		if (specAttrsValid != NULL && j < specAttrCount && !specAttrsValid[j])
 		{
 			dist = XMLNodeOffsetInvalid;
 		}
@@ -2539,6 +2572,7 @@ saveReferences(XMLParserState state, XMLNodeInternal nodeInfo, XMLCompNodeHdr co
 			 */
 			dist = nodeInfo->nodeOut - childOffset;
 		}
+
 		writeXMLNodeOffset(dist, &childOffTarg, bwidth, false);
 		childOffTarg = XNODE_PREV_REF(childOffTarg, compNode);
 	}
@@ -2798,8 +2832,6 @@ replaceAttributes(XMLParserState state, bool specialNode, XNodeListItem *attrOff
 	padding = attrDataNew - attrDataOrig;
 	attrDataOrigSize = state->dstPos - attrOffsets->value.singleOff;
 
-	Assert(attrCountNew > 0 && attrCountNew >= attrCount);
-
 	/*
 	 * Copy the possibly adjusted values back into the stack and add new if
 	 * appropriate.
@@ -2868,20 +2900,19 @@ replaceAttributes(XMLParserState state, bool specialNode, XNodeListItem *attrOff
 
 /*
  * Preprocessing changes order of attributes: the special ones are moved to
- * reserved positions, whereas the other, including namespace declarations,
+ * reserved positions, whereas the other, namespace declarations,
  * are moved behind. Therefore references pointing to the namespace
  * declarations must be fixed.
  */
 static void
 adjustNamespaceDeclarations(XMLParserState state, unsigned int nmspDecls,
-					   unsigned int newAttrCount, unsigned int specAttrCount)
+						  unsigned int attrCount, unsigned int specAttrCount)
 {
 	unsigned short i;
 	unsigned int declsTotal = state->nmspDecl.position;
 	XNodeListItem *declItem,
-			   *newAttrItem;
-	unsigned int declsUpdated = 0;
-	unsigned int newAttrsToCheck;
+			   *attrItem;
+	unsigned int attrsToCheck;
 
 	Assert(nmspDecls <= declsTotal);
 
@@ -2892,33 +2923,15 @@ adjustNamespaceDeclarations(XMLParserState state, unsigned int nmspDecls,
 	declItem = state->nmspDecl.content + declsTotal - nmspDecls;
 
 	/* First non-special attribute the current node contains. */
-	Assert(specAttrCount <= newAttrCount);
-	newAttrsToCheck = newAttrCount - specAttrCount;
-	newAttrItem = state->stack.content + state->stack.position - newAttrsToCheck;
+	attrsToCheck = attrCount - specAttrCount;
+	attrItem = state->stack.content + state->stack.position - attrsToCheck;
 
-	for (i = 0; i < newAttrsToCheck; i++)
+	for (i = 0; i < attrsToCheck; i++)
 	{
-		unsigned int nmspPrefLen = strlen(XNODE_NAMESPACE_DEF_PREFIX);
-		XMLNodeHdr	attrNode = (XMLNodeHdr) (state->tree + newAttrItem->value.singleOff);
-		char	   *attrName;
-
-		if ((attrNode->flags & XNODE_ATTR_VALUE_BINARY) ||
-			(!(attrNode->flags & XNODE_NMSP_PREFIX)))
-			/* Can't be namespace declaration. */
-			continue;
-
-		attrName = XNODE_CONTENT(attrNode);
-
-		if (strncmp(attrName, XNODE_NAMESPACE_DEF_PREFIX, nmspPrefLen) == 0 &&
-			attrName[nmspPrefLen] == XNODE_CHAR_COLON)
-		{
-			declItem->value.singleOff = newAttrItem->value.singleOff;
-			declItem++;
-			declsUpdated++;
-		}
-		newAttrItem++;
+		declItem->value.singleOff = attrItem->value.singleOff;
+		declItem++;
+		attrItem++;
 	}
-	Assert(declsUpdated == nmspDecls);
 }
 
 

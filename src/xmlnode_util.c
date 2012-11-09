@@ -810,7 +810,7 @@ xmlTreeWalker(XMLTreeWalkerContext *context)
 		unsigned int childNr = 0;
 		XNTAttrNames *specAttrInfo = NULL;
 
-		if (node->kind >= XNTNODE_ROOT)
+		if (node->kind > XNTNODE_ROOT)
 		{
 			specAttrInfo = xntAttributeInfo + (node->kind - XNTNODE_TEMPLATE);
 		}
@@ -836,7 +836,7 @@ xmlTreeWalker(XMLTreeWalkerContext *context)
 				XMLNodeOffset nodeOff;
 
 				nodeOff = (char *) compNode - (char *) child;
-				/* Optional special node, currently not used. */
+				/* Empty slot for (optional) special node, */
 				if (nodeOff == XMLNodeOffsetInvalid)
 					continue;
 			}

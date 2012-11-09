@@ -15,7 +15,6 @@
 #ifndef XNT_H_
 #define XNT_H_
 
-#define XNTNODE_NAMESPACE_PREFIX		"xnt"
 #define XNTNODE_NAMESPACE_VALUE			"http://www.pg-xnode.org/xnt"
 
 #define XNT_TEMPLATE			"template"
@@ -92,7 +91,7 @@ extern Datum xnode_template_in(PG_FUNCTION_ARGS);
 extern Datum xnode_template_out(PG_FUNCTION_ARGS);
 
 extern XMLNodeKind getXNTNodeKind(char *name);
-extern char *getXNTNodeName(XMLNodeKind kind);
+extern char *getXNTNodeName(XMLNodeKind kind, char *nmspPrefix);
 extern char *getXNTAttributeName(XMLNodeKind kind, unsigned short attrNr);
 extern void validateXNTTree(XMLNodeHdr root);
 

@@ -14,6 +14,7 @@ static void dumpContentEscaped(XMLNodeKind kind, StringInfo output, char *input,
 static void dumpSpecString(StringInfo output, char *outNew, unsigned int *incrInput);
 static char *ensureSpace(StringInfo output, unsigned int toWrite);
 static void visitXMLNodeForDump(XMLNodeHdr *stack, unsigned int depth, void *userData);
+static char *getValidPrefix(XMLCompNodeHdr element, char *namespaceURI, char *currentPrefix);
 
 
 struct XMLNodeDumpInfo
@@ -22,8 +23,16 @@ struct XMLNodeDumpInfo
 	char	   *start;			/* where the tree storage starts */
 };
 
+/*
+ * 'nmspPrefix' - for 'ordinary' XML documents there's no need to distinguish
+ * prefix and the name itself. However special nodes (e.g. XNT) are stored as
+ * integer (to make processing simpler) and namespace prefix is thrown away
+ * as soon as parser sees it's bound to the correct namespace URI. That's
+ * why the prefix is treated separate here.
+ */
 void
-xmlnodeDumpNode(char *input, XMLNodeOffset nodeOff, StringInfo output, char **paramNames, bool terminate)
+xmlnodeDumpNode(char *input, char *nmspPrefix, XMLNodeOffset nodeOff,
+				StringInfo output, char **paramNames, bool terminate)
 {
 	char	   *content = NULL;
 	unsigned int cntLen = 0;
@@ -51,7 +60,9 @@ xmlnodeDumpNode(char *input, XMLNodeOffset nodeOff, StringInfo output, char **pa
 
 				if (node->flags & XNODE_EL_SPECIAL)
 				{
-					content = getXNTNodeName(node->kind);
+					nmspPrefix = getValidPrefix(element,
+										XNTNODE_NAMESPACE_VALUE, nmspPrefix);
+					content = getXNTNodeName(node->kind, nmspPrefix);
 				}
 				else
 				{
@@ -95,8 +106,8 @@ xmlnodeDumpNode(char *input, XMLNodeOffset nodeOff, StringInfo output, char **pa
 
 					while (childOffPtr <= lastChild)
 					{
-						xmlnodeDumpNode(input, nodeOff - readXMLNodeOffset(&childOffPtr,
-																		   XNODE_GET_REF_BWIDTH(eh), true), output, paramNames, false);
+						xmlnodeDumpNode(input, nmspPrefix, nodeOff - readXMLNodeOffset(&childOffPtr,
+																					   XNODE_GET_REF_BWIDTH(eh), true), output, paramNames, false);
 					}
 
 					/*
@@ -129,7 +140,7 @@ xmlnodeDumpNode(char *input, XMLNodeOffset nodeOff, StringInfo output, char **pa
 
 				while (childOffPtr <= lastChild)
 				{
-					xmlnodeDumpNode(input, nodeOff -
+					xmlnodeDumpNode(input, nmspPrefix, nodeOff -
 									readXMLNodeOffset(&childOffPtr, XNODE_GET_REF_BWIDTH((XMLCompNodeHdr) node), true),
 									output, paramNames, false);
 				}
@@ -222,7 +233,7 @@ xmlnodeDumpNode(char *input, XMLNodeOffset nodeOff, StringInfo output, char **pa
 				XMLCompNodeHdr eh = (XMLCompNodeHdr) node;
 				XMLNodeOffset offRel = readXMLNodeOffset(&childOffPtr, XNODE_GET_REF_BWIDTH(eh), true);
 
-				xmlnodeDumpNode(input, nodeOff - offRel, output, paramNames, false);
+				xmlnodeDumpNode(input, nmspPrefix, nodeOff - offRel, output, paramNames, false);
 			}
 			break;
 
@@ -601,4 +612,77 @@ visitXMLNodeForDump(XMLNodeHdr *stack, unsigned depth, void *userData)
 		}
 		appendStringInfo(output, "%s (abs: %u , rel: %u , size: %u)\n", str, offAbs, offRel, size);
 	}
+}
+
+/*
+ * Tries to find out if 'element' contains a namespace declaration of a new prefix
+ * for 'namespaceURI'that overrides another one defined above. If not found,
+ * 'currentPrefix' is returned.
+ */
+static char *
+getValidPrefix(XMLCompNodeHdr element, char *namespaceURI, char *currentPrefix)
+{
+	unsigned int prefLen = strlen(XNODE_NAMESPACE_DEF_PREFIX);
+	XNTAttrNames *attrInfo = xntAttributeInfo + (element->common.kind - XNTNODE_TEMPLATE);
+	unsigned int i;
+	char		bwidth = XNODE_GET_REF_BWIDTH(element);
+
+	/* Skip the reserved positions. */
+	char	   *childOffPtr;
+	unsigned int childrenLeft;
+
+	/*
+	 * Whether the namespace prefix is passed or not, we need to check whether
+	 * a different one is not used at the current level of the tree.
+	 */
+	childOffPtr = XNODE_FIRST_REF(element) + bwidth * attrInfo->number;
+	Assert(element->children >= attrInfo->number);
+	childrenLeft = element->children - attrInfo->number;
+
+	for (i = 0; i < childrenLeft; i++)
+	{
+		XMLNodeOffset attrOffRel = readXMLNodeOffset(&childOffPtr, bwidth, true);
+		XMLNodeHdr	attrNode = (XMLNodeHdr) ((char *) element - attrOffRel);
+		char	   *attrName,
+				   *attrValue,
+				   *cursor;
+
+		if (attrNode->kind != XMLNODE_ATTRIBUTE)
+			break;
+
+		attrName = XNODE_CONTENT(attrNode);
+		if (strncmp(attrName, XNODE_NAMESPACE_DEF_PREFIX, prefLen) == 0)
+		{
+			char	   *prefixNew = NULL;
+
+			cursor = attrName + prefLen;
+			if (*cursor == '\0')
+			{
+				/* Default namespace - no prefix. */
+				prefixNew = cursor;
+			}
+			else if (*cursor == XNODE_CHAR_COLON)
+			{
+				/* Non-default namespace: prefix follows the colon. */
+				prefixNew = cursor + 1;
+			}
+			else
+			{
+				/* Not a namespace declaration. */
+				continue;
+			}
+
+			attrValue = attrName + strlen(attrName) + 1;
+			if (strcmp(attrValue, XNTNODE_NAMESPACE_VALUE) == 0)
+			{
+				return prefixNew;
+			}
+		}
+	}
+
+	/*
+	 * The current prefix is not overridden here, keep using the one defined
+	 * above.
+	 */
+	return currentPrefix;
 }

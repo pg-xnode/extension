@@ -159,8 +159,7 @@ typedef struct XMLParserStateData
 	 * Special prefix to be considered during the parsing (e.g. 'xsl:',
 	 * 'xsd:', ...)
 	 */
-	char	   *nmspSpecialName;
-	char	   *nmspSpecialValue;
+	char	   *nmspSpecialURI;
 
 	/* Function to check node if it's not 'ordinary XML node. */
 	GetSpecialXNodeKindFunc getXNodeKindFunc;
@@ -204,7 +203,8 @@ extern void readXMLWhitespace(XMLParserState state, bool optional);
 extern unsigned int readXMLComment(XMLParserState state);
 extern bool readXMLReference(XMLParserState state, pg_wchar *value);
 
-extern void xmlnodeDumpNode(char *input, XMLNodeOffset nodeOff, StringInfo output, char **paramNames, bool terminate);
+extern void xmlnodeDumpNode(char *input, char *nmspPrefix, XMLNodeOffset nodeOff,
+				StringInfo output, char **paramNames, bool terminate);
 extern char *dumpXMLDecl(XMLDecl decl);
 
 #endif   /* XML_PARSER_H */

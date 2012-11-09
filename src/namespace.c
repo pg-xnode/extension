@@ -115,7 +115,7 @@ getUnresolvedXMLNamespaces(char *tree, XMLNodeHdr node, unsigned int *count)
 void
 resolveXMLNamespaces(char *tree, XMLNodeContainer declarations, unsigned int declsActive, char *elNmspName,
 					 bool *elNmspNameResolved, XMLNodeHdr *attrsPrefixed, unsigned int attrsPrefixedCount, bool *attrFlags,
-					 unsigned short *attrsUnresolved, char *specNmspName, char *specNmspValue, bool *elNmspIsSpecial)
+   unsigned short *attrsUnresolved, char *specNmspURI, bool *elNmspIsSpecial)
 {
 	unsigned int i;
 	XNodeListItem *decls = declarations->content;
@@ -125,39 +125,86 @@ resolveXMLNamespaces(char *tree, XMLNodeContainer declarations, unsigned int dec
 	 */
 	for (i = declsActive; i > 0; i--)
 	{
-		char	   *declNmspName;
+		char	   *declAttrName,
+				   *declNmspName = NULL;
 		XNodeListItem *item = decls + i - 1;
-		unsigned int declNmspLength;
+		unsigned int declNmspLength = 0;
 		XMLNodeHdr	declNode;
+		unsigned int defPrefLen = strlen(XNODE_NAMESPACE_DEF_PREFIX);
+		bool		nsDefault;
 
 		Assert(item->kind == XNODE_LIST_ITEM_SINGLE_OFF);
 		declNode = (XMLNodeHdr) (tree + item->value.singleOff);
-		declNmspName = (char *) XNODE_CONTENT(declNode) + strlen(XNODE_NAMESPACE_DEF_PREFIX) + 1;
-		declNmspLength = strlen(declNmspName);
+		declAttrName = XNODE_CONTENT(declNode);
+		nsDefault = strncmp(declAttrName, XNODE_NAMESPACE_DEF_PREFIX, defPrefLen) == 0 &&
+			declAttrName[defPrefLen] == '\0';
+
+		if (!nsDefault)
+		{
+			declNmspName = declAttrName + defPrefLen + 1;
+			declNmspLength = strlen(declNmspName);
+		}
 
 		if (!(*elNmspNameResolved))
 		{
-			if (strncmp(elNmspName, declNmspName, declNmspLength) == 0 &&
-				elNmspName[declNmspLength] == XNODE_CHAR_COLON)
+			if (elNmspName != NULL)
 			{
-				*elNmspNameResolved = true;
+				/* The element does have namespace prefix. */
 
-				/*
-				 * If seems to be a special namespace (e.g. 'xnt'), check
-				 * whether the namespace value matches. If it does not, it
-				 * must be considered an 'ordinary namespace'.
-				 */
-				if (specNmspName != NULL && specNmspValue != NULL && elNmspIsSpecial != NULL)
+				if (!nsDefault &&
+					strncmp(elNmspName, declNmspName, declNmspLength) == 0 &&
+					elNmspName[declNmspLength] == XNODE_CHAR_COLON)
 				{
-					char	   *declNmspValue = (char *) declNmspName + declNmspLength + 1;
+					*elNmspNameResolved = true;
 
-					*elNmspIsSpecial = (strcmp(declNmspName, specNmspName) == 0 &&
-								  strcmp(declNmspValue, specNmspValue) == 0);
+					/*
+					 * This seems to be a special namespace (e.g. 'xnt'), so
+					 * check whether the namespace value matches. If it does
+					 * not, then we can't say the element is special
+					 * (althhough the next declaration may change it.)
+					 */
+					if (specNmspURI != NULL && elNmspIsSpecial != NULL)
+					{
+						char	   *declNmspValue = (char *) declNmspName + declNmspLength + 1;
+
+						*elNmspIsSpecial = (strcmp(declNmspValue, specNmspURI) == 0);
+					}
 				}
+			}
+			else
+			{
+				/*
+				 * The element does not have namespace prefix. It can be
+				 * special node yet: if default namespace is bound to the
+				 * appropriate URI.
+				 */
+				if (nsDefault)
+				{
+					char	   *declAttrValue = declAttrName + strlen(declAttrName) + 1;
+
+					/*
+					 * The default namespace may be a special one and thus
+					 * turn the node into special one.
+					 */
+					*elNmspIsSpecial = (specNmspURI != NULL) &&
+						strcmp(specNmspURI, declAttrValue) == 0;
+				}
+
+				if (*elNmspIsSpecial)
+
+					/*
+					 * Match found, no need to check other namespace
+					 * declarations. If this condition is not met and matching
+					 * declaration of default namespace is not found, then the
+					 * element will stay 'unresolved'. The caller of this
+					 * function should know that it's o.k. for element that
+					 * has no prefix.
+					 */
+					*elNmspNameResolved = true;
 			}
 		}
 
-		if (*attrsUnresolved > 0)
+		if (*attrsUnresolved > 0 && !nsDefault)
 		{
 			unsigned int j;
 
@@ -417,7 +464,7 @@ checkNodeNamespaces(XMLNodeHdr *stack, unsigned int depth, void *userData)
 	if (!elNmspNameResolved || attrsUnresolved > 0)
 	{
 		resolveXMLNamespaces(state->tree, &state->declarations, state->counts[depth], elNmspName, &elNmspNameResolved, attrsPrefixed,
-		  attrsPrefixedCount, attrFlags, &attrsUnresolved, NULL, NULL, NULL);
+				attrsPrefixedCount, attrFlags, &attrsUnresolved, NULL, NULL);
 	}
 
 	if (!elNmspNameResolved)

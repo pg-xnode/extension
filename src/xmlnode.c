@@ -436,7 +436,7 @@ dumpXMLNode(char *data, XMLNodeOffset rootNdOff, unsigned int binarySize)
 		pfree(declStr);
 		output->len = declSize;
 	}
-	xmlnodeDumpNode(data, rootNdOff, output, paramNames, true);
+	xmlnodeDumpNode(data, NULL, rootNdOff, output, paramNames, true);
 
 	if (paramNames != NULL)
 	{

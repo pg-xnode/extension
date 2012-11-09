@@ -102,11 +102,13 @@ xnode_template_out(PG_FUNCTION_ARGS)
 XMLNodeKind
 getXNTNodeKind(char *name)
 {
-	unsigned int xntNmspPrefLen = strlen(XNTNODE_NAMESPACE_PREFIX);
+	char	   *colon = strrchr(name, XNODE_CHAR_COLON);
 
-	Assert(strncmp(name, XNTNODE_NAMESPACE_PREFIX, xntNmspPrefLen) == 0 && name[xntNmspPrefLen] == XNODE_CHAR_COLON);
-	/* skip the 'xnt:' */
-	name += xntNmspPrefLen + 1;
+	if (colon != NULL)
+	{
+		/* skip the prefix */
+		name = colon + 1;
+	}
 
 	if (strcmp(name, XNT_TEMPLATE) == 0)
 	{
@@ -129,13 +131,12 @@ getXNTNodeKind(char *name)
 }
 
 char *
-getXNTNodeName(XMLNodeKind kind)
+getXNTNodeName(XMLNodeKind kind, char *nmspPrefix)
 {
 	StringInfoData out;
 	char	   *name;
 
 	xnodeInitStringInfo(&out, 32);
-	appendStringInfo(&out, "%s:", XNTNODE_NAMESPACE_PREFIX);
 
 	switch (kind)
 	{
@@ -160,6 +161,10 @@ getXNTNodeName(XMLNodeKind kind)
 			return NULL;
 	}
 
+	if (nmspPrefix != NULL && strlen(nmspPrefix) > 0)
+	{
+		appendStringInfo(&out, "%s:", nmspPrefix);
+	}
 	appendStringInfoString(&out, name);
 	return out.data;
 }
@@ -245,7 +250,7 @@ preprocessXNTAttributes(char *prefix, XMLNodeContainer nmspDecls,
 	unsigned int outSizeMax = 0;
 
 	*outCount = 0;
-	*specAttrCount = attrInfo->number;
+	*specAttrCount = 0;
 
 	if (outAttrsMax > 0)
 	{
@@ -358,6 +363,7 @@ preprocessXNTAttributes(char *prefix, XMLNodeContainer nmspDecls,
 				attrSizes[j] = newAttrSize;
 				attrValsToFree[j] = true;
 				found = true;
+				(*specAttrCount)++;
 				break;
 			}
 		}
@@ -367,14 +373,19 @@ preprocessXNTAttributes(char *prefix, XMLNodeContainer nmspDecls,
 			unsigned int nmspDefPrefLen;
 
 			/* Namespace declaration is the only generic attribute allowed. */
-			if ((attr->flags & XNODE_NMSP_PREFIX) &&
-				strncmp(attrName, XNODE_NAMESPACE_DEF_PREFIX,
+			/* Either "xmlns:<namespace>"=... */
+			if (((attr->flags & XNODE_NMSP_PREFIX) &&
+				 strncmp(attrName, XNODE_NAMESPACE_DEF_PREFIX,
 			   (nmspDefPrefLen = strlen(XNODE_NAMESPACE_DEF_PREFIX))) == 0 &&
-				(attrName[nmspDefPrefLen] == XNODE_CHAR_COLON || attrName[nmspDefPrefLen] == '\0'))
+				 attrName[nmspDefPrefLen] == XNODE_CHAR_COLON)
+				||
+			/* Or "xmlns"=... */
+				strcmp(attrName, XNODE_NAMESPACE_DEF_PREFIX) == 0
+				)
+
 			{
 
 				attrValue = attrName + strlen(attrName) + 1;
-
 				/* The whole attribute is stored in this case. */
 				attrsSorted[indGen] = attr;
 				attrSizes[indGen] = sizeof(XMLNodeHdrData) + strlen(attrName) +strlen(attrValue) + 2;
@@ -383,7 +394,8 @@ preprocessXNTAttributes(char *prefix, XMLNodeContainer nmspDecls,
 			}
 			else
 			{
-				elog(ERROR, "element '%s' does not accept attribute '%s'", getXNTNodeName(specNodeKind), attrName);
+				elog(ERROR, "element '%s' does not accept attribute '%s'",
+					 getXNTNodeName(specNodeKind, NULL), attrName);
 			}
 		}
 	}
@@ -394,7 +406,7 @@ preprocessXNTAttributes(char *prefix, XMLNodeContainer nmspDecls,
 		if (attrInfo->required[i] && (i >= attrCount || attrsSorted[i] == NULL))
 		{
 			elog(ERROR, "required attribute '%s' missing in element '%s'", attrInfo->names[i],
-				 getXNTNodeName(specNodeKind));
+				 getXNTNodeName(specNodeKind, NULL));
 		}
 	}
 
@@ -2230,8 +2242,7 @@ getAttributeName(char *prefix, char *attrNamePrefixed,
 
 		nmspURIAttr = getXMLNamespaceURI(prefAttr, nmspDecls, parserOutput);
 		nmspURIElement = getXMLNamespaceURI(
-					prefix != '\0' ? prefix : NULL, nmspDecls, parserOutput);
-
+				   *prefix != '\0' ? prefix : NULL, nmspDecls, parserOutput);
 		if (nmspURIAttr != NULL && nmspURIElement != NULL &&
 			strcmp(nmspURIAttr, nmspURIElement) == 0)
 		{
