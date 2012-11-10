@@ -113,6 +113,8 @@ typedef struct XMLNodeInternalData *XMLNodeInternal;
 
 static void processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowed);
 static void forgetNamespaceDeclarations(unsigned int count, XMLNodeContainer stack);
+static void checkNamespaces(XMLParserState state, XMLNodeInternal nodeInfo, unsigned int attrsPrefixedCount,
+				bool *elNmspIsSpecial);
 static XMLNodeToken processTag(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowed,
 		   XMLNodeHdr *declAttrs, unsigned short *declAttrNum, unsigned int *nmspDecls, unsigned int *attrsPrefixed);
 static void checkXMLDeclaration(XMLNodeHdr *declAttrs, unsigned int attCount, XMLDecl decl);
@@ -132,9 +134,13 @@ static void replaceAttributes(XMLParserState state, bool specialNode, XNodeListI
 				  unsigned int attrCountNew, unsigned int *newSize);
 static void adjustNamespaceDeclarations(XMLParserState state, unsigned int nmspDecls,
 						 unsigned int attrCount, unsigned int specAttrCount);
-static void checkNamespaces(XMLParserState state, XMLNodeInternal nodeInfo, unsigned int attrsPrefixedCount,
-				bool *elNmspIsSpecial);
-
+static void processSpecialNode(XMLParserState state, XMLNodeInternal nodeInfo,
+				   int specialNodeKind, unsigned int attrCount,
+				   XNodeListItem *attrOffsets, unsigned int nmspDecls,
+				   unsigned int *attrCountNew, bool **specAttrsValid,
+				   unsigned int *specAttrCount);
+static void finalizeElement(XMLParserState state, XMLNodeInternal nodeInfo,
+		   unsigned int children, int specialNodeKind, bool *specAttrsValid);
 
 PredefinedEntity predefEntities[XNODE_PREDEFINED_ENTITIES] = {
 	{XNODE_CHAR_CDATA_LT, XNODE_CHAR_LARROW},
@@ -1357,15 +1363,14 @@ processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowe
 		 */
 		XMLNodeToken tagType;
 		unsigned int stackPosOrig = state->stack.position;
-		unsigned short int children,
+		unsigned int children,
 					attrCount;
 		unsigned int attrCountNew = 0;
 
 		/* Namespace declarations added by the current element. */
 		unsigned int nmspDecls = 0;
 		unsigned int attrsPrefixedCount = 0;
-		bool		isSpecialNode = false;
-		XMLNodeKind specialNodeKind = 0;
+		int			specialNodeKind = -1;
 		unsigned int specAttrCount = 0;
 		bool	   *specAttrsValid = NULL;
 
@@ -1392,6 +1397,7 @@ processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowe
 		 */
 		if (state->targetKind == XMLNODE_DOC || state->targetKind == XNTNODE_ROOT)
 		{
+			bool		isSpecialNode = false;
 
 			checkNamespaces(state, nodeInfo, attrsPrefixedCount, &isSpecialNode);
 
@@ -1413,98 +1419,25 @@ processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowe
 		 */
 		attrCount = children = state->stack.position - stackPosOrig;
 
-		if (isSpecialNode || state->targetKind == XNTNODE_ROOT)
+		if (specialNodeKind >= 0 || state->targetKind == XNTNODE_ROOT)
 		{
-			unsigned int attrsNewMaxCount;
-			XNodeListItem *attrOffsets,
-					   *attrOffsetsNew;
-			char	   *attrsNew = NULL;
-			unsigned int newSize = 0;
+			XNodeListItem *attrOffsets = state->stack.content + stackPosOrig;
 
 			/*
-			 * Parse special attributes, typically those containing
-			 * parameters.
-			 *
-			 * One may think processTag() can do this, but it does not have
-			 * sufficient information to decide whether given attribute should
-			 * accept a template containing parameters. It's accepted, in most
-			 * cases, e.g.
-			 *
-			 * <myelement myattr="{myparam}"/>
-			 *
-			 * However not always: <xnt:copy-of-param name="myparam"/>
-			 *
-			 * Inside processTag() we don't know yet if e.g the last attribute
-			 * of the current tag isn't just overriding the 'xnt' namespace
-			 * and thus making an 'ordinary tag' out of the '<copy-of-param/>'
-			 *
-			 * While special format has to be used in both cases, the parsing
-			 * algorithm is different.
+			 * Because of (possibly empty) positions for special attributes,
+			 * this function must be called even if 'attrCount == 0'
 			 */
+			processSpecialNode(state, nodeInfo, specialNodeKind, attrCount,
+							   attrOffsets, nmspDecls, &attrCountNew, &specAttrsValid, &specAttrCount);
 
-			attrsNewMaxCount = attrCount + XNT_SPECIAL_ATTRS_MAX;
-			attrOffsets = state->stack.content + stackPosOrig;
-			attrOffsetsNew = (XNodeListItem *) palloc(attrsNewMaxCount * sizeof(XNodeListItem));
-
-			if (attrCount > 0)
-			{
-				/* Prepare input data for preprocessXNTAttributes(). */
-				memcpy(attrOffsetsNew, attrOffsets, attrCount * sizeof(XNodeListItem));
-			}
-
-			if (isSpecialNode)
-			{
-				char	   *prefix;
-
-				/*
-				 * preprocessXNTAttributes() is called even if there are no
-				 * attributes:
-				 *
-				 * 1. To check whether the node does not miss any required
-				 * attribute. 2. To ensure that missing optional attributes
-				 * have the (invalid) offset set at the appropriate position.
-				 */
-
-				prefix = pnstrdup(state->inputText + nodeInfo->cntSrc, nodeInfo->nmspLength);
-				specAttrsValid = (bool *) palloc(attrsNewMaxCount * sizeof(bool));
-				attrsNew = preprocessXNTAttributes(prefix, &state->nmspDecl,
-					 attrOffsetsNew, attrCount, state->tree, specialNodeKind,
-												   specAttrsValid, &specAttrCount, &newSize, &attrCountNew, &state->paramNames);
-				pfree(prefix);
-			}
-			else if (state->targetKind == XNTNODE_ROOT)
-			{
-				/*
-				 * When parsing template, non-special attributes need to be
-				 * checked too: some of them may reference parameters in the
-				 * value.
-				 */
-				attrsNew = preprocessXNTAttrValues(attrOffsetsNew, attrCount, state->tree, &newSize,
-												   &state->paramNames);
-				attrCountNew = attrCount;
-			}
-
-			if (attrsNew != NULL)
-			{
-				replaceAttributes(state, isSpecialNode, attrOffsets, attrCount,
-						   attrsNew, attrOffsetsNew, attrCountNew, &newSize);
-				pfree(attrsNew);
-
-				/*
-				 * If all the attributes of the current node have been
-				 * shifted, then we have to update the corresponding namespace
-				 * declaration pointers.
-				 */
-				if (state->nmspDecl.content != NULL && state->nmspDecl.position > 0)
-					adjustNamespaceDeclarations(state, nmspDecls, attrCount, specAttrCount);
-			}
-			pfree(attrOffsetsNew);
+			/*
+			 * Empty slots for reserved attributes might have been added.
+			 */
+			children += attrCountNew - attrCount;
 		}
 
 		if (tagType == TOKEN_EMPTY_ELEMENT)
 		{
-			XMLCompNodeHdr element;
-			XMLNodeOffset elementOff;
 			unsigned int padding;
 
 			/*
@@ -1515,62 +1448,9 @@ processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowe
 			nodeInfo->tokenType = TOKEN_EMPTY_ELEMENT;
 			padding = saveNodeHeader(state, nodeInfo, XNODE_EMPTY);
 			nodeInfo->nodeOut += padding;
-			elementOff = nodeInfo->nodeOut;
-			element = (XMLCompNodeHdr) (state->tree + elementOff);
 
-			/*
-			 * Overwrite the node kind additionally. This is quite rare action
-			 * so we don't have to make the 'saveNodeHeader() function less
-			 * generic.
-			 */
-			if (isSpecialNode)
-			{
-				element->common.kind = specialNodeKind;
-				element->common.flags |= XNODE_EL_SPECIAL;
-
-				/*
-				 * Remember which nodes need to be constructed when using the
-				 * template.
-				 */
-				if (element->common.kind != XNTNODE_ROOT && element->common.kind != XNTNODE_TEMPLATE)
-				{
-					xmlnodePushSingleNode(&state->substNodes, elementOff);
-				}
-			}
-
-			element->children = children;
-			if (children > 0)
-			{
-				unsigned int specAttrsDefined = 0;
-
-				if (isSpecialNode)
-				{
-					XNTAttrNames *attrInfo = xntAttributeInfo + (specialNodeKind - XNTNODE_TEMPLATE);
-
-					specAttrsDefined = attrInfo->number;
-
-					/*
-					 * Empty slots for reserved attributes might have been
-					 * added.
-					 */
-					children += attrCountNew - attrCount;
-					element->children = children;
-				}
-				saveReferences(state, nodeInfo, element, children, specAttrsValid, specAttrsDefined);
-			}
-			if (specAttrsValid != NULL)
-			{
-				pfree(specAttrsValid);
-			}
-
-			/*
-			 * Node name would be redundant in this case, the 'kind' is
-			 * enough.
-			 */
-			if (!isSpecialNode)
-			{
-				saveContent(state, nodeInfo);
-			}
+			finalizeElement(state, nodeInfo, children, specialNodeKind,
+							specAttrsValid);
 
 			/*
 			 * The most recent namespace declarations might only be relevant
@@ -1588,9 +1468,7 @@ processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowe
 			unsigned int nlBefore = ++(state->nestLevel);
 			bool		childrenProcessed = false;
 			bool		match;
-			XMLCompNodeHdr element;
 			XMLNodeHdr	firstText = NULL;
-			XMLNodeOffset elementOff;
 			unsigned int padding;
 
 			state->saveHeader = true;
@@ -1698,45 +1576,10 @@ processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowe
 			nodeInfo->tokenType = childTag.tokenType;
 			padding = saveNodeHeader(state, nodeInfo, children == attrCount ? XNODE_EMPTY : 0);
 			nodeInfo->nodeOut += padding;
-			elementOff = nodeInfo->nodeOut;
-			element = (XMLCompNodeHdr) (state->tree + elementOff);
 
-			if (isSpecialNode)
-			{
-				element->common.kind = specialNodeKind;
-				element->common.flags |= XNODE_EL_SPECIAL;
+			finalizeElement(state, nodeInfo, children, specialNodeKind,
+							specAttrsValid);
 
-				if (element->common.kind != XNTNODE_ROOT && element->common.kind != XNTNODE_TEMPLATE)
-				{
-					xmlnodePushSingleNode(&state->substNodes, elementOff);
-				}
-			}
-
-			element->children = children;
-			if (children > 0)
-			{
-				unsigned int specAttrsDefined = 0;
-
-				if (isSpecialNode)
-				{
-					XNTAttrNames *attrInfo = xntAttributeInfo + (specialNodeKind - XNTNODE_TEMPLATE);
-
-					specAttrsDefined = attrInfo->number;
-					children += attrCountNew - attrCount;
-					element->children = children;
-				}
-				saveReferences(state, nodeInfo, element, children, specAttrsValid, specAttrsDefined);
-			}
-
-			if (specAttrsValid != NULL)
-			{
-				pfree(specAttrsValid);
-			}
-
-			if (!isSpecialNode)
-			{
-				saveContent(state, nodeInfo);
-			}
 			return;
 		}
 	}
@@ -2934,6 +2777,171 @@ adjustNamespaceDeclarations(XMLParserState state, unsigned int nmspDecls,
 	}
 }
 
+/*
+ * Two kinds of nodes are accepted:
+ * 1. A node belonging to special namespace (e.g. XNT). This is recognized
+ * by 'isSpecial=true'.
+ * 2. An ordinary XML element possibly having XPath expression in one or more
+ * attribues.
+ *
+ * 'attrCount' - how many namespace declarations the node contains.
+ *
+ *	'attrOffsets' - where attribute references start in the arising binary
+ *	document. This list is going to be replaced as (some of) the attributes
+ *	get processed.
+ *
+ * 'nmspDecls' - how many namespace declarations the node contains.
+ *
+ * '*attrCountNew' receives a new number of attributes. The point is that
+ * special nodes have reserved positions for specific attributes. If such
+ * an attribute is optional and the source document does not contain it,
+ * the slot has to be allocated anyway and thus the number of attributes
+ * gets increased.
+ *
+ * '**specAttrsValid' receives information about the special attriutes.
+ * 'false' at the corresponding position means that that attribute
+ * is optional and it's missing now.
+ *
+ * '*specAttrCount' - how many special attributes the node owns.
+ * (Besides the defined attributes it may also contain namespace
+ * declarations, which are not considered special).
+ */
+static void
+processSpecialNode(XMLParserState state, XMLNodeInternal nodeInfo,
+				   int specialNodeKind, unsigned int attrCount,
+				   XNodeListItem *attrOffsets, unsigned int nmspDecls,
+				   unsigned int *attrCountNew, bool **specAttrsValid,
+				   unsigned int *specAttrCount)
+{
+	unsigned int attrsNewMaxCount;
+	XNodeListItem *attrOffsetsNew;
+	char	   *attrsNew = NULL;
+	unsigned int newSize = 0;
+
+	/*
+	 * Parse special attributes, typically those containing parameters.
+	 *
+	 * One may think processTag() can do this, but it does not have sufficient
+	 * information to decide whether given attribute should accept a template
+	 * containing parameters. It's accepted, in most cases, e.g.
+	 *
+	 * <myelement myattr="{myparam}"/>
+	 *
+	 * However not always: <xnt:copy-of-param name="myparam"/>
+	 *
+	 * Inside processTag() we don't know yet if e.g the last attribute of the
+	 * current tag isn't just overriding the 'xnt' namespace and thus making
+	 * an 'ordinary tag' out of the '<copy-of-param/>'
+	 *
+	 * While special format has to be used in both cases, the parsing
+	 * algorithm is different.
+	 */
+
+	attrsNewMaxCount = attrCount + XNT_SPECIAL_ATTRS_MAX;
+	attrOffsetsNew = (XNodeListItem *) palloc(attrsNewMaxCount * sizeof(XNodeListItem));
+
+	if (attrCount > 0)
+	{
+		/* Prepare input data for preprocessXNTAttributes(). */
+		memcpy(attrOffsetsNew, attrOffsets, attrCount * sizeof(XNodeListItem));
+	}
+
+	if (specialNodeKind >= 0)
+	{
+		char	   *prefix;
+
+		/*
+		 * preprocessXNTAttributes() is called even if there are no
+		 * attributes:
+		 *
+		 * 1. To check whether the node does not miss any required attribute.
+		 * 2. To ensure that missing optional attributes have the (invalid)
+		 * offset set at the appropriate position.
+		 */
+
+		prefix = pnstrdup(state->inputText + nodeInfo->cntSrc, nodeInfo->nmspLength);
+		*specAttrsValid = (bool *) palloc(attrsNewMaxCount * sizeof(bool));
+		attrsNew = preprocessXNTAttributes(prefix, &state->nmspDecl,
+					 attrOffsetsNew, attrCount, state->tree, specialNodeKind,
+										   *specAttrsValid, specAttrCount, &newSize, attrCountNew, &state->paramNames);
+		pfree(prefix);
+	}
+	else if (state->targetKind == XNTNODE_ROOT)
+	{
+		/*
+		 * When parsing template, non-special attributes need to be checked
+		 * too: some of them may reference parameters in the value.
+		 */
+		attrsNew = preprocessXNTAttrValues(attrOffsetsNew, attrCount, state->tree, &newSize,
+										   &state->paramNames);
+		*attrCountNew = attrCount;
+	}
+
+	if (attrsNew != NULL)
+	{
+		replaceAttributes(state, specialNodeKind >= 0, attrOffsets, attrCount,
+						  attrsNew, attrOffsetsNew, *attrCountNew, &newSize);
+		pfree(attrsNew);
+
+		/*
+		 * If all the attributes of the current node have been shifted, then
+		 * we have to update the corresponding namespace declaration pointers.
+		 */
+		if (state->nmspDecl.content != NULL && state->nmspDecl.position > 0)
+			adjustNamespaceDeclarations(state, nmspDecls, attrCount, *specAttrCount);
+	}
+	pfree(attrOffsetsNew);
+}
+
+static void
+finalizeElement(XMLParserState state, XMLNodeInternal nodeInfo,
+			unsigned int children, int specialNodeKind, bool *specAttrsValid)
+{
+	XMLNodeOffset elementOff = nodeInfo->nodeOut;
+	XMLCompNodeHdr element = (XMLCompNodeHdr) (state->tree + elementOff);
+
+	if (specialNodeKind >= 0)
+	{
+		/*
+		 * Overwrite the node kind additionally. This is quite rare action so
+		 * we don't have to make the 'saveNodeHeader() function less generic.
+		 */
+
+		element->common.kind = specialNodeKind;
+		element->common.flags |= XNODE_EL_SPECIAL;
+
+		/*
+		 * Remember which nodes need to be constructed when using the
+		 * template.
+		 */
+		if (element->common.kind != XNTNODE_ROOT && element->common.kind != XNTNODE_TEMPLATE)
+			xmlnodePushSingleNode(&state->substNodes, elementOff);
+	}
+
+	element->children = children;
+
+	if (children > 0)
+	{
+		unsigned int specAttrsDefined = 0;
+
+		if (specialNodeKind >= 0)
+		{
+			XNTAttrNames *attrInfo = xntAttributeInfo + (specialNodeKind - XNTNODE_TEMPLATE);
+
+			specAttrsDefined = attrInfo->number;
+		}
+		saveReferences(state, nodeInfo, element, children, specAttrsValid, specAttrsDefined);
+	}
+
+	if (specAttrsValid != NULL)
+		pfree(specAttrsValid);
+
+	/*
+	 * Node name would be redundant in this case, the 'kind' is enough.
+	 */
+	if (specialNodeKind == -1)
+		saveContent(state, nodeInfo);
+}
 
 /*
  * Write node offset into a character array. Little-endian byte ordering is
