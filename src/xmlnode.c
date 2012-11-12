@@ -60,7 +60,6 @@ static void getNodeInfo(XMLNodeHdr node, unsigned int *size, unsigned short *cou
 static int	attrNameComparator(const void *left, const void *right);
 static XNodeInternal *reorderElementChildren(XNodeInternal node);
 static bool elementChildrenNeedReordering(XNodeInternal node);
-static void dumpJSONNode(XMLNodeHdr node, StringInfo out, unsigned int level, char start, char end);
 
 typedef struct TypeInfo
 {
@@ -288,21 +287,6 @@ xmlnode_to_xmldoc(PG_FUNCTION_ARGS)
 	}
 	PG_RETURN_POINTER(document);
 }
-
-PG_FUNCTION_INFO_V1(xmlnode_to_json);
-
-Datum
-xmlnode_to_json(PG_FUNCTION_ARGS)
-{
-	StringInfoData output;
-	xmlnode		storage = (xmlnode) PG_GETARG_VARLENA_P(0);
-	XMLNodeHdr	root = XNODE_ROOT(storage);
-
-	xnodeInitStringInfo(&output, 512);
-	dumpJSONNode(root, &output, 0, XNODE_CHAR_LBRKT_CUR, XNODE_CHAR_RBRKT_CUR);
-	PG_RETURN_TEXT_P(cstring_to_text(output.data));
-}
-
 
 PG_FUNCTION_INFO_V1(xmldoc_to_xmlnode);
 
@@ -1439,81 +1423,4 @@ elementChildrenNeedReordering(XNodeInternal node)
 		childItem++;
 	}
 	return mustReorder;
-}
-
-static void
-dumpJSONNode(XMLNodeHdr node, StringInfo out, unsigned int level, char start, char end)
-{
-	appendStringInfoChar(out, start);
-
-	if (node->kind == XMLNODE_DOC_FRAGMENT)
-	{
-		elog(ERROR, "%s can't be converted to JSON", getXMLNodeKindStr(node->kind));
-	}
-
-	switch (node->kind)
-	{
-		case XMLNODE_ELEMENT:
-			{
-				XMLCompNodeHdr compNode = (XMLCompNodeHdr) node;
-
-				appendStringInfo(out, "\"%s\": ", XNODE_ELEMENT_NAME(compNode));
-
-				if (compNode->children > 0)
-				{
-					XMLNodeIteratorData iterator;
-					XMLNodeHdr	child;
-					unsigned int i = 1;
-
-					initXMLNodeIterator(&iterator, compNode, true);
-
-					while ((child = getNextXMLNodeChild(&iterator)) != NULL)
-					{
-						if (child->kind != XMLNODE_DTD && child->kind != XMLNODE_COMMENT &&
-							child->kind != XMLNODE_PI)
-						{
-
-							char		start,
-										end;
-
-							start = (i == 1) ? XNODE_CHAR_LBRKT_CUR : ' ';
-							end = (i == compNode->children) ? XNODE_CHAR_RBRKT_CUR : XNODE_CHAR_COMMA;
-							dumpJSONNode(child, out, level + 1, start, end);
-						}
-						i++;
-
-					}
-				}
-				else
-					appendStringInfoString(out, "\"null\"");
-			}
-			break;
-
-		case XMLNODE_ATTRIBUTE:
-			{
-				char	   *name,
-						   *value;
-
-				name = XNODE_CONTENT(node);
-				value = name + strlen(name) + 1;
-				appendStringInfo(out, "\"@%s\": \"%s\"", name, value);
-			}
-			break;
-
-		case XMLNODE_TEXT:
-		case XMLNODE_CDATA:
-			appendStringInfo(out, "\"$\": \"%s\"", XNODE_CONTENT(node));
-			break;
-
-		case XMLNODE_DTD:
-		case XMLNODE_COMMENT:
-		case XMLNODE_PI:
-			break;
-
-		default:
-			elog(ERROR, "unexpected node kind %u", node->kind);
-			break;
-	}
-
-	appendStringInfoChar(out, end);
 }
