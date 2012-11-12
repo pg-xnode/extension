@@ -49,6 +49,18 @@
 
 #define XNODE_NAMESPACE_DEF_PREFIX		"xmlns"
 
+/* Test whether (non-default) namespace declaration starts at 'c'. */
+#define XNODE_IS_NAMESPACE_DECL(c) (\
+		(strncmp(\
+			(c), XNODE_NAMESPACE_DEF_PREFIX,\
+			strlen(XNODE_NAMESPACE_DEF_PREFIX)\
+		 ) == 0) &&\
+		 (c)[strlen(XNODE_NAMESPACE_DEF_PREFIX)] == XNODE_CHAR_COLON\
+		)
+
+/* Test whether *default* namespace declaration starts at 'c'. */
+#define XNODE_IS_DEF_NAMESPACE_DECL(c)	(strcmp(c, XNODE_NAMESPACE_DEF_PREFIX) == 0)
+
 typedef enum XMLNodeKind
 {
 	XMLNODE_DOC = 0,

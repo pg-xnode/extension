@@ -52,14 +52,10 @@ getUnresolvedXMLNamespaces(char *tree, XMLNodeHdr node, unsigned int *count)
 	if (nodeKind == XMLNODE_ATTRIBUTE && (node->flags & XNODE_NMSP_PREFIX))
 	{
 		char	   *attrName = XNODE_CONTENT(node);
-		unsigned int nmspPrefLen = strlen(XNODE_NAMESPACE_DEF_PREFIX);
 
-		if ((strncmp(attrName, XNODE_NAMESPACE_DEF_PREFIX, nmspPrefLen) == 0) &&
-			attrName[nmspPrefLen] == XNODE_CHAR_COLON)
-		{
+		if (XNODE_IS_NAMESPACE_DECL(attrName))
 			/* 'xmlns:...' does not depend on any namespace declaration. */
 			return NULL;
-		}
 
 		/*
 		 * If the prefix is not 'xmlns' then it represents an unbound
@@ -130,18 +126,16 @@ resolveXMLNamespaces(char *tree, XMLNodeContainer declarations, unsigned int dec
 		XNodeListItem *item = decls + i - 1;
 		unsigned int declNmspLength = 0;
 		XMLNodeHdr	declNode;
-		unsigned int defPrefLen = strlen(XNODE_NAMESPACE_DEF_PREFIX);
 		bool		nsDefault;
 
 		Assert(item->kind == XNODE_LIST_ITEM_SINGLE_OFF);
 		declNode = (XMLNodeHdr) (tree + item->value.singleOff);
 		declAttrName = XNODE_CONTENT(declNode);
-		nsDefault = strncmp(declAttrName, XNODE_NAMESPACE_DEF_PREFIX, defPrefLen) == 0 &&
-			declAttrName[defPrefLen] == '\0';
+		nsDefault = XNODE_IS_DEF_NAMESPACE_DECL(declAttrName);
 
 		if (!nsDefault)
 		{
-			declNmspName = declAttrName + defPrefLen + 1;
+			declNmspName = declAttrName + strlen(XNODE_NAMESPACE_DEF_PREFIX) + 1;
 			declNmspLength = strlen(declNmspName);
 		}
 
@@ -249,7 +243,6 @@ void
 collectXMLNamespaceDeclarations(char *tree, XMLCompNodeHdr currentNode, unsigned int *attrCount, unsigned int *nmspDeclCount,
 								XMLNodeContainer declarations, bool declsOnly, XMLNodeHdr **attrsPrefixed, unsigned int *attrsPrefixedCount)
 {
-	unsigned int defNmspLen = strlen(XNODE_NAMESPACE_DEF_PREFIX);
 	XMLNodeIteratorData iterator;
 	XMLNodeHdr	childNode;
 
@@ -287,10 +280,8 @@ collectXMLNamespaceDeclarations(char *tree, XMLCompNodeHdr currentNode, unsigned
 		{
 			char	   *attrName = XNODE_CONTENT(childNode);
 
-			if ((strncmp(attrName, XNODE_NAMESPACE_DEF_PREFIX, defNmspLen) == 0) &&
-				attrName[defNmspLen] == XNODE_CHAR_COLON)
+			if (XNODE_IS_NAMESPACE_DECL(attrName))
 			{
-
 				/* Namespace declaration. */
 
 				xmlnodePushSingleNode(declarations, (char *) childNode - tree);

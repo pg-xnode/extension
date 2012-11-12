@@ -1630,7 +1630,6 @@ checkNamespaces(XMLParserState state, XMLNodeInternal nodeInfo, unsigned int att
 		unsigned int i = 0;
 		unsigned int posOrig;
 		unsigned int flagsSize = attrsPrefixedCount * sizeof(bool);
-		unsigned int nmspPrefLen = strlen(XNODE_NAMESPACE_DEF_PREFIX);
 
 		attrFlags = (bool *) palloc(flagsSize);
 		/* Set all to 'false' to indicate that none is resolved yet. */
@@ -1658,8 +1657,7 @@ checkNamespaces(XMLParserState state, XMLNodeInternal nodeInfo, unsigned int att
 			 * ('xmlns:...', 'xmlns')
 			 */
 			if ((attrNode->flags & XNODE_NMSP_PREFIX) &&
-				!(strncmp(attrName, XNODE_NAMESPACE_DEF_PREFIX, nmspPrefLen) == 0 &&
-				  (attrName[nmspPrefLen] == XNODE_CHAR_COLON || attrName[nmspPrefLen] == '\0')))
+				!XNODE_IS_NAMESPACE_DECL(attrName))
 			{
 				attrsPrefixed[i] = attrNode;
 				i++;

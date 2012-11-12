@@ -370,19 +370,12 @@ preprocessXNTAttributes(char *prefix, XMLNodeContainer nmspDecls,
 
 		if (!found)
 		{
-			unsigned int nmspDefPrefLen;
-
 			/* Namespace declaration is the only generic attribute allowed. */
 			/* Either "xmlns:<namespace>"=... */
 			if (((attr->flags & XNODE_NMSP_PREFIX) &&
-				 strncmp(attrName, XNODE_NAMESPACE_DEF_PREFIX,
-			   (nmspDefPrefLen = strlen(XNODE_NAMESPACE_DEF_PREFIX))) == 0 &&
-				 attrName[nmspDefPrefLen] == XNODE_CHAR_COLON)
-				||
+				 XNODE_IS_NAMESPACE_DECL(attrName))
 			/* Or "xmlns"=... */
-				strcmp(attrName, XNODE_NAMESPACE_DEF_PREFIX) == 0
-				)
-
+				|| XNODE_IS_DEF_NAMESPACE_DECL(attrName))
 			{
 
 				attrValue = attrName + strlen(attrName) + 1;
@@ -2233,7 +2226,7 @@ getAttributeName(char *prefix, char *attrNamePrefixed,
 		prefAttrLen = colon - attrNamePrefixed;
 		prefAttr = pnstrdup(attrNamePrefixed, prefAttrLen);
 
-		if (strcmp(prefAttr, XNODE_NAMESPACE_DEF_PREFIX) == 0)
+		if (XNODE_IS_DEF_NAMESPACE_DECL(prefAttr))
 		{
 			/* Not interested in namespace declarations. */
 			pfree(prefAttr);
