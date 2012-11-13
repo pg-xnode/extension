@@ -9,6 +9,7 @@
 #include "mb/pg_wchar.h"
 
 #include "xmlnode.h"
+#include "xnt.h"
 #include "xpath.h"
 
 extern void xmlnodeContainerInit(XMLNodeContainer cont);
@@ -32,7 +33,7 @@ extern XMLNodeHdr getNextXMLNode(XMLScan xscan);
 extern void checkXMLWellFormedness(XMLCompNodeHdr root);
 extern int	utf8cmp(char *c1, char *c2);
 
-extern double xnodeGetNumValue(char *str, bool raiseError, bool *isNumber);
+extern double xnodeGetNumValue(char *str, bool raiseError, bool * isNumber);
 extern char *getElementNodeStr(XMLCompNodeHdr element);
 extern char *getNonElementNodeStr(XMLNodeHdr node);
 
@@ -77,14 +78,17 @@ typedef struct XMLNodeIteratorData
 	char		bwidth;
 	unsigned short childrenLeft;
 	char	   *childOffPtr;
+
 	/* Is attribute considered a child? */
 	bool		attributes;
-
 } XMLNodeIteratorData;
 
 typedef struct XMLNodeIteratorData *XMLNodeIterator;
 
-extern void initXMLNodeIterator(XMLNodeIterator iterator, XMLCompNodeHdr node, bool attributes);
+extern void initXMLNodeIterator(XMLNodeIterator iterator, XMLCompNodeHdr node,
+					bool attributes);
+extern void initXMLNodeIteratorSpecial(XMLNodeIterator iterator, XMLCompNodeHdr node,
+						   bool attrsSpecial, XNTAttrNames *specAttrInfo);
 extern XMLNodeHdr getNextXMLNodeChild(XMLNodeIterator iterator);
 
 #endif   /* XMLNODE_UTIL_H_ */

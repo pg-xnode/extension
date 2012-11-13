@@ -53,7 +53,7 @@ static XNodeInternal xntProcessAttribute(XMLNodeHdr node,
 				 XPathExprOperandValue paramValues, unsigned short *paramMap,
 					XPathExprState exprState, unsigned int *storageSize);
 
-XNTParamNameSorted *getParameterNames(ArrayType *parNameArray, unsigned int templateParamCount,
+XNTParamNameSorted *getParameterNames(ArrayType * parNameArray, unsigned int templateParamCount,
 				  char **templParNames, unsigned short *paramMap);
 
 static XPathExprOperandValue getParameterValues(Datum row,
@@ -228,7 +228,7 @@ validateXNTTree(XMLNodeHdr root)
 char *
 preprocessXNTAttributes(char *prefix, XMLNodeContainer nmspDecls,
 	XNodeListItem *attrOffsets, unsigned short attrCount, char *parserOutput,
-   XMLNodeKind specNodeKind, bool *offsetsValid, unsigned int *specAttrCount,
+  XMLNodeKind specNodeKind, bool * offsetsValid, unsigned int *specAttrCount,
   unsigned int *outSize, unsigned int *outCount, XMLNodeContainer paramNames)
 {
 	unsigned short i;
@@ -849,7 +849,7 @@ visitXMLNodeForValidation(XMLNodeHdr *stack, unsigned int depth, void *userData)
 	XMLNodeHdr	node = stack[depth];
 	XMLNodeHdr	parent = NULL;
 
-	if ((node->flags & XNODE_EL_SPECIAL) == 0)
+	if ((node->kind >= XNTNODE_ROOT) == 0)
 	{
 		return;
 	}
@@ -1169,7 +1169,10 @@ buildNewNodeTree(XMLNodeHdr node, XNodeInternal parent, unsigned int *storageSiz
 
 		xmlnodeContainerInit(&nodeInternal->children);
 
-		initXMLNodeIterator(&iterator, compNode, true);
+		if (node->kind == XMLNODE_ELEMENT)
+			initXMLNodeIterator(&iterator, compNode, true);
+		else
+			initXMLNodeIteratorSpecial(&iterator, compNode, true, xntAttributeInfo);
 
 		while ((childNode = getNextXMLNodeChild(&iterator)) != NULL)
 		{
@@ -1453,7 +1456,11 @@ getTemplateFromDoc(XMLCompNodeHdr docRoot)
 
 	Assert(docRoot->common.kind == XNTNODE_ROOT);
 
-	initXMLNodeIterator(&iterator, docRoot, true);
+	/*
+	 * 'attrsSpecial == true' to avoid skipping special attributes. This node
+	 * has no attributes anyway.
+	 */
+	initXMLNodeIteratorSpecial(&iterator, docRoot, true, NULL);
 
 	while ((child = getNextXMLNodeChild(&iterator)) != NULL)
 	{
@@ -1909,7 +1916,7 @@ xntProcessAttribute(XMLNodeHdr node,
  *	Returns array of parameter names passed by user for substitution.
  */
 XNTParamNameSorted *
-getParameterNames(ArrayType *parNameArray, unsigned int templateParamCount,
+getParameterNames(ArrayType * parNameArray, unsigned int templateParamCount,
 				  char **templParNames, unsigned short *paramMap)
 {
 	XNTParamNameSorted *parNames = NULL;

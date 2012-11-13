@@ -5,7 +5,6 @@
 #include "xmlnode.h"
 #include "xmlnode_util.h"
 #include "xml_update.h"
-#include "xnt.h"
 
 static void xmlTreeWalker(XMLTreeWalkerContext *context);
 static unsigned int getNodePadding(char *start, XMLNodeOffset offAbs, XMLNodeHdr node);
@@ -588,7 +587,7 @@ utf8cmp(char *c1, char *c2)
 }
 
 double
-xnodeGetNumValue(char *str, bool raiseError, bool *isNumber)
+xnodeGetNumValue(char *str, bool raiseError, bool * isNumber)
 {
 	double		result;
 	char	   *c;
@@ -805,15 +804,10 @@ xmlTreeWalker(XMLTreeWalkerContext *context)
 	{
 
 		XMLCompNodeHdr compNode = (XMLCompNodeHdr) node;
+		bool		isSpecial = compNode->common.kind >= XNTNODE_ROOT;
 		XMLNodeIteratorData iterator;
 		XMLNodeHdr	child;
 		unsigned int childNr = 0;
-		XNTAttrNames *specAttrInfo = NULL;
-
-		if (node->kind > XNTNODE_ROOT)
-		{
-			specAttrInfo = xntAttributeInfo + (node->kind - XNTNODE_TEMPLATE);
-		}
 
 		context->depth++;
 		if (context->depth == XMLTREE_WALKER_MAX_DEPTH)
@@ -827,24 +821,24 @@ xmlTreeWalker(XMLTreeWalkerContext *context)
 			context->stack = (XMLNodeHdr *) repalloc(context->stack, context->stackSize);
 		}
 
-		initXMLNodeIterator(&iterator, compNode, true);
+		if (isSpecial)
+			initXMLNodeIteratorSpecial(&iterator, compNode, true, xntAttributeInfo);
+		else
+			initXMLNodeIterator(&iterator, compNode, true);
 
 		while ((child = getNextXMLNodeChild(&iterator)) != NULL)
 		{
-			if (specAttrInfo != NULL && childNr < specAttrInfo->number)
-			{
-				XMLNodeOffset nodeOff;
+			if (isSpecial && (child == (XMLNodeHdr) compNode))
 
-				nodeOff = (char *) compNode - (char *) child;
-				/* Empty slot for (optional) special node, */
-				if (nodeOff == XMLNodeOffsetInvalid)
-					continue;
-			}
+				/*
+				 * 'child == compNode' indicates 'XMLNodeOffsetInvalid'. In
+				 * other words: missing optional attribute.
+				 */
+				continue;
 
 			if (child->kind == XMLNODE_ATTRIBUTE && !context->attributes)
-			{
 				continue;
-			}
+
 			context->stack[context->depth] = child;
 			xmlTreeWalker(context);
 			childNr++;
@@ -903,11 +897,13 @@ xnodeInitStringInfo(StringInfo stringInfo, int len)
 void
 initXMLNodeIterator(XMLNodeIterator iterator, XMLCompNodeHdr node, bool attributes)
 {
-	if (node->common.kind != XMLNODE_ELEMENT && node->common.kind != XMLNODE_DOC &&
-		node->common.kind != XMLNODE_DOC_FRAGMENT && node->common.kind < XNTNODE_ROOT)
-	{
-		elog(ERROR, "iterator can only be used for compound node. node kind %u was not recognized", node->common.kind);
-	}
+	XMLNodeKind kind = node->common.kind;
+
+	if (kind != XMLNODE_ELEMENT && kind != XMLNODE_DOC &&
+		kind != XMLNODE_DOC_FRAGMENT)
+		elog(ERROR, "element, document or document fragment expected for iteration, %u received instead",
+			 kind);
+
 	iterator->node = node;
 	iterator->bwidth = XNODE_GET_REF_BWIDTH(node);
 	iterator->childrenLeft = node->children;
@@ -915,8 +911,65 @@ initXMLNodeIterator(XMLNodeIterator iterator, XMLCompNodeHdr node, bool attribut
 	iterator->attributes = attributes;
 }
 
+void
+initXMLNodeIteratorSpecial(XMLNodeIterator iterator, XMLCompNodeHdr node,
+						   bool attrsSpecial, XNTAttrNames *specAttrInfo)
+{
+
+	XMLNodeKind kind = node->common.kind;
+	unsigned int attrsToSkip;
+
+
+	if (kind < XNTNODE_ROOT)
+		elog(ERROR, "special node expected for iteration, %u received instead", kind);
+
+	/*
+	 * Set fake value so there is no error when reusing the simpler
+	 * initializer.
+	 */
+	node->common.kind = XMLNODE_ELEMENT;
+	/* Let's reuse the simpler initializer now. */
+	initXMLNodeIterator(iterator, node, true);
+	/* Finally restore the original kind. */
+	iterator->node->common.kind = node->common.kind = kind;
+
+	if (!attrsSpecial)
+	{
+		unsigned int i;
+
+		/*
+		 * Each new special document will have node kinds higher. Therefore
+		 * the respective tests should be added at the top here, letting
+		 * particular test fall through to the correct range.
+		 */
+		if (kind >= XNTNODE_ROOT)
+		{
+			attrsToSkip = specAttrInfo[kind - XNTNODE_TEMPLATE].number;
+		}
+		else
+
+			/*
+			 * As long as we test the kind at the top, this check should never
+			 * be reached.
+			 */
+			elog(ERROR, "unrecognized special node kind %u", kind);
+
+		Assert(attrsToSkip <= node->children);
+
+		for (i = 0; i < attrsToSkip; i++)
+			readXMLNodeOffset(&iterator->childOffPtr, iterator->bwidth, true);
+	}
+}
+
 /*
- * Return the next child of XML element (next in the document order) or NULL if the iteration is finished.
+ * Return the next child of XML element (next in the document order) or NULL if
+ * the iteration is finished.
+ *
+ * If special node is iterated and special attributes are not excluded, pointer
+ * to the iterated node is returned when we hit missing optional node. This is
+ * because 'XMLNodeOffsetInvalid' (0) represents reference to such a node. NULL
+ * can't be used in such a case as special value because it already has
+ * specaila meaning: end of iteration.
  *
  * IMPORTANT
  *
@@ -931,25 +984,32 @@ getNextXMLNodeChild(XMLNodeIterator iterator)
 	XMLNodeOffset childOff;
 
 	if (iterator->childrenLeft == 0)
-	{
 		return NULL;
-	}
+
 	childOff = readXMLNodeOffset(&iterator->childOffPtr, iterator->bwidth, true);
 	childNode = (XMLNodeHdr) ((char *) iterator->node - childOff);
 
-	if (childNode->kind == XMLNODE_ATTRIBUTE && !iterator->attributes)
+	/*
+	 * The following does not make sense for special node because that can
+	 * have 'childOff == XMLNodeOffsetInvalid'.
+	 */
+	if (iterator->node->common.kind >= XNTNODE_ROOT)
 	{
-		bool		attrOrig;
 
-		/* Skip attribute nodes. */
-		attrOrig = iterator->attributes;
-		iterator->attributes = true;
-
-		while (childNode != NULL && childNode->kind == XMLNODE_ATTRIBUTE)
+		if (childNode->kind == XMLNODE_ATTRIBUTE && !iterator->attributes)
 		{
-			childNode = getNextXMLNodeChild(iterator);
+			bool		attrOrig;
+
+			/* Skip attribute nodes. */
+			attrOrig = iterator->attributes;
+			iterator->attributes = true;
+
+			while (childNode != NULL && childNode->kind == XMLNODE_ATTRIBUTE)
+			{
+				childNode = getNextXMLNodeChild(iterator);
+			}
+			iterator->attributes = attrOrig;
 		}
-		iterator->attributes = attrOrig;
 	}
 	iterator->childrenLeft--;
 	return childNode;

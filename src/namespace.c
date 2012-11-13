@@ -110,8 +110,8 @@ getUnresolvedXMLNamespaces(char *tree, XMLNodeHdr node, unsigned int *count)
 
 void
 resolveXMLNamespaces(char *tree, XMLNodeContainer declarations, unsigned int declsActive, char *elNmspName,
-					 bool *elNmspNameResolved, XMLNodeHdr *attrsPrefixed, unsigned int attrsPrefixedCount, bool *attrFlags,
-   unsigned short *attrsUnresolved, char *specNmspURI, bool *elNmspIsSpecial)
+					 bool * elNmspNameResolved, XMLNodeHdr *attrsPrefixed, unsigned int attrsPrefixedCount, bool * attrFlags,
+  unsigned short *attrsUnresolved, char *specNmspURI, bool * elNmspIsSpecial)
 {
 	unsigned int i;
 	XNodeListItem *decls = declarations->content;
@@ -252,15 +252,16 @@ collectXMLNamespaceDeclarations(char *tree, XMLCompNodeHdr currentNode, unsigned
 		*attrsPrefixedCount = 0;
 	}
 
-	initXMLNodeIterator(&iterator, currentNode, true);
+	if (currentNode->common.kind >= XNTNODE_ROOT)
+		initXMLNodeIteratorSpecial(&iterator, currentNode, false, xntAttributeInfo);
+	else
+		initXMLNodeIterator(&iterator, currentNode, true);
 
 	while ((childNode = getNextXMLNodeChild(&iterator)) != NULL)
 	{
 
 		if (childNode->kind != XMLNODE_ATTRIBUTE)
-		{
 			break;
-		}
 
 		/*
 		 * The sizes might be exaggerated sometimes but the exact number of

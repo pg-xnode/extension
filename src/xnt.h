@@ -12,6 +12,8 @@
 #include "utils/syscache.h"
 #include "utils/typcache.h"
 
+#include "xpath.h"
+
 #ifndef XNT_H_
 #define XNT_H_
 
@@ -97,7 +99,7 @@ extern void validateXNTTree(XMLNodeHdr root);
 
 extern char *preprocessXNTAttributes(char *prefix, XMLNodeContainer nmspDecls,
 	XNodeListItem *attrOffsets, unsigned short attrCount, char *parserOutput,
-   XMLNodeKind specNodeKind, bool *offsetsValid, unsigned int *specAttrCount,
+  XMLNodeKind specNodeKind, bool * offsetsValid, unsigned int *specAttrCount,
  unsigned int *outSize, unsigned int *outCount, XMLNodeContainer paramNames);
 extern char *preprocessXNTAttrValues(XNodeListItem *attrOffsets, unsigned short attrCount, char *parserOutput, unsigned int *outSize,
 						XMLNodeContainer paramNames);

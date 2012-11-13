@@ -62,6 +62,7 @@ xmlnodeDumpNode(char *input, char *nmspPrefix, XMLNodeOffset nodeOff,
 				{
 					nmspPrefix = getValidPrefix(element,
 										XNTNODE_NAMESPACE_VALUE, nmspPrefix);
+
 					content = getXNTNodeName(node->kind, nmspPrefix);
 				}
 				else
@@ -622,27 +623,23 @@ visitXMLNodeForDump(XMLNodeHdr *stack, unsigned depth, void *userData)
 static char *
 getValidPrefix(XMLCompNodeHdr element, char *namespaceURI, char *currentPrefix)
 {
-	unsigned int prefLen = strlen(XNODE_NAMESPACE_DEF_PREFIX);
-	XNTAttrNames *attrInfo = xntAttributeInfo + (element->common.kind - XNTNODE_TEMPLATE);
-	unsigned int i;
-	char		bwidth = XNODE_GET_REF_BWIDTH(element);
+	XMLNodeIteratorData iterator;
+	XMLNodeHdr	attrNode;
+	XMLNodeKind kind = element->common.kind;
 
-	/* Skip the reserved positions. */
-	char	   *childOffPtr;
-	unsigned int childrenLeft;
+	/* Some nodes don't have attributes and therefor can't declare namespaces. */
+	if (kind == XMLNODE_DOC || kind == XMLNODE_DOC_FRAGMENT ||
+		kind == XNTNODE_ROOT)
+		return NULL;
 
 	/*
 	 * Whether the namespace prefix is passed or not, we need to check whether
 	 * a different one is not used at the current level of the tree.
 	 */
-	childOffPtr = XNODE_FIRST_REF(element) + bwidth * attrInfo->number;
-	Assert(element->children >= attrInfo->number);
-	childrenLeft = element->children - attrInfo->number;
+	initXMLNodeIteratorSpecial(&iterator, element, false, xntAttributeInfo);
 
-	for (i = 0; i < childrenLeft; i++)
+	while ((attrNode = getNextXMLNodeChild(&iterator)) != NULL)
 	{
-		XMLNodeOffset attrOffRel = readXMLNodeOffset(&childOffPtr, bwidth, true);
-		XMLNodeHdr	attrNode = (XMLNodeHdr) ((char *) element - attrOffRel);
 		char	   *attrName,
 				   *attrValue,
 				   *cursor;
@@ -650,12 +647,15 @@ getValidPrefix(XMLCompNodeHdr element, char *namespaceURI, char *currentPrefix)
 		if (attrNode->kind != XMLNODE_ATTRIBUTE)
 			break;
 
+		Assert((attrNode->flags & XNODE_ATTR_VALUE_BINARY) == 0);
+
 		attrName = XNODE_CONTENT(attrNode);
-		if (strncmp(attrName, XNODE_NAMESPACE_DEF_PREFIX, prefLen) == 0)
+		if (strncmp(attrName, XNODE_NAMESPACE_DEF_PREFIX,
+					strlen(XNODE_NAMESPACE_DEF_PREFIX)) == 0)
 		{
 			char	   *prefixNew = NULL;
 
-			cursor = attrName + prefLen;
+			cursor = attrName + strlen(XNODE_NAMESPACE_DEF_PREFIX);
 			if (*cursor == '\0')
 			{
 				/* Default namespace - no prefix. */
