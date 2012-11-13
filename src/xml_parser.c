@@ -482,60 +482,47 @@ readXMLName(XMLParserState state, bool whitespace, bool checkColons, bool separa
 	unsigned int colons = 0;
 	unsigned int posInit = state->srcPos;
 	char	   *firstChar = state->c;
+	char	   *last;
 
 	if (*state->c == '\0')
-	{
 		elog(ERROR, "expected xml name, found end of string.");
-	}
+
 	if (!XNODE_VALID_NAME_START(state->c))
-	{
 		elog(ERROR, "unrecognized leading character or xml name: '%c'", *state->c);
-	}
+
 
 	if (checkColons)
 	{
-		if (firstColPos != NULL)
-		{
-			*firstColPos = 0;
-		}
 		if (*firstChar == XNODE_CHAR_COLON)
-		{
-			colons = 1;
-		}
+			elog(ERROR, "QName must not start with a colon");
+
+		if (firstColPos != NULL)
+			*firstColPos = 0;
 	}
 
 	do
 	{
+		last = state->c;
 		nextXMLChar(state, separate);
+
 		if (checkColons && *state->c == XNODE_CHAR_COLON)
 		{
 			/*
 			 * If this is the first colon, set output argument 'firstColPos'
 			 * to its position.
 			 */
-			if (checkColons && colons == 0 && firstColPos != NULL)
-			{
+			if (colons == 0 && firstColPos != NULL)
 				*firstColPos = state->srcPos - posInit;
-			}
 
-			if (*(state->c - 1) == XNODE_CHAR_COLON)
-			{
-				elog(ERROR, "2 consecutive colons not allowed in xml name");
-			}
 			colons++;
+
+			if (colons >= 2)
+				elog(ERROR, "too many colons in QName");
 		}
 	} while (XNODE_VALID_NAME_CHAR(state->c));
 
-	if (colons >= 2)
-	{
-		elog(ERROR, "incorrect usage of namespace prefix (too many colons)");
-	}
-
-	/* Colon is valid leading character but alone would mean empty name. */
-	if ((state->c - firstChar) == 1 && *firstChar == XNODE_CHAR_COLON)
-	{
-		elog(ERROR, "colon is not allowed as a name");
-	}
+	if (*last == XNODE_CHAR_COLON)
+		elog(ERROR, "QName must not end with a colon");
 
 	if (whitespace)
 	{
