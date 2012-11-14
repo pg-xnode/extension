@@ -239,6 +239,10 @@ extern Datum xmldoc_to_xmlnode(PG_FUNCTION_ARGS);
 extern XMLNodeOffset readXMLNodeOffset(char **input, unsigned char bytes, bool step);
 extern void writeXMLNodeOffset(XMLNodeOffset ref, char **output, unsigned char bytes, bool step);
 
+/*
+ * Special nodes are in fact compound too, but they deserve extra
+ * attention as such.
+ */
 #define XNODE_IS_COMPOUND(node) ((node)->kind == XMLNODE_DOC ||\
 		(node)->kind == XMLNODE_ELEMENT || (node)->kind == XMLNODE_DOC_FRAGMENT)
 

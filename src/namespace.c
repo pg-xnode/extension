@@ -40,7 +40,6 @@ static void addUniqueNamespace(XMLNodeContainer result, char *nmspName);
 char	  **
 getUnresolvedXMLNamespaces(char *tree, XMLNodeHdr node, unsigned int *count)
 {
-	XMLNodeKind nodeKind = node->kind;
 	XMLCompNodeHdr element;
 	XMLNamespaceCheckState stateData;
 	char	  **result = NULL;
@@ -49,7 +48,7 @@ getUnresolvedXMLNamespaces(char *tree, XMLNodeHdr node, unsigned int *count)
 
 	*count = 0;
 
-	if (nodeKind == XMLNODE_ATTRIBUTE && (node->flags & XNODE_NMSP_PREFIX))
+	if (node->kind == XMLNODE_ATTRIBUTE && (node->flags & XNODE_NMSP_PREFIX))
 	{
 		char	   *attrName = XNODE_CONTENT(node);
 
@@ -74,11 +73,8 @@ getUnresolvedXMLNamespaces(char *tree, XMLNodeHdr node, unsigned int *count)
 
 	element = (XMLCompNodeHdr) node;
 
-	if (nodeKind != XMLNODE_DOC && nodeKind != XMLNODE_ELEMENT &&
-		nodeKind != XMLNODE_DOC_FRAGMENT)
-	{
+	if (!XNODE_IS_COMPOUND(node))
 		return NULL;
-	}
 
 	xmlnodeContainerInit(&stateData.declarations);
 	xmlnodeContainerInit(&stateData.result);
@@ -110,8 +106,8 @@ getUnresolvedXMLNamespaces(char *tree, XMLNodeHdr node, unsigned int *count)
 
 void
 resolveXMLNamespaces(char *tree, XMLNodeContainer declarations, unsigned int declsActive, char *elNmspName,
-					 bool * elNmspNameResolved, XMLNodeHdr *attrsPrefixed, unsigned int attrsPrefixedCount, bool * attrFlags,
-  unsigned short *attrsUnresolved, char *specNmspURI, bool * elNmspIsSpecial)
+					 bool *elNmspNameResolved, XMLNodeHdr *attrsPrefixed, unsigned int attrsPrefixedCount, bool *attrFlags,
+   unsigned short *attrsUnresolved, char *specNmspURI, bool *elNmspIsSpecial)
 {
 	unsigned int i;
 	XNodeListItem *decls = declarations->content;

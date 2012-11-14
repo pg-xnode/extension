@@ -33,13 +33,11 @@ extern XMLNodeHdr getNextXMLNode(XMLScan xscan);
 extern void checkXMLWellFormedness(XMLCompNodeHdr root);
 extern int	utf8cmp(char *c1, char *c2);
 
-extern double xnodeGetNumValue(char *str, bool raiseError, bool * isNumber);
+extern double xnodeGetNumValue(char *str, bool raiseError, bool *isNumber);
 extern char *getElementNodeStr(XMLCompNodeHdr element);
 extern char *getNonElementNodeStr(XMLNodeHdr node);
 
-#define XNODE_GET_STRING(node) (\
-		((node)->kind == XMLNODE_ELEMENT || (node)->kind == XMLNODE_DOC ||\
-			(node)->kind == XMLNODE_DOC_FRAGMENT) ?\
+#define XNODE_GET_STRING(node) (XNODE_IS_COMPOUND(node) ?\
 			getElementNodeStr((XMLCompNodeHdr) node) : getNonElementNodeStr(node))
 
 /*

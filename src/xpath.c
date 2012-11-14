@@ -626,15 +626,8 @@ castXPathExprOperandToStr(XPathExprState exprState, XPathExprOperandValue valueS
 				 * ion-String-Functions)
 				 */
 				node = nodes[0];
-
-				if (node->kind == XMLNODE_ELEMENT || node->kind == XMLNODE_DOC)
-				{
-					nodeStr = getElementNodeStr((XMLCompNodeHdr) node);
-				}
-				else
-				{
-					nodeStr = getNonElementNodeStr(node);
-				}
+				Assert(node->kind != XMLNODE_DOC_FRAGMENT);
+				nodeStr = XNODE_GET_STRING(node);
 				valueDst->v.stringId = getXPathOperandId(exprState, nodeStr, XPATH_VAR_STRING);
 			}
 			break;

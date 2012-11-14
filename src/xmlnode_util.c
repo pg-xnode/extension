@@ -248,7 +248,7 @@ copyXMLNode(XMLNodeHdr node, char *target, bool xmlnode, XMLNodeOffset *root)
 				padding = 0;
 
 	start = NULL;
-	if (node->kind == XMLNODE_ELEMENT || node->kind == XMLNODE_DOC || node->kind == XMLNODE_DOC_FRAGMENT)
+	if (XNODE_IS_COMPOUND(node))
 	{
 		XMLCompNodeHdr compNode = (XMLCompNodeHdr) node;
 
@@ -460,15 +460,10 @@ getFirstXMLNodeLeaf(XMLCompNodeHdr compNode)
 		XMLNodeHdr	childNode = (XMLNodeHdr) ((char *) compNode - readXMLNodeOffset(&firstRef,
 									 XNODE_GET_REF_BWIDTH(compNode), false));
 
-		if (childNode->kind == XMLNODE_ELEMENT || childNode->kind == XMLNODE_DOC ||
-			childNode->kind == XMLNODE_DOC_FRAGMENT)
-		{
+		if (XNODE_IS_COMPOUND(childNode))
 			return getFirstXMLNodeLeaf((XMLCompNodeHdr) childNode);
-		}
 		else
-		{
 			return childNode;
-		}
 	}
 
 	/*
@@ -587,7 +582,7 @@ utf8cmp(char *c1, char *c2)
 }
 
 double
-xnodeGetNumValue(char *str, bool raiseError, bool * isNumber)
+xnodeGetNumValue(char *str, bool raiseError, bool *isNumber)
 {
 	double		result;
 	char	   *c;
@@ -775,18 +770,12 @@ bool
 isXMLNodeDescendant(XMLNodeHdr node, XMLCompNodeHdr treeRoot)
 {
 	XMLNodeHdr	firstLeaf;
-	XMLNodeKind rootKind = treeRoot->common.kind;
 
 	if (node == (XMLNodeHdr) treeRoot)
-	{
 		return true;
-	}
 
-	if (rootKind != XMLNODE_DOC && rootKind != XMLNODE_ELEMENT &&
-		rootKind != XMLNODE_DOC_FRAGMENT)
-	{
+	if (!XNODE_IS_COMPOUND((XMLNodeHdr) treeRoot))
 		return false;
-	}
 
 	firstLeaf = getFirstXMLNodeLeaf(treeRoot);
 	return (node >= firstLeaf && node < (XMLNodeHdr) treeRoot);
@@ -799,10 +788,8 @@ xmlTreeWalker(XMLTreeWalkerContext *context)
 
 	context->visitor(context->stack, context->depth, context->userData);
 
-	if (node->kind == XMLNODE_DOC || node->kind == XMLNODE_ELEMENT ||
-		node->kind == XMLNODE_DOC_FRAGMENT || node->kind >= XNTNODE_ROOT)
+	if (XNODE_IS_COMPOUND(node) || node->kind >= XNTNODE_ROOT)
 	{
-
 		XMLCompNodeHdr compNode = (XMLCompNodeHdr) node;
 		bool		isSpecial = compNode->common.kind >= XNTNODE_ROOT;
 		XMLNodeIteratorData iterator;
@@ -897,12 +884,9 @@ xnodeInitStringInfo(StringInfo stringInfo, int len)
 void
 initXMLNodeIterator(XMLNodeIterator iterator, XMLCompNodeHdr node, bool attributes)
 {
-	XMLNodeKind kind = node->common.kind;
-
-	if (kind != XMLNODE_ELEMENT && kind != XMLNODE_DOC &&
-		kind != XMLNODE_DOC_FRAGMENT)
+	if (!XNODE_IS_COMPOUND((XMLNodeHdr) node))
 		elog(ERROR, "element, document or document fragment expected for iteration, %u received instead",
-			 kind);
+			 node->common.kind);
 
 	iterator->node = node;
 	iterator->bwidth = XNODE_GET_REF_BWIDTH(node);
@@ -915,7 +899,6 @@ void
 initXMLNodeIteratorSpecial(XMLNodeIterator iterator, XMLCompNodeHdr node,
 						   bool attrsSpecial, XNTAttrNames *specAttrInfo)
 {
-
 	XMLNodeKind kind = node->common.kind;
 	unsigned int attrsToSkip;
 
@@ -1033,8 +1016,7 @@ getNodePadding(char *start, XMLNodeOffset offAbs, XMLNodeHdr node)
 {
 	unsigned int result = 0;
 
-	if (node->kind == XMLNODE_ELEMENT || node->kind == XMLNODE_DOC ||
-		node->kind == XMLNODE_DOC_FRAGMENT)
+	if (XNODE_IS_COMPOUND(node))
 	{
 
 		char	   *ptrUnaligned,

@@ -627,7 +627,10 @@ getValidPrefix(XMLCompNodeHdr element, char *namespaceURI, char *currentPrefix)
 	XMLNodeHdr	attrNode;
 	XMLNodeKind kind = element->common.kind;
 
-	/* Some nodes don't have attributes and therefor can't declare namespaces. */
+	/*
+	 * Some nodes don't have attributes and therefore can't declare
+	 * namespaces.
+	 */
 	if (kind == XMLNODE_DOC || kind == XMLNODE_DOC_FRAGMENT ||
 		kind == XNTNODE_ROOT)
 		return NULL;

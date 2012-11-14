@@ -577,16 +577,12 @@ static unsigned int
 getTreeStorageSizeInternal(XNodeInternal root, int depth)
 {
 	XNodeListItem *childItem = root->children.content;
-	XMLNodeKind rootKind = root->node->kind;
 	unsigned int result;
 
 	result = getXMLNodeSize(root->node, childItem == NULL);
 
-	if (rootKind == XMLNODE_DOC || rootKind == XMLNODE_ELEMENT ||
-		rootKind == XMLNODE_DOC_FRAGMENT)
-	{
+	if (XNODE_IS_COMPOUND(root->node))
 		result += MAX_PADDING(XNODE_ALIGNOF_COMPNODE);
-	}
 
 	/*
 	 * If we have pointers to the children, their sizes will be added in
