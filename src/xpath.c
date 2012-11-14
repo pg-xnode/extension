@@ -688,14 +688,7 @@ castXPathValToNum(XPathValue src)
 					elog(ERROR, "document can't be cast to number");
 				}
 
-				if (node->kind == XMLNODE_ELEMENT)
-				{
-					nodeStr = getElementNodeStr((XMLCompNodeHdr) node);
-				}
-				else
-				{
-					nodeStr = getNonElementNodeStr(node);
-				}
+				nodeStr = XNODE_GET_STRING(node);
 				return xnodeGetNumValue(nodeStr, true, &isNull);
 			}
 
