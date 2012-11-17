@@ -1029,28 +1029,17 @@ evaluateBinaryOperator(XPathExprState exprState, XPathExprOperandValue valueLeft
 				}
 				else if (nsLeft->isDocument || nsRight->isDocument)
 				{
-					XPathNodeSet setDoc,
-								setNonDoc;
+					XPathNodeSet setNonDoc;
 
 					if (nsLeft->isDocument)
-					{
-						setDoc = nsLeft;
 						setNonDoc = nsRight;
-					}
 					else
-					{
-						setDoc = nsRight;
 						setNonDoc = nsLeft;
-					}
 
 					if (setNonDoc->count > 0)
-					{
 						result->v.boolean = (operator->id == XPATH_EXPR_OPERATOR_EQ);
-					}
 					else
-					{
 						result->v.boolean = false;
-					}
 
 					return;
 				}

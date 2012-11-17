@@ -97,15 +97,12 @@ xnode_from_template(PG_FUNCTION_ARGS)
 	xnt			template;
 	XMLCompNodeHdr templDocRoot,
 				templNode;
-	char	   *templHdrData,
-			   *templData;
+	char	   *templHdrData;
 	char	  **templParNames = NULL;
 	XMLTemplateHeader templHdr;
 	ArrayType  *parNameArr;
 	int			parNameCount = 0;
 	XMLParamNameSorted *parNames = NULL;
-	unsigned int substNodeCount = 0;
-	XMLNodeOffset *substNodes = NULL;
 	Datum		row;
 	XPathExprOperandValue parValues = NULL;
 	unsigned short *paramMap = NULL;
@@ -118,7 +115,6 @@ xnode_from_template(PG_FUNCTION_ARGS)
 
 	/* Retrieve parameter names out of the template. */
 	template = (xnt) PG_GETARG_VARLENA_P(0);
-	templData = VARDATA(template);
 	templDocRoot = (XMLCompNodeHdr) XNODE_ROOT(template);
 	Assert(templDocRoot->common.kind == XMLTEMPLATE_ROOT);
 
@@ -149,13 +145,6 @@ xnode_from_template(PG_FUNCTION_ARGS)
 			templParNames[i] = templHdrData;
 			templHdrData += strlen(templHdrData) + 1;
 		}
-	}
-
-	substNodeCount = templHdr->substNodesCount;
-	if (substNodeCount > 0)
-	{
-		templHdrData = (char *) TYPEALIGN(XNODE_ALIGNOF_NODE_OFFSET, templHdrData);
-		substNodes = (XMLNodeOffset *) templHdrData;
 	}
 
 	/* Retrieve names of the attributes that the function caller provides. */
@@ -198,8 +187,7 @@ xnode_from_template(PG_FUNCTION_ARGS)
 	if (templRootInternal->children.position > 0)
 	{
 		unsigned int resultSize;
-		char	   *resData,
-				   *resTmp;
+		char	   *resTmp;
 		XMLNodeOffset *offRootPtr;
 
 		/* varlena header + root node offset */
@@ -212,7 +200,7 @@ xnode_from_template(PG_FUNCTION_ARGS)
 		}
 		result = (char *) palloc(resSizeEstimate);
 
-		resData = resTmp = result + VARHDRSZ;
+		resTmp = result + VARHDRSZ;
 
 		if (templRootInternal->children.position == 1)
 		{

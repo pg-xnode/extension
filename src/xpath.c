@@ -991,8 +991,7 @@ getXPathExprValue(XPathExprState exprState, xmldoc document, bool *notNull, XPat
 			 * declaration is removed.
 			 */
 			XMLNodeHdr	node;
-			XMLNodeOffset rootOffOrig,
-						rootOffNew;
+			XMLNodeOffset rootOffNew;
 			XMLNodeHdr	rootOrig;
 			unsigned int sizeOrig,
 						sizeNewEst;
@@ -1000,7 +999,6 @@ getXPathExprValue(XPathExprState exprState, xmldoc document, bool *notNull, XPat
 					   *outTmp,
 					   *after;
 
-			rootOffOrig = XNODE_ROOT_OFFSET(document);
 			rootOrig = XNODE_ROOT(document);
 			sizeOrig = VARSIZE(document);
 			sizeNewEst = (rootOrig->flags & XNODE_DOC_XMLDECL) ? sizeOrig - sizeof(XMLDeclData) : sizeOrig;

@@ -40,7 +40,6 @@ static void addUniqueNamespace(XMLNodeContainer result, char *nmspName);
 char	  **
 getUnresolvedXMLNamespaces(char *tree, XMLNodeHdr node, unsigned int *count)
 {
-	XMLCompNodeHdr element;
 	XMLNamespaceCheckState stateData;
 	char	  **result = NULL;
 	unsigned int resultSize;
@@ -70,8 +69,6 @@ getUnresolvedXMLNamespaces(char *tree, XMLNodeHdr node, unsigned int *count)
 		*count = 1;
 		return result;
 	}
-
-	element = (XMLCompNodeHdr) node;
 
 	if (!XNODE_IS_COMPOUND(node))
 		return NULL;
@@ -308,13 +305,10 @@ getXMLNamespaceURI(char *prefix, XMLNodeContainer declarations, char *parsed)
 {
 	XNodeListItem *declItem;
 	unsigned int i;
-	unsigned int prefLen;
 	XMLNodeHdr	declNode;
 
 	if (declarations->position == 0)
 		return NULL;
-
-	prefLen = (prefix != NULL) ? strlen(prefix) : 0;
 
 	/*
 	 * Search from bottom because declaration at lower level overrides those
