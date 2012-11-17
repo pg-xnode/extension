@@ -16,32 +16,10 @@
  * TODO error handling: use 'ereport()' and define numeric error codes.
  */
 
+#include "template.h"
 #include "xml_parser.h"
 #include "xmlnode_util.h"
 #include "xnt.h"
-
-/*
- * Input tokens, for internal use only.
- *
- * TOKEN_WHITESPACE only applies to white spaces at the top level. In tag
- * content a white space is always considered to be TOKEN_TEXT.
- * TOKEN_WHITESPACE and TOKEN_TEXT are mutually exclusive.
- */
-typedef enum XMLNodeToken
-{
-	TOKEN_XMLDECL = (1 << 0),
-	TOKEN_DTD = (1 << 1),
-	TOKEN_STAG = (1 << 2),
-	TOKEN_ETAG = (1 << 3),
-	TOKEN_EMPTY_ELEMENT = (1 << 4),
-	TOKEN_COMMENT = (1 << 5),
-	TOKEN_CDATA = (1 << 6),
-	TOKEN_PI = (1 << 7),
-	TOKEN_WHITESPACE = (1 << 8),
-	TOKEN_TEXT = (1 << 9),
-	TOKEN_REFERENCE = (1 << 10),
-	TOKEN_MISC = TOKEN_COMMENT | TOKEN_PI | TOKEN_WHITESPACE,
-} XMLNodeToken;
 
 /*
  * Order of these strings must follow the order of items enumerated in
@@ -75,47 +53,12 @@ const char *xmldeclVersions[XNODE_XDECL_VERSIONS] = {
 	"1.0"
 };
 
-/*
- * Parser functions use this structure for output information about nodes.
- * Mostly, where the data can be find in the input text when being saved to
- * the output array.
- */
-typedef struct XMLNodeInternalData
-{
-	/*
-	 * Where the node starts in 'state.tree' (varlena header size not
-	 * included). Used to return the output position to caller of
-	 * processToken().
-	 */
-	XMLNodeOffset nodeOut;
-
-	/*
-	 * Where content starts, relative to 'XMLParserStateData.inputText', and
-	 * how many bytes (not MB characters) it takes. For STag, ETag and
-	 * EmptyElement 'content' means tag name.
-	 */
-	XMLNodeOffset cntSrc;
-	unsigned int cntLength;
-
-	bool		entPredef;
-	bool		headerSaved;
-
-	XMLNodeToken tokenType;
-
-	/*
-	 * Greater than zero if the node name has namespace prefix. Only important
-	 * for TOKEN_STAG or TOKEN_EMPTY_ELEMENT
-	 */
-	unsigned int nmspLength;
-} XMLNodeInternalData;
-
-typedef struct XMLNodeInternalData *XMLNodeInternal;
-
-static void processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowed);
+static void processToken(XMLParserState state, XMLParserNodeInfo nodeInfo, XMLNodeToken allowed);
 static void forgetNamespaceDeclarations(unsigned int count, XMLNodeContainer stack);
-static void checkNamespaces(XMLParserState state, XMLNodeInternal nodeInfo, unsigned int attrsPrefixedCount,
+static void checkNamespaces(XMLParserState state, XMLParserNodeInfo nodeInfo,
+				unsigned int attrsPrefixedCount,
 				bool *elNmspIsSpecial);
-static XMLNodeToken processTag(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowed,
+static XMLNodeToken processTag(XMLParserState state, XMLParserNodeInfo nodeInfo, XMLNodeToken allowed,
 		   XMLNodeHdr *declAttrs, unsigned short *declAttrNum, unsigned int *nmspDecls, unsigned int *attrsPrefixed);
 static void checkXMLDeclaration(XMLNodeHdr *declAttrs, unsigned int attCount, XMLDecl decl);
 static char *getEncodingSimplified(const char *original);
@@ -123,23 +66,22 @@ static bool isPredefinedEntity(char *refStart, char *value);
 
 static void evaluateWhitespace(XMLParserState state);
 static void ensureSpace(unsigned int size, XMLParserState state);
-static unsigned int saveNodeHeader(XMLParserState state, XMLNodeInternal nodeInfo, char flags);
-static void saveContent(XMLParserState state, XMLNodeInternal nodeInfo);
-static void saveReferences(XMLParserState state, XMLNodeInternal nodeInfo, XMLCompNodeHdr compNode,
+static unsigned int saveNodeHeader(XMLParserState state, XMLParserNodeInfo nodeInfo, char flags);
+static void saveContent(XMLParserState state, XMLParserNodeInfo nodeInfo);
+static void saveReferences(XMLParserState state, XMLParserNodeInfo nodeInfo, XMLCompNodeHdr compNode,
   unsigned short children, bool *specAttrsValid, unsigned int specAttrCount);
 static char *getContentToLog(char *input, unsigned int offset, unsigned int length, unsigned int maxLen);
 static void saveRootNodeHeader(XMLParserState state, XMLNodeKind kind);
+static void adjustNamespaceDeclarations(XMLParserState state, unsigned int nmspDecls,
+						 unsigned int attrCount, unsigned int specAttrCount);
 static void replaceAttributes(XMLParserState state, bool specialNode, XNodeListItem *attrOffsets,
 	   unsigned int attrCount, char *attrsNew, XNodeListItem *attrOffsetsNew,
 				  unsigned int attrCountNew, unsigned int *newSize);
-static void adjustNamespaceDeclarations(XMLParserState state, unsigned int nmspDecls,
-						 unsigned int attrCount, unsigned int specAttrCount);
-static void processSpecialNode(XMLParserState state, XMLNodeInternal nodeInfo,
-				   int specialNodeKind, unsigned int attrCount,
-				   XNodeListItem *attrOffsets, unsigned int nmspDecls,
-				   unsigned int *attrCountNew, bool **specAttrsValid,
-				   unsigned int *specAttrCount);
-static void finalizeElement(XMLParserState state, XMLNodeInternal nodeInfo,
+static void parseTemplateNode(XMLParserState state, XMLParserNodeInfo nodeInfo,
+	 int specialNodeKind, unsigned int attrCount, XNodeListItem *attrOffsets,
+   unsigned int nmspDecls, unsigned int *attrCountNew, bool **specAttrsValid,
+				  unsigned int *specAttrCount);
+static void finalizeElement(XMLParserState state, XMLParserNodeInfo nodeInfo,
 		   unsigned int children, int specialNodeKind, bool *specAttrsValid);
 
 PredefinedEntity predefEntities[XNODE_PREDEFINED_ENTITIES] = {
@@ -155,7 +97,7 @@ xmlnodeParseDoc(XMLParserState state)
 {
 	unsigned int tagRow,
 				tagCol;
-	XMLNodeInternalData nodeInfo;
+	XMLParserNodeInfoData nodeInfo;
 
 	/*
 	 * Expecting either http://www.w3.org/TR/2008/REC-xml-20081126/#NT-prolog
@@ -246,7 +188,7 @@ xmlnodeParseDoc(XMLParserState state)
 void
 xmlnodeParseNode(XMLParserState state)
 {
-	XMLNodeInternalData nodeInfo;
+	XMLParserNodeInfoData nodeInfo;
 	bool		entPredef = false;
 	unsigned int maskAll = TOKEN_DTD | TOKEN_STAG | TOKEN_EMPTY_ELEMENT | TOKEN_COMMENT |
 	TOKEN_CDATA | TOKEN_PI | TOKEN_TEXT | TOKEN_REFERENCE;
@@ -371,7 +313,9 @@ xmlnodeParseNode(XMLParserState state)
 }
 
 void
-initXMLParserState(XMLParserState state, char *inputText, XMLNodeKind targetKind, GetSpecialXNodeKindFunc checkFunc)
+initXMLParserState(XMLParserState state, char *inputText, XMLNodeKind targetKind,
+				   char *nmspSpecialURI, GetSpecialXNodeKindFunc checkFunc,
+				   GetSpecialXNodNameFunc nameFunc)
 {
 	unsigned int hdrSize = (targetKind == XMLNODE_ATTRIBUTE || targetKind == XMLNODE_ELEMENT) ? 0 : VARHDRSZ;
 
@@ -431,10 +375,11 @@ initXMLParserState(XMLParserState state, char *inputText, XMLNodeKind targetKind
 
 	state->decl = NULL;
 	state->nmspPrefix = false;
-	if (targetKind == XNTNODE_ROOT)
+	if (nmspSpecialURI != NULL)
 	{
-		state->nmspSpecialURI = XNTNODE_NAMESPACE_VALUE;
+		state->nmspSpecialURI = nmspSpecialURI;
 		state->getXNodeKindFunc = checkFunc;
+		state->getXNodeNameFunc = nameFunc;
 		xmlnodeContainerInit(&state->paramNames);
 		xmlnodeContainerInit(&state->substNodes);
 	}
@@ -442,6 +387,7 @@ initXMLParserState(XMLParserState state, char *inputText, XMLNodeKind targetKind
 	{
 		state->nmspSpecialURI = NULL;
 		state->getXNodeKindFunc = NULL;
+		state->getXNodeNameFunc = NULL;
 	}
 }
 
@@ -461,7 +407,7 @@ finalizeXMLParserState(XMLParserState state)
 		state->decl = NULL;
 	}
 
-	if (state->targetKind == XNTNODE_ROOT)
+	if (state->nmspSpecialURI != NULL)
 	{
 		xmlnodeContainerFree(&state->paramNames);
 		xmlnodeContainerFree(&state->substNodes);
@@ -1020,7 +966,7 @@ readXMLReference(XMLParserState state, pg_wchar *value)
  * allowed	- tokens that don't cause error
  */
 static void
-processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowed)
+processToken(XMLParserState state, XMLParserNodeInfo nodeInfo, XMLNodeToken allowed)
 {
 	unsigned int tagRow,
 				tagCol;
@@ -1380,9 +1326,10 @@ processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowe
 
 		/*
 		 * Check if all namespaces are bound. This is only necessary for
-		 * document. Node will be checked if/when it gets added to a document.
+		 * document (or special document). On the other hand, standalone node
+		 * will be checked if/when it gets added to a document.
 		 */
-		if (state->targetKind == XMLNODE_DOC || state->targetKind == XNTNODE_ROOT)
+		if (state->targetKind == XMLNODE_DOC || state->nmspSpecialURI != NULL)
 		{
 			bool		isSpecialNode = false;
 
@@ -1392,7 +1339,7 @@ processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowe
 			{
 				char	   *name;
 
-				Assert(state->targetKind == XNTNODE_ROOT);
+				Assert(state->targetKind == XMLTEMPLATE_ROOT);
 				Assert(state->getXNodeKindFunc != NULL);
 
 				name = pnstrdup(state->inputText + nodeInfo->cntSrc, nodeInfo->cntLength);
@@ -1406,7 +1353,7 @@ processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowe
 		 */
 		attrCount = children = state->stack.position - stackPosOrig;
 
-		if (specialNodeKind >= 0 || state->targetKind == XNTNODE_ROOT)
+		if (state->nmspSpecialURI != NULL)
 		{
 			XNodeListItem *attrOffsets = state->stack.content + stackPosOrig;
 
@@ -1414,8 +1361,8 @@ processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowe
 			 * Because of (possibly empty) positions for special attributes,
 			 * this function must be called even if 'attrCount == 0'
 			 */
-			processSpecialNode(state, nodeInfo, specialNodeKind, attrCount,
-							   attrOffsets, nmspDecls, &attrCountNew, &specAttrsValid, &specAttrCount);
+			parseTemplateNode(state, nodeInfo, specialNodeKind, attrCount,
+							  attrOffsets, nmspDecls, &attrCountNew, &specAttrsValid, &specAttrCount);
 
 			/*
 			 * Empty slots for reserved attributes might have been added.
@@ -1451,7 +1398,7 @@ processToken(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowe
 			/*
 			 * STag
 			 */
-			XMLNodeInternalData childTag;
+			XMLParserNodeInfoData childTag;
 			unsigned int nlBefore = ++(state->nestLevel);
 			bool		childrenProcessed = false;
 			bool		match;
@@ -1592,7 +1539,8 @@ forgetNamespaceDeclarations(unsigned int count, XMLNodeContainer stack)
  * unbound namespace prefixes.
  */
 static void
-checkNamespaces(XMLParserState state, XMLNodeInternal nodeInfo, unsigned int attrsPrefixedCount, bool *elNmspIsSpecial)
+checkNamespaces(XMLParserState state, XMLParserNodeInfo nodeInfo,
+				unsigned int attrsPrefixedCount, bool *elNmspIsSpecial)
 {
 	/*
 	 * The element name must be taken from the source text because the element
@@ -1732,7 +1680,7 @@ checkNamespaces(XMLParserState state, XMLNodeInternal nodeInfo, unsigned int att
  */
 
 static XMLNodeToken
-processTag(XMLParserState state, XMLNodeInternal nodeInfo, XMLNodeToken allowed,
+processTag(XMLParserState state, XMLParserNodeInfo nodeInfo, XMLNodeToken allowed,
 		   XMLNodeHdr *declAttrs, unsigned short *declAttrNum, unsigned int *nmspDecls, unsigned int *attrsPrefixed)
 {
 	bool		mustEnd = false;
@@ -2259,7 +2207,7 @@ ensureSpace(unsigned int size, XMLParserState state)
 }
 
 static unsigned int
-saveNodeHeader(XMLParserState state, XMLNodeInternal nodeInfo, char flags)
+saveNodeHeader(XMLParserState state, XMLParserNodeInfo nodeInfo, char flags)
 {
 	unsigned int incr;
 	char	   *outPtr;
@@ -2338,7 +2286,7 @@ saveNodeHeader(XMLParserState state, XMLNodeInternal nodeInfo, char flags)
 }
 
 static void
-saveContent(XMLParserState state, XMLNodeInternal nodeInfo)
+saveContent(XMLParserState state, XMLParserNodeInfo nodeInfo)
 {
 	if (nodeInfo->tokenType & (TOKEN_ETAG | TOKEN_EMPTY_ELEMENT |
 							   TOKEN_CDATA | TOKEN_COMMENT | TOKEN_DTD | TOKEN_PI | TOKEN_TEXT | TOKEN_REFERENCE))
@@ -2358,7 +2306,7 @@ saveContent(XMLParserState state, XMLNodeInternal nodeInfo)
 }
 
 static void
-saveReferences(XMLParserState state, XMLNodeInternal nodeInfo, XMLCompNodeHdr compNode,
+saveReferences(XMLParserState state, XMLParserNodeInfo nodeInfo, XMLCompNodeHdr compNode,
    unsigned short children, bool *specAttrsValid, unsigned int specAttrCount)
 {
 	/*
@@ -2480,7 +2428,7 @@ saveRootNodeHeader(XMLParserState state, XMLNodeKind kind)
 	unsigned int refsTotal;
 	char		bwidth;
 	unsigned int declSize = 0;
-	unsigned int xntHdrSize = 0;
+	unsigned int templHdrSize = 0;
 	unsigned int extraSize;
 	char	  **paramNames = NULL;
 	unsigned short paramCount = 0;
@@ -2538,7 +2486,7 @@ saveRootNodeHeader(XMLParserState state, XMLNodeKind kind)
 		declSize = sizeof(XMLDeclData);
 	}
 
-	if (state->targetKind == XNTNODE_ROOT)
+	if (state->targetKind == XMLTEMPLATE_ROOT)
 	{
 		XMLNodeContainer paramNameCont = &state->paramNames;
 		XMLNodeContainer substNodesCont = &state->substNodes;
@@ -2554,18 +2502,19 @@ saveRootNodeHeader(XMLParserState state, XMLNodeKind kind)
 			{
 				char	   *parName = lItem->value.singlePtr;
 
-				xntHdrSize += strlen(parName) + 1;
+				templHdrSize += strlen(parName) + 1;
 				paramNames[i] = parName;
 				lItem++;
 			}
 		}
-		xntHdrSize += MAX_PADDING(XNODE_ALIGNOF_XNT_HDR) + sizeof(XNTHeaderData);
+		templHdrSize += MAX_PADDING(XNODE_ALIGNOF_TEMPL_HDR) +
+			sizeof(XMLTemplateHeaderData);
 
 		substNodesCount = substNodesCont->position;
-		xntHdrSize += MAX_PADDING(XNODE_ALIGNOF_NODE_OFFSET) + substNodesCount * sizeof(XMLNodeOffset);
+		templHdrSize += MAX_PADDING(XNODE_ALIGNOF_NODE_OFFSET) + substNodesCount * sizeof(XMLNodeOffset);
 	}
 
-	extraSize = declSize + xntHdrSize;
+	extraSize = declSize + templHdrSize;
 	ensureSpace(extraSize + MAX_PADDING(XNODE_ALIGNOF_NODE_OFFSET) + sizeof(XMLNodeOffset), state);
 	/* re-initialize the 'rootNode', re-allocation might have taken place. */
 	rootNode = (XMLCompNodeHdr) (state->tree + rootNodeOff);
@@ -2577,9 +2526,9 @@ saveRootNodeHeader(XMLParserState state, XMLNodeKind kind)
 		rootNode->common.flags |= XNODE_DOC_XMLDECL;
 	}
 
-	if (xntHdrSize > 0)
+	if (templHdrSize > 0)
 	{
-		XNTHeaderData hdr;
+		XMLTemplateHeaderData hdr;
 		char	   *dst,
 				   *dstAligned;
 
@@ -2587,11 +2536,11 @@ saveRootNodeHeader(XMLParserState state, XMLNodeKind kind)
 		hdr.substNodesCount = substNodesCount;
 
 		dst = state->tree + state->dstPos;
-		dstAligned = (char *) TYPEALIGN(XNODE_ALIGNOF_XNT_HDR, dst);
+		dstAligned = (char *) TYPEALIGN(XNODE_ALIGNOF_TEMPL_HDR, dst);
 		padding = dstAligned - dst;
 
-		memcpy(dstAligned, &hdr, sizeof(XNTHeaderData));
-		state->dstPos += padding + sizeof(XNTHeaderData);
+		memcpy(dstAligned, &hdr, sizeof(XMLTemplateHeaderData));
+		state->dstPos += padding + sizeof(XMLTemplateHeaderData);
 
 		if (paramCount > 0)
 		{
@@ -2765,7 +2714,7 @@ adjustNamespaceDeclarations(XMLParserState state, unsigned int nmspDecls,
 /*
  * Two kinds of nodes are accepted:
  * 1. A node belonging to special namespace (e.g. XNT). This is recognized
- * by 'isSpecial=true'.
+ * by 'specialNodeKind >= 0'.
  * 2. An ordinary XML element possibly having XPath expression in one or more
  * attribues.
  *
@@ -2792,11 +2741,11 @@ adjustNamespaceDeclarations(XMLParserState state, unsigned int nmspDecls,
  * declarations, which are not considered special).
  */
 static void
-processSpecialNode(XMLParserState state, XMLNodeInternal nodeInfo,
-				   int specialNodeKind, unsigned int attrCount,
-				   XNodeListItem *attrOffsets, unsigned int nmspDecls,
-				   unsigned int *attrCountNew, bool **specAttrsValid,
-				   unsigned int *specAttrCount)
+parseTemplateNode(XMLParserState state, XMLParserNodeInfo nodeInfo,
+				  int specialNodeKind, unsigned int attrCount,
+				  XNodeListItem *attrOffsets, unsigned int nmspDecls,
+				  unsigned int *attrCountNew, bool **specAttrsValid,
+				  unsigned int *specAttrCount)
 {
 	unsigned int attrsNewMaxCount;
 	XNodeListItem *attrOffsetsNew;
@@ -2822,7 +2771,7 @@ processSpecialNode(XMLParserState state, XMLNodeInternal nodeInfo,
 	 * algorithm is different.
 	 */
 
-	attrsNewMaxCount = attrCount + XNT_SPECIAL_ATTRS_MAX;
+	attrsNewMaxCount = attrCount + XNODE_SPEC_ATTRS_MAX;
 	attrOffsetsNew = (XNodeListItem *) palloc(attrsNewMaxCount * sizeof(XNodeListItem));
 
 	if (attrCount > 0)
@@ -2834,9 +2783,10 @@ processSpecialNode(XMLParserState state, XMLNodeInternal nodeInfo,
 	if (specialNodeKind >= 0)
 	{
 		char	   *prefix;
+		XNodeSpecAttributes *specAttrInfo = getXNodeAttrInfo(specialNodeKind);
 
 		/*
-		 * preprocessXNTAttributes() is called even if there are no
+		 * preprocessXMLTemplateAttributes() is called even if there are no
 		 * attributes:
 		 *
 		 * 1. To check whether the node does not miss any required attribute.
@@ -2846,19 +2796,20 @@ processSpecialNode(XMLParserState state, XMLNodeInternal nodeInfo,
 
 		prefix = pnstrdup(state->inputText + nodeInfo->cntSrc, nodeInfo->nmspLength);
 		*specAttrsValid = (bool *) palloc(attrsNewMaxCount * sizeof(bool));
-		attrsNew = preprocessXNTAttributes(prefix, &state->nmspDecl,
+		attrsNew = preprocessSpecialXMLAttributes(prefix, &state->nmspDecl,
 					 attrOffsetsNew, attrCount, state->tree, specialNodeKind,
-										   *specAttrsValid, specAttrCount, &newSize, attrCountNew, &state->paramNames);
+					  specAttrInfo, *specAttrsValid, specAttrCount, &newSize,
+				  attrCountNew, &state->paramNames, state->getXNodeNameFunc);
 		pfree(prefix);
 	}
-	else if (state->targetKind == XNTNODE_ROOT)
+	else
 	{
 		/*
 		 * When parsing template, non-special attributes need to be checked
 		 * too: some of them may reference parameters in the value.
 		 */
-		attrsNew = preprocessXNTAttrValues(attrOffsetsNew, attrCount, state->tree, &newSize,
-										   &state->paramNames);
+		attrsNew = preprocessXMLTemplateAttrValues(attrOffsetsNew, attrCount, state->tree, &newSize,
+												   &state->paramNames);
 		*attrCountNew = attrCount;
 	}
 
@@ -2878,8 +2829,9 @@ processSpecialNode(XMLParserState state, XMLNodeInternal nodeInfo,
 	pfree(attrOffsetsNew);
 }
 
+
 static void
-finalizeElement(XMLParserState state, XMLNodeInternal nodeInfo,
+finalizeElement(XMLParserState state, XMLParserNodeInfo nodeInfo,
 			unsigned int children, int specialNodeKind, bool *specAttrsValid)
 {
 	XMLNodeOffset elementOff = nodeInfo->nodeOut;
@@ -2899,7 +2851,9 @@ finalizeElement(XMLParserState state, XMLNodeInternal nodeInfo,
 		 * Remember which nodes need to be constructed when using the
 		 * template.
 		 */
-		if (element->common.kind != XNTNODE_ROOT && element->common.kind != XNTNODE_TEMPLATE)
+		if (element->common.kind != XMLTEMPLATE_ROOT &&
+		/* Some specific kinds never deal with substitution. */
+			element->common.kind != XNTNODE_TEMPLATE)
 			xmlnodePushSingleNode(&state->substNodes, elementOff);
 	}
 
@@ -2911,7 +2865,7 @@ finalizeElement(XMLParserState state, XMLNodeInternal nodeInfo,
 
 		if (specialNodeKind >= 0)
 		{
-			XNTAttrNames *attrInfo = xntAttributeInfo + (specialNodeKind - XNTNODE_TEMPLATE);
+			XNodeSpecAttributes *attrInfo = getXNodeAttrInfo(specialNodeKind);
 
 			specAttrsDefined = attrInfo->number;
 		}

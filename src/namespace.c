@@ -248,10 +248,9 @@ collectXMLNamespaceDeclarations(char *tree, XMLCompNodeHdr currentNode, unsigned
 		*attrsPrefixedCount = 0;
 	}
 
-	if (currentNode->common.kind >= XNTNODE_ROOT)
-		initXMLNodeIteratorSpecial(&iterator, currentNode, false, xntAttributeInfo);
-	else
-		initXMLNodeIterator(&iterator, currentNode, true);
+	Assert(currentNode->common.kind == XMLNODE_ELEMENT);
+
+	initXMLNodeIterator(&iterator, currentNode, true);
 
 	while ((childNode = getNextXMLNodeChild(&iterator)) != NULL)
 	{

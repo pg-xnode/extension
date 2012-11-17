@@ -271,7 +271,6 @@ void
 xpathName(XPathExprState exprState, unsigned short nargs, XPathExprOperandValue args,
 		  XPathExprOperandValue result)
 {
-
 	Assert(nargs == 1);
 
 	name(exprState, &args->v.nodeSet, false, result);
@@ -281,7 +280,6 @@ void
 xpathLocalName(XPathExprState exprState, unsigned short nargs, XPathExprOperandValue args,
 			   XPathExprOperandValue result)
 {
-
 	Assert(nargs == 1);
 
 	name(exprState, &args->v.nodeSet, true, result);
@@ -291,7 +289,6 @@ void
 xpathStartsWith(XPathExprState exprState, unsigned short nargs, XPathExprOperandValue args,
 				XPathExprOperandValue result)
 {
-
 	char	   *containingStr,
 			   *startStr;
 
@@ -352,7 +349,6 @@ void
 xpathConcat(XPathExprState exprState, unsigned short nargs, XPathExprOperandValue args,
 			XPathExprOperandValue result)
 {
-
 	unsigned short i;
 	StringInfoData out;
 
@@ -421,7 +417,6 @@ nameNoArgs(XMLScan xscan, XPathExprState exprState, bool local, XPathExprOperand
 static void
 name(XPathExprState exprState, XPathNodeSet nodeSet, bool local, XPathExprOperandValue result)
 {
-
 	XMLNodeHdr	node;
 	char	   *nameStr,
 			   *colon;
@@ -482,7 +477,6 @@ extern void
 xpathSum(XPathExprState exprState, unsigned short nargs, XPathExprOperandValue args,
 		 XPathExprOperandValue result)
 {
-
 	XPathNodeSet nodeSet = XFUNC_GET_ARG_NODESET(args, 0);
 	XMLNodeHdr *nodes = getArrayFromNodeSet(exprState, nodeSet);
 	unsigned int i;

@@ -67,7 +67,7 @@ typedef struct PredefinedEntity
 {
 	char	   *escaped;
 	char		simple;
-}	PredefinedEntity;
+} PredefinedEntity;
 
 #define XNODE_PREDEFINED_ENTITIES	5
 
@@ -92,7 +92,7 @@ typedef enum XNodeSpecStringDTD
 	XNODE_STR_DTD_REQUIRED,
 	XNODE_STR_DTD_IMPLIED,
 	XNODE_STR_DTD_FIXED
-}	XNodeSpecStringDTD;
+} XNodeSpecStringDTD;
 
 typedef enum XNodeXDeclAttNames
 {
@@ -106,8 +106,6 @@ typedef enum XNodeXDeclAttNames
  */
 #define XNODE_SPEC_TEXT_END(i)	((state->srcPos + 2 < state->sizeIn) && \
 		strncmp(state->c, specXMLStrings[i], strlen(specXMLStrings[i])) == 0)
-
-typedef XMLNodeKind (*GetSpecialXNodeKindFunc) (char *name);
 
 typedef struct XMLParserStateData
 {
@@ -163,6 +161,8 @@ typedef struct XMLParserStateData
 
 	/* Function to check node if it's not 'ordinary XML node. */
 	GetSpecialXNodeKindFunc getXNodeKindFunc;
+	/* Sometimes we may need reverse conversion (e.g. for error message). */
+	GetSpecialXNodNameFunc getXNodeNameFunc;
 
 	/* If parsing node template, xpath parameter names are stored here. */
 	XMLNodeContainerData paramNames;
@@ -172,9 +172,69 @@ typedef struct XMLParserStateData
 	 * attribute value) or the whole node needs to be constructed.
 	 */
 	XMLNodeContainerData substNodes;
-} XMLNodeParserStateData;
+} XMLParserStateData;
 
 typedef struct XMLParserStateData *XMLParserState;
+
+/*
+ * Input tokens, for internal use only.
+ *
+ * TOKEN_WHITESPACE only applies to white spaces at the top level. In tag
+ * content a white space is always considered to be TOKEN_TEXT.
+ * TOKEN_WHITESPACE and TOKEN_TEXT are mutually exclusive.
+ */
+typedef enum XMLNodeToken
+{
+	TOKEN_XMLDECL = (1 << 0),
+	TOKEN_DTD = (1 << 1),
+	TOKEN_STAG = (1 << 2),
+	TOKEN_ETAG = (1 << 3),
+	TOKEN_EMPTY_ELEMENT = (1 << 4),
+	TOKEN_COMMENT = (1 << 5),
+	TOKEN_CDATA = (1 << 6),
+	TOKEN_PI = (1 << 7),
+	TOKEN_WHITESPACE = (1 << 8),
+	TOKEN_TEXT = (1 << 9),
+	TOKEN_REFERENCE = (1 << 10),
+	TOKEN_MISC = TOKEN_COMMENT | TOKEN_PI | TOKEN_WHITESPACE,
+} XMLNodeToken;
+
+/*
+ * Parser functions use this structure for output information about nodes.
+ * Mostly, where the data can be find in the input text when being saved to
+ * the output array.
+ */
+typedef struct XMLParserNodeInfoData
+{
+	/*
+	 * Where the node starts in 'state.tree' (varlena header size not
+	 * included). Used to return the output position to caller of
+	 * processToken().
+	 */
+	XMLNodeOffset nodeOut;
+
+	/*
+	 * Where content starts, relative to 'XMLParserStateData.inputText', and
+	 * how many bytes (not MB characters) it takes. For STag, ETag and
+	 * EmptyElement 'content' means tag name.
+	 */
+	XMLNodeOffset cntSrc;
+	unsigned int cntLength;
+
+	bool		entPredef;
+	bool		headerSaved;
+
+	XMLNodeToken tokenType;
+
+	/*
+	 * Greater than zero if the node name has namespace prefix. Only important
+	 * for TOKEN_STAG or TOKEN_EMPTY_ELEMENT
+	 */
+	unsigned int nmspLength;
+} XMLParserNodeInfoData;
+
+typedef struct XMLParserNodeInfoData *XMLParserNodeInfo;
+
 
 #define XNODE_INPUT_END(state)	(*(state)->c == '\0')
 
@@ -182,7 +242,8 @@ typedef struct XMLParserStateData *XMLParserState;
 	state->srcRow, state->srcCol)
 
 extern void initXMLParserState(XMLParserState state, char *inputText, XMLNodeKind targetKind,
-				   GetSpecialXNodeKindFunc checkFunc);
+				   char *nmspSpecialURI, GetSpecialXNodeKindFunc checkFunc,
+				   GetSpecialXNodNameFunc nameFunc);
 extern void finalizeXMLParserState(XMLParserState state);
 
 extern void xmlnodeParseDoc(XMLParserState state);
@@ -203,8 +264,8 @@ extern void readXMLWhitespace(XMLParserState state, bool optional);
 extern unsigned int readXMLComment(XMLParserState state);
 extern bool readXMLReference(XMLParserState state, pg_wchar *value);
 
-extern void xmlnodeDumpNode(char *input, char *nmspPrefix, XMLNodeOffset nodeOff,
-				StringInfo output, char **paramNames, bool terminate);
+extern char *dumpXMLNode(char *data, XMLNodeOffset rootNdOff,
+unsigned int binarySize, char *nmspURI, GetSpecialXNodNameFunc specNodeName);
 extern char *dumpXMLDecl(XMLDecl decl);
 
 #endif   /* XML_PARSER_H */

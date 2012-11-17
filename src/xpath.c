@@ -14,6 +14,7 @@
 
 #include "xmlnode.h"
 #include "xpath.h"
+#include "xml_parser.h"
 #include "xmlnode_util.h"
 
 static void retrieveColumnPaths(XMLScanContext xScanCtx, ArrayType *pathsColArr, int columns);
@@ -74,7 +75,7 @@ xpath_in(PG_FUNCTION_ARGS)
 						 &pathCount, &paramNames);
 
 	resSize = VARHDRSZ + MAX_PADDING(XPATH_ALIGNOF_PATH_HDR) + sizeof(XPathHeaderData) +
-		MAX_PADDING(XPATH_ALIGNOF_EXPR) + expr->common.size;
+		MAX_PADDING(XPATH_ALIGNOF_EXPR) +expr->common.size;
 
 	if (pathCount > 0)
 	{
@@ -727,7 +728,8 @@ castXPathValToStr(XPathValue src)
 				XMLNodeOffset rootNdOff = src->v.nodeSetRoot;
 
 				/* The 'nodeSetRoot' counts from the start of 'src'. */
-				return dumpXMLNode(data, (char *) src - data + rootNdOff, rootNdOff);
+				return dumpXMLNode(data, (char *) src - data + rootNdOff,
+								   rootNdOff, NULL, NULL);
 			}
 			break;
 

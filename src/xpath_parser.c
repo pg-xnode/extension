@@ -9,7 +9,7 @@
 #include "xpath.h"
 #include "xmlnode_util.h"
 
-static void insertSubexpression(XPathExprOperand operand, XPathExprOperatorStorage * operatorStorage,
+static void insertSubexpression(XPathExprOperand operand, XPathExprOperatorStorage *operatorStorage,
 		XPathExpression exprTop, unsigned short blockSize, bool varsShiftAll,
 					char *output, unsigned short *outPos);
 static XPathExprOperand readExpressionOperand(XPathExpression exprTop, XPathParserState state, unsigned char termFlags,
@@ -941,7 +941,7 @@ parseLocationPath(XPath *paths, bool isSubPath, unsigned short *pathCount, char 
  * that we shift.
  */
 static void
-insertSubexpression(XPathExprOperand operand, XPathExprOperatorStorage * operatorStorage,
+insertSubexpression(XPathExprOperand operand, XPathExprOperatorStorage *operatorStorage,
 		XPathExpression exprTop, unsigned short blockSize, bool varsShiftAll,
 					char *output, unsigned short *outPos)
 {

@@ -9,7 +9,7 @@
 
 static void additionChecks(XMLNodeHdr targNode, XMLNodeHdr newNode, XMLAddMode mode);
 static XNodeInternal buildTree(XMLNodeHdr srcNode, XNodeInternal parent,
-XMLNodeHdr *targetNodes, unsigned int targNdCount, XNodeInternal * treeNodes,
+ XMLNodeHdr *targetNodes, unsigned int targNdCount, XNodeInternal *treeNodes,
 		  bool recordParents);
 static void freeTree(XNodeInternal root);
 static unsigned int getTreeStorageSize(XNodeInternal root);
@@ -471,7 +471,7 @@ additionChecks(XMLNodeHdr targNode, XMLNodeHdr newNode, XMLAddMode mode)
  */
 static XNodeInternal
 buildTree(XMLNodeHdr srcNode, XNodeInternal parent,
-XMLNodeHdr *targetNodes, unsigned int targNdCount, XNodeInternal * treeNodes,
+ XMLNodeHdr *targetNodes, unsigned int targNdCount, XNodeInternal *treeNodes,
 		  bool recordParents)
 {
 	XMLNodeIteratorData iterator;

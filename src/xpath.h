@@ -97,7 +97,7 @@ typedef struct XPathData
 	bool		allAttributes;
 	bool		piTestValue;
 	XPathOffset elements[1];
-}	XPathData;
+} XPathData;
 
 typedef struct XPathData *XPath;
 
@@ -110,7 +110,7 @@ typedef struct XPathHeaderData
 	uint8		paramCount;
 	XPathOffset paramFirst;		/* How far the first parameter name starts. */
 	XPathOffset paths[1];
-}	XPathHeaderData;
+} XPathHeaderData;
 
 typedef struct XPathHeaderData *XPathHeader;
 
@@ -138,7 +138,7 @@ typedef enum XPathExprOperandType
 	XPATH_OPERAND_FUNC_NOARG,
 
 	XPATH_OPERAND_PARAMETER
-}	XPathExprOperandType;
+} XPathExprOperandType;
 
 typedef enum XPathValueType
 {
@@ -174,7 +174,7 @@ typedef struct XPathValueData
 		bool		booVal;
 		char		strVal[1];
 	}			v;
-}	XPathValueData;
+} XPathValueData;
 
 typedef struct XPathValueData *XPathValue;
 
@@ -369,7 +369,7 @@ typedef struct XPathExprOperandData
 
 	/* Value must be the last attribute of this structure */
 	XPathExprOperandValueData value;
-}	XPathExprOperandData;
+} XPathExprOperandData;
 
 typedef struct XPathExprOperandData *XPathExprOperand;
 
@@ -402,7 +402,7 @@ typedef struct XPathExprOperatorStorageData
 {
 	/* XPathExprOperatorId is stored in a single byte. */
 	uint8		id;
-}	XPathExprOperatorStorageData;
+} XPathExprOperatorStorageData;
 
 typedef struct XPathExprOperatorStorageData *XPathExprOperatorStorage;
 
@@ -478,7 +478,7 @@ typedef struct XPathExpressionData
 	uint8		funcId;
 
 	uint8		valType;
-}	XPathExpressionData;
+} XPathExpressionData;
 
 typedef struct XPathExpressionData *XPathExpression;
 
@@ -504,7 +504,7 @@ typedef struct XPathElementData
 	bool		hasPredicate;
 	bool		descendant;
 	char		name[1];
-}	XPathElementData;
+} XPathElementData;
 
 typedef struct XPathElementData *XPathElement;
 
@@ -547,7 +547,7 @@ typedef enum XPathNodeType
 	XPATH_NODE_TYPE_TEXT,
 	XPATH_NODE_TYPE_NODE,
 	XPATH_NODE_TYPE_PI
-}	XPathNodeType;
+} XPathNodeType;
 
 
 /*
@@ -636,7 +636,7 @@ typedef struct XMLScanOneLevelData
 	bool		contextSizeKnown;
 
 	struct XMLScanOneLevelData *up;
-}	XMLScanOneLevelData;
+} XMLScanOneLevelData;
 
 typedef struct XMLScanOneLevelData *XMLScanOneLevel;
 
@@ -710,7 +710,7 @@ typedef struct XMLScanContextData
 	int16		outElmLen;
 	bool		outElmByVal;
 	char		outElmalign;
-}	XMLScanContextData;
+} XMLScanContextData;
 
 typedef struct XMLScanContextData *XMLScanContext;
 
@@ -734,7 +734,7 @@ typedef struct XPathExprStateData
 	char	  **strings;
 	XMLNodeHdr *nodes;
 	XMLNodeHdr **nodeSets;
-}	XPathExprStateData;
+} XPathExprStateData;
 
 typedef struct XPathExprStateData *XPathExprState;
 

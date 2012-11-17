@@ -4,10 +4,14 @@
  * Copyright (C) 2012, Antonin Houska
  */
 
+#include "template.h"
 #include "xml_parser.h"
 #include "xmlnode_util.h"
 #include "xnt.h"
 
+static void xmlnodeDumpNode(char *input, char *nmspPrefix, char *nmspURI,
+				XMLNodeOffset nodeOff, StringInfo output, char **paramNames,
+				bool terminate, GetSpecialXNodNameFunc specNodeName);
 static unsigned int dumpAttributes(XMLCompNodeHdr element, StringInfo output,
 			   char **paramNames);
 static void dumpContentEscaped(XMLNodeKind kind, StringInfo output, char *input, unsigned int inputLen);
@@ -23,6 +27,130 @@ struct XMLNodeDumpInfo
 	char	   *start;			/* where the tree storage starts */
 };
 
+char *
+dumpXMLNode(char *data, XMLNodeOffset rootNdOff, unsigned int binarySize,
+			char *nmspURI, GetSpecialXNodNameFunc specNodeName)
+{
+	XMLNodeHdr	root = (XMLNodeHdr) (data + rootNdOff);
+	char	   *declStr = NULL;
+	unsigned short declSize = 0;
+	char	   *srcCursor = NULL;
+	char	  **paramNames = NULL;
+	StringInfo	output;
+	unsigned int outSizeEst;
+
+	if (root->kind == XMLNODE_DOC_FRAGMENT)
+	{
+		XMLCompNodeHdr fragment = (XMLCompNodeHdr) root;
+
+		if (checkFragmentForAttributes(fragment))
+		{
+			elog(ERROR, "document fragment having attributes as direct children can't be dumped.");
+		}
+	}
+	else if (root->kind == XMLNODE_DOC && (root->flags & XNODE_DOC_XMLDECL))
+	{
+		XMLCompNodeHdr doc = (XMLCompNodeHdr) root;
+		XMLDecl		decl = (XMLDecl) XNODE_ELEMENT_NAME(doc);
+
+		declStr = dumpXMLDecl(decl);
+		declSize = strlen(declStr);
+		srcCursor = (char *) decl + sizeof(XMLDeclData);
+	}
+	else if (root->kind == XMLTEMPLATE_ROOT)
+	{
+		XMLTemplateHeader templHdr;
+		XMLCompNodeHdr template = (XMLCompNodeHdr) root;
+
+		srcCursor = XNODE_ELEMENT_NAME(template);
+		srcCursor = (char *) TYPEALIGN(XNODE_ALIGNOF_TEMPL_HDR, srcCursor);
+		templHdr = (XMLTemplateHeader) srcCursor;
+
+		if (templHdr->paramCount > 0)
+		{
+			unsigned short i;
+
+			srcCursor += sizeof(XMLTemplateHeaderData);
+			paramNames = (char **) palloc(templHdr->paramCount * sizeof(char *));
+			for (i = 0; i < templHdr->paramCount; i++)
+			{
+				paramNames[i] = srcCursor;
+				srcCursor += strlen(srcCursor) + 1;
+			}
+		}
+	}
+
+	/* This estimate may need improvement to avoid too frequent reallocations. */
+	outSizeEst = (binarySize <= 1024) ? 1024 : binarySize;
+	outSizeEst += declSize;
+
+	/*
+	 * StringInfoData structure is used here, but we manage reallocations in a
+	 * custom (less) aggressive way than the in-core functions. (It's not good
+	 * to double the output memory if the document very large.)
+	 */
+	output = makeStringInfo();
+	xnodeInitStringInfo(output, outSizeEst);
+
+	if (declSize > 0)
+	{
+		memcpy(output->data, declStr, declSize);
+		pfree(declStr);
+		output->len = declSize;
+	}
+	xmlnodeDumpNode(data, NULL, nmspURI, rootNdOff, output, paramNames, true,
+					specNodeName);
+
+	if (paramNames != NULL)
+	{
+		pfree(paramNames);
+	}
+	return output->data;
+}
+
+
+char *
+dumpXMLDecl(XMLDecl decl)
+{
+	char		qMark;
+	unsigned short i = 0;
+	StringInfoData outDecl;
+
+	xnodeInitStringInfo(&outDecl, 16);
+	qMark = XMLDECL_GET_QUOT_MARK(decl, i);
+	appendStringInfoString(&outDecl, specXMLStrings[XNODE_STR_XDECL_START]);
+	appendStringInfo(&outDecl, " %s=%c%s%c", xmldeclAttNames[XNODE_XDECL_ATNAME_VERSION],
+					 qMark, xmldeclVersions[decl->version], qMark);
+	if (decl->flags & XMLDECL_HAS_ENC)
+	{
+		i++;
+		qMark = XMLDECL_GET_QUOT_MARK(decl, i);
+		appendStringInfo(&outDecl, " %s=%c%s%c", xmldeclAttNames[XNODE_XDECL_ATNAME_ENCODING],
+						 qMark, pg_encoding_to_char(decl->enc), qMark);
+	}
+	if (decl->flags & XMLDECL_HAS_SD_DECL)
+	{
+		i++;
+		qMark = XMLDECL_GET_QUOT_MARK(decl, i);
+		appendStringInfo(&outDecl, " %s=%c%s%c", xmldeclAttNames[XNODE_XDECL_ATNAME_STANDALONE],
+						 qMark, XMLDECL_STANDALONE_YES, qMark);
+	}
+	appendStringInfoString(&outDecl, specXMLStrings[XNODE_STR_XDECL_END]);
+	appendStringInfoChar(&outDecl, '\0');
+	return outDecl.data;
+}
+
+void
+dumpXMLNodeDebug(StringInfo output, char *data, XMLNodeOffset off)
+{
+	XMLNodeHdr	root = (XMLNodeHdr) (data + off);
+	struct XMLNodeDumpInfo userData;
+
+	userData.output = output;
+	userData.start = data;
+	walkThroughXMLTree(root, visitXMLNodeForDump, true, (void *) &userData);
+}
+
 /*
  * 'nmspPrefix' - for 'ordinary' XML documents there's no need to distinguish
  * prefix and the name itself. However special nodes (e.g. XNT) are stored as
@@ -30,9 +158,10 @@ struct XMLNodeDumpInfo
  * as soon as parser sees it's bound to the correct namespace URI. That's
  * why the prefix is treated separate here.
  */
-void
-xmlnodeDumpNode(char *input, char *nmspPrefix, XMLNodeOffset nodeOff,
-				StringInfo output, char **paramNames, bool terminate)
+static void
+xmlnodeDumpNode(char *input, char *nmspPrefix, char *nmspURI, XMLNodeOffset nodeOff,
+				StringInfo output, char **paramNames, bool terminate,
+				GetSpecialXNodNameFunc specNodeName)
 {
 	char	   *content = NULL;
 	unsigned int cntLen = 0;
@@ -49,7 +178,8 @@ xmlnodeDumpNode(char *input, char *nmspPrefix, XMLNodeOffset nodeOff,
 		case XMLNODE_DOC:
 		case XMLNODE_ELEMENT:
 
-		case XNTNODE_ROOT:
+		case XMLTEMPLATE_ROOT:
+
 		case XNTNODE_TEMPLATE:
 		case XNTNODE_COPY_OF:
 		case XNTNODE_ELEMENT:
@@ -60,10 +190,11 @@ xmlnodeDumpNode(char *input, char *nmspPrefix, XMLNodeOffset nodeOff,
 
 				if (node->flags & XNODE_EL_SPECIAL)
 				{
-					nmspPrefix = getValidPrefix(element,
-										XNTNODE_NAMESPACE_VALUE, nmspPrefix);
+					Assert(nmspURI != NULL);
+					nmspPrefix = getValidPrefix(element, nmspURI, nmspPrefix);
 
-					content = getXNTNodeName(node->kind, nmspPrefix);
+					Assert(specNodeName != NULL);
+					content = specNodeName(node->kind, nmspPrefix);
 				}
 				else
 				{
@@ -107,8 +238,10 @@ xmlnodeDumpNode(char *input, char *nmspPrefix, XMLNodeOffset nodeOff,
 
 					while (childOffPtr <= lastChild)
 					{
-						xmlnodeDumpNode(input, nmspPrefix, nodeOff - readXMLNodeOffset(&childOffPtr,
-																					   XNODE_GET_REF_BWIDTH(eh), true), output, paramNames, false);
+						xmlnodeDumpNode(input, nmspPrefix, nmspURI,
+									nodeOff - readXMLNodeOffset(&childOffPtr,
+									 XNODE_GET_REF_BWIDTH(eh), true), output,
+										paramNames, false, specNodeName);
 					}
 
 					/*
@@ -135,15 +268,16 @@ xmlnodeDumpNode(char *input, char *nmspPrefix, XMLNodeOffset nodeOff,
 			else
 			{
 				/*
-				 * This is a document node.
+				 * This root node of a document (possibly that of special one,
+				 * e.g. template).
 				 */
 				char	   *lastChild = XNODE_LAST_REF((XMLCompNodeHdr) node);
 
 				while (childOffPtr <= lastChild)
 				{
-					xmlnodeDumpNode(input, nmspPrefix, nodeOff -
-									readXMLNodeOffset(&childOffPtr, XNODE_GET_REF_BWIDTH((XMLCompNodeHdr) node), true),
-									output, paramNames, false);
+					xmlnodeDumpNode(input, nmspPrefix, nmspURI,
+									nodeOff - readXMLNodeOffset(&childOffPtr, XNODE_GET_REF_BWIDTH((XMLCompNodeHdr) node), true),
+									output, paramNames, false, specNodeName);
 				}
 			}
 			break;
@@ -234,7 +368,8 @@ xmlnodeDumpNode(char *input, char *nmspPrefix, XMLNodeOffset nodeOff,
 				XMLCompNodeHdr eh = (XMLCompNodeHdr) node;
 				XMLNodeOffset offRel = readXMLNodeOffset(&childOffPtr, XNODE_GET_REF_BWIDTH(eh), true);
 
-				xmlnodeDumpNode(input, nmspPrefix, nodeOff - offRel, output, paramNames, false);
+				xmlnodeDumpNode(input, nmspPrefix, nmspURI, nodeOff - offRel, output,
+								paramNames, false, specNodeName);
 			}
 			break;
 
@@ -250,47 +385,6 @@ xmlnodeDumpNode(char *input, char *nmspPrefix, XMLNodeOffset nodeOff,
 	}
 }
 
-char *
-dumpXMLDecl(XMLDecl decl)
-{
-	char		qMark;
-	unsigned short i = 0;
-	StringInfoData outDecl;
-
-	xnodeInitStringInfo(&outDecl, 16);
-	qMark = XMLDECL_GET_QUOT_MARK(decl, i);
-	appendStringInfoString(&outDecl, specXMLStrings[XNODE_STR_XDECL_START]);
-	appendStringInfo(&outDecl, " %s=%c%s%c", xmldeclAttNames[XNODE_XDECL_ATNAME_VERSION],
-					 qMark, xmldeclVersions[decl->version], qMark);
-	if (decl->flags & XMLDECL_HAS_ENC)
-	{
-		i++;
-		qMark = XMLDECL_GET_QUOT_MARK(decl, i);
-		appendStringInfo(&outDecl, " %s=%c%s%c", xmldeclAttNames[XNODE_XDECL_ATNAME_ENCODING],
-						 qMark, pg_encoding_to_char(decl->enc), qMark);
-	}
-	if (decl->flags & XMLDECL_HAS_SD_DECL)
-	{
-		i++;
-		qMark = XMLDECL_GET_QUOT_MARK(decl, i);
-		appendStringInfo(&outDecl, " %s=%c%s%c", xmldeclAttNames[XNODE_XDECL_ATNAME_STANDALONE],
-						 qMark, XMLDECL_STANDALONE_YES, qMark);
-	}
-	appendStringInfoString(&outDecl, specXMLStrings[XNODE_STR_XDECL_END]);
-	appendStringInfoChar(&outDecl, '\0');
-	return outDecl.data;
-}
-
-void
-dumpXMLNodeDebug(StringInfo output, char *data, XMLNodeOffset off)
-{
-	XMLNodeHdr	root = (XMLNodeHdr) (data + off);
-	struct XMLNodeDumpInfo userData;
-
-	userData.output = output;
-	userData.start = data;
-	walkThroughXMLTree(root, visitXMLNodeForDump, true, (void *) &userData);
-}
 
 /*
  * Dumps attributes of 'element' and returns their count.
@@ -329,15 +423,13 @@ dumpAttributes(XMLCompNodeHdr element,
 
 		if (element->common.flags & XNODE_EL_SPECIAL)
 		{
-			/*
-			 * Special node shouldn't have other-than-special attributes too
-			 * often, so it's not wasting time if we always assume that this
-			 * attribute is special. The worst case is that we receive NULL,
-			 * indicating that it's an ordinary attribute.
-			 */
-			attrName = getXNTAttributeName(element->common.kind, i);
-			if (attrName != NULL)
+			XNodeSpecAttributes *attrInfo = getXNodeAttrInfo(element->common.kind);
+
+			Assert(attrInfo != NULL);
+
+			if (i < attrInfo->number)
 			{
+				attrName = attrInfo->names[i];
 				isSpecialAttr = true;
 			}
 		}
@@ -381,7 +473,7 @@ dumpAttributes(XMLCompNodeHdr element,
 						 (element->common.kind == XNTNODE_ATTRIBUTE &&
 					  (i == XNT_ATTRIBUTE_NAME || i == XNT_ATTRIBUTE_VALUE)))
 				{
-					attrValue = dumpBinaryAttrValue(attrValue, paramNames, NULL, NULL, NULL);
+					attrValue = dumpXMLAttrBinaryValue(attrValue, paramNames, NULL, NULL, NULL);
 					valueCopy = true;
 				}
 				else
@@ -401,7 +493,7 @@ dumpAttributes(XMLCompNodeHdr element,
 			 */
 			if (attrNode->flags & XNODE_ATTR_VALUE_BINARY)
 			{
-				attrValue = dumpBinaryAttrValue(attrValue, paramNames, NULL, NULL, NULL);
+				attrValue = dumpXMLAttrBinaryValue(attrValue, paramNames, NULL, NULL, NULL);
 				valueCopy = true;
 			}
 		}
@@ -632,14 +724,14 @@ getValidPrefix(XMLCompNodeHdr element, char *namespaceURI, char *currentPrefix)
 	 * namespaces.
 	 */
 	if (kind == XMLNODE_DOC || kind == XMLNODE_DOC_FRAGMENT ||
-		kind == XNTNODE_ROOT)
+		kind == XMLTEMPLATE_ROOT)
 		return NULL;
 
 	/*
 	 * Whether the namespace prefix is passed or not, we need to check whether
-	 * a different one is not used at the current level of the tree.
+	 * different one is not used at the current level of the tree.
 	 */
-	initXMLNodeIteratorSpecial(&iterator, element, false, xntAttributeInfo);
+	initXMLNodeIteratorSpecial(&iterator, element, false);
 
 	while ((attrNode = getNextXMLNodeChild(&iterator)) != NULL)
 	{
@@ -676,7 +768,7 @@ getValidPrefix(XMLCompNodeHdr element, char *namespaceURI, char *currentPrefix)
 			}
 
 			attrValue = attrName + strlen(attrName) + 1;
-			if (strcmp(attrValue, XNTNODE_NAMESPACE_VALUE) == 0)
+			if (strcmp(attrValue, namespaceURI) == 0)
 			{
 				return prefixNew;
 			}

@@ -82,18 +82,28 @@ typedef enum XMLNodeKind
 	 */
 	XMLNODE_DOC_FRAGMENT,
 
+	/*
+	 * This is only used for location paths. Never assigned to a node.
+	 */
 	XMLNODE_NODE,
 
-	XNTNODE_ROOT,
+	/* Root of a template, such as XSL or XNT. */
+	XMLTEMPLATE_ROOT,
+
+	/* XNT */
 	XNTNODE_TEMPLATE,
 	XNTNODE_COPY_OF,
 	XNTNODE_ELEMENT,
 	XNTNODE_ATTRIBUTE
 } XMLNodeKind;
 
+typedef XMLNodeKind (*GetSpecialXNodeKindFunc) (char *name);
+typedef char *(*GetSpecialXNodNameFunc) (XMLNodeKind kind, char *nmspPrefix);
+
 typedef uint32 XMLNodeOffset;
 
 #define XNODE_ALIGNOF_NODE_OFFSET ALIGNOF_INT
+
 
 /*
  * Zero is only invalid if interpreted as *relative* offset.
@@ -102,6 +112,7 @@ typedef uint32 XMLNodeOffset;
  * is missing.
  */
 #define XMLNodeOffsetInvalid	0
+
 
 typedef struct XMLNodeCommonData
 {
@@ -156,7 +167,7 @@ typedef struct XMLDeclData
 	uint8		version;
 	uint8		enc;
 	bool		standalone;
-}	XMLDeclData;
+} XMLDeclData;
 
 typedef struct XMLDeclData *XMLDecl;
 
@@ -206,6 +217,7 @@ extern char getXMLNodeOffsetByteWidth(XMLNodeOffset o);
 #define XNODE_PREV_REF(ptr, cnd) (ptr - XNODE_GET_REF_BWIDTH(cnd))
 #define XNODE_HAS_CHILDREN(cnd) (cnd->children > 0)
 
+
 typedef struct varlena xmlnodetype;
 typedef xmlnodetype *xmlnode;
 
@@ -213,8 +225,6 @@ extern Datum xmlnode_in(PG_FUNCTION_ARGS);
 extern Datum xmlnode_out(PG_FUNCTION_ARGS);
 extern Datum xmlnode_kind(PG_FUNCTION_ARGS);
 extern Datum xmlnode_debug_print(PG_FUNCTION_ARGS);
-
-extern char *dumpXMLNode(char *data, XMLNodeOffset rootNdOff, unsigned int binarySize);
 
 typedef struct varlena xmldoctype;
 typedef xmldoctype *xmldoc;
@@ -406,6 +416,29 @@ typedef struct XNodeInternalData *XNodeInternal;
 
 extern void writeXMLNodeInternal(XNodeInternal node, bool checkElementChildren, char **output, XMLNodeOffset *root);
 
+
+/*
+ * Information on special attributes.
+ */
+
+#define XNODE_SPEC_ATTRS_MAX	4
+
+typedef struct XNodeSpecAttributes
+{
+	/* Number of attributes. */
+	unsigned short number;
+
+	/*
+	 * The order of names determines the order used to store the attributes.
+	 * With such a defined order we don't need to store attribute names.
+	 */
+	char	   *names[XNODE_SPEC_ATTRS_MAX];
+	bool		required[XNODE_SPEC_ATTRS_MAX];
+} XNodeSpecAttributes;
+
+extern XNodeSpecAttributes *getXNodeAttrInfo(XMLNodeKind kind);
+
+
 /*
  * Namespace
  */
@@ -425,5 +458,15 @@ extern char *getXMLNamespaceURI(char *prefix, XMLNodeContainer declarations, cha
 extern Datum xmlnode_children(PG_FUNCTION_ARGS);
 extern Datum xmlelement(PG_FUNCTION_ARGS);
 extern Datum xmlfragment(PG_FUNCTION_ARGS);
+
+
+/*
+ * xmldoc_special.c
+ */
+extern char *preprocessSpecialXMLAttributes(char *prefix, XMLNodeContainer nmspDecls,
+	XNodeListItem *attrOffsets, unsigned short attrCount, char *parserOutput,
+ XMLNodeKind specNodeKind, XNodeSpecAttributes *attrInfo, bool *offsetsValid,
+  unsigned int *specAttrCount, unsigned int *outSize, unsigned int *outCount,
+		   XMLNodeContainer paramNames, GetSpecialXNodNameFunc specNodeName);
 
 #endif   /* XMLNODE_H */

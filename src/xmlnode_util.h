@@ -65,6 +65,7 @@ typedef struct
 extern void walkThroughXMLTree(XMLNodeHdr rootNode, VisitXMLNode visitor, bool attributes, void *userData);
 extern void dumpXMLNodeDebug(StringInfo output, char *data, XMLNodeOffset rootOff);
 extern bool xmlStringIsNumber(char *str, double *numValue, char **end, bool skipWhitespace);
+extern bool xmlStringWhitespaceOnly(char *str);
 extern bool checkFragmentForAttributes(XMLCompNodeHdr fragment);
 extern bool isXMLNodeDescendant(XMLNodeHdr node, XMLCompNodeHdr treeRoot);
 
@@ -86,7 +87,9 @@ typedef struct XMLNodeIteratorData *XMLNodeIterator;
 extern void initXMLNodeIterator(XMLNodeIterator iterator, XMLCompNodeHdr node,
 					bool attributes);
 extern void initXMLNodeIteratorSpecial(XMLNodeIterator iterator, XMLCompNodeHdr node,
-						   bool attrsSpecial, XNTAttrNames *specAttrInfo);
+						   bool attrsSpecial);
 extern XMLNodeHdr getNextXMLNodeChild(XMLNodeIterator iterator);
+extern XMLCompNodeHdr getXMLDocRootElement(XMLCompNodeHdr docRoot,
+					 XMLNodeKind required);
 
 #endif   /* XMLNODE_UTIL_H_ */

@@ -12,10 +12,10 @@
 #include "utils/palloc.h"
 #include "utils/syscache.h"
 
+#include "template.h"
 #include "xmlnode.h"
 #include "xmlnode_util.h"
 #include "xml_parser.h"
-#include "xnt.h"
 
 /*
  * TODO error handling: use 'ereport()' and define numeric error codes.
@@ -91,10 +91,10 @@ PG_FUNCTION_INFO_V1(xmlnode_in);
 Datum
 xmlnode_in(PG_FUNCTION_ARGS)
 {
-	XMLNodeParserStateData parserState;
+	XMLParserStateData parserState;
 	char	   *input = PG_GETARG_CSTRING(0);
 
-	initXMLParserState(&parserState, input, XMLNODE_NODE, NULL);
+	initXMLParserState(&parserState, input, XMLNODE_NODE, NULL, NULL, NULL);
 	xmlnodeParseNode(&parserState);
 	finalizeXMLParserState(&parserState);
 	PG_RETURN_POINTER(parserState.result);
@@ -110,7 +110,7 @@ xmlnode_out(PG_FUNCTION_ARGS)
 	char	   *data = (char *) VARDATA(node);
 	XMLNodeOffset rootNdOff = XNODE_ROOT_OFFSET(node);
 
-	PG_RETURN_CSTRING(dumpXMLNode(data, rootNdOff, VARSIZE(node)));
+	PG_RETURN_CSTRING(dumpXMLNode(data, rootNdOff, VARSIZE(node), NULL, NULL));
 }
 
 PG_FUNCTION_INFO_V1(xmlnode_kind);
@@ -144,14 +144,14 @@ PG_FUNCTION_INFO_V1(xmldoc_in);
 Datum
 xmldoc_in(PG_FUNCTION_ARGS)
 {
-	XMLNodeParserStateData parserState;
+	XMLParserStateData parserState;
 	char	   *input = PG_GETARG_CSTRING(0);
 
 	if (strlen(input) == 0)
 	{
 		elog(ERROR, "zero length input string");
 	}
-	initXMLParserState(&parserState, input, XMLNODE_DOC, NULL);
+	initXMLParserState(&parserState, input, XMLNODE_DOC, NULL, NULL, NULL);
 	xmlnodeParseDoc(&parserState);
 	finalizeXMLParserState(&parserState);
 	PG_RETURN_POINTER(parserState.result);
@@ -166,7 +166,7 @@ xmldoc_out(PG_FUNCTION_ARGS)
 	char	   *data = (char *) VARDATA(doc);
 	XMLNodeOffset rootNdOff = XNODE_ROOT_OFFSET(doc);
 
-	PG_RETURN_CSTRING(dumpXMLNode(data, rootNdOff, VARSIZE(doc)));
+	PG_RETURN_CSTRING(dumpXMLNode(data, rootNdOff, VARSIZE(doc), NULL, NULL));
 }
 
 
@@ -346,87 +346,6 @@ xmldoc_to_xmlnode(PG_FUNCTION_ARGS)
 
 	PG_RETURN_POINTER(node);
 }
-
-char *
-dumpXMLNode(char *data, XMLNodeOffset rootNdOff, unsigned int binarySize)
-{
-	XMLNodeHdr	root = (XMLNodeHdr) (data + rootNdOff);
-	char	   *declStr = NULL;
-	unsigned short declSize = 0;
-	char	   *srcCursor = NULL;
-	char	  **paramNames = NULL;
-	StringInfo	output;
-	unsigned int outSizeEst;
-
-	if (root->kind == XMLNODE_DOC_FRAGMENT)
-	{
-		XMLCompNodeHdr fragment = (XMLCompNodeHdr) root;
-
-		if (checkFragmentForAttributes(fragment))
-		{
-			elog(ERROR, "document fragment having attributes as direct children can't be dumped.");
-		}
-	}
-	else if (root->kind == XMLNODE_DOC && (root->flags & XNODE_DOC_XMLDECL))
-	{
-		XMLCompNodeHdr doc = (XMLCompNodeHdr) root;
-		XMLDecl		decl = (XMLDecl) XNODE_ELEMENT_NAME(doc);
-
-		declStr = dumpXMLDecl(decl);
-		declSize = strlen(declStr);
-		srcCursor = (char *) decl + sizeof(XMLDeclData);
-	}
-	else if (root->kind == XNTNODE_ROOT)
-	{
-		XNTHeader	xntHdr;
-		XMLCompNodeHdr template = (XMLCompNodeHdr) root;
-
-		srcCursor = XNODE_ELEMENT_NAME(template);
-		srcCursor = (char *) TYPEALIGN(XNODE_ALIGNOF_XNT_HDR, srcCursor);
-		xntHdr = (XNTHeader) srcCursor;
-
-		if (xntHdr->paramCount > 0)
-		{
-			unsigned short i;
-
-			srcCursor += sizeof(XNTHeaderData);
-			paramNames = (char **) palloc(xntHdr->paramCount * sizeof(char *));
-			for (i = 0; i < xntHdr->paramCount; i++)
-			{
-				paramNames[i] = srcCursor;
-				srcCursor += strlen(srcCursor) + 1;
-			}
-		}
-	}
-
-	/* This estimate may need improvement to avoid too frequent reallocations. */
-	outSizeEst = (binarySize <= 1024) ? 1024 : binarySize;
-	outSizeEst += declSize;
-
-	/*
-	 * StringInfoData structure is used here, but we manage reallocations in a
-	 * custom (less) aggressive way than the in-core functions. (It's not good
-	 * to double the output memory if the document very large.)
-	 */
-	output = makeStringInfo();
-	xnodeInitStringInfo(output, outSizeEst);
-
-	if (declSize > 0)
-	{
-		memcpy(output->data, declStr, declSize);
-		pfree(declStr);
-		output->len = declSize;
-	}
-	xmlnodeDumpNode(data, NULL, rootNdOff, output, paramNames, true);
-
-	if (paramNames != NULL)
-	{
-		pfree(paramNames);
-	}
-	return output->data;
-}
-
-
 
 /*
  * Write 'node' and it's descendants to storage, starting at '*output'.
@@ -640,6 +559,22 @@ writeXMLNodeInternal(XNodeInternal node, bool checkElementChildren, char **outpu
 	}
 }
 
+XNodeSpecAttributes *
+getXNodeAttrInfo(XMLNodeKind kind)
+{
+	XNodeSpecAttributes *result = NULL;
+
+	/*
+	 * Each new special document will have node kinds higher. Therefore the
+	 * respective tests should be added at the top here, letting particular
+	 * test fall through to the correct range.
+	 */
+	if (kind >= XNTNODE_TEMPLATE)
+		result = &xntAttributeInfo[kind - XNTNODE_TEMPLATE];
+
+	return result;
+}
+
 /* How many bytes do we need to store the offset? */
 char
 getXMLNodeOffsetByteWidth(XMLNodeOffset o)
@@ -745,7 +680,7 @@ xmlelement(PG_FUNCTION_ARGS)
 	unsigned int attrCount = 0;
 	unsigned int attrsSizeTotal = 0;
 	unsigned short childCount = 0;
-	XMLNodeParserStateData namePState;
+	XMLParserStateData namePState;
 	unsigned int firstColPos = 0;
 
 	if (PG_ARGISNULL(0))
@@ -812,7 +747,8 @@ xmlelement(PG_FUNCTION_ARGS)
 			}
 			nameStr = text_to_cstring(DatumGetTextP(elDatum));
 
-			initXMLParserState(&namePState, nameStr, XMLNODE_ELEMENT, NULL);
+			initXMLParserState(&namePState, nameStr, XMLNODE_ELEMENT, NULL, NULL,
+							   NULL);
 			readXMLName(&namePState, false, true, true, &firstColPos);
 
 			/*
@@ -862,11 +798,12 @@ xmlelement(PG_FUNCTION_ARGS)
 
 			if (strlen(valueStr) > 0)
 			{
-				XMLNodeParserStateData state;
+				XMLParserStateData state;
 				char	   *valueStrOrig = valueStr;
 
 				/* Parse the value and check validity. */
-				initXMLParserState(&state, valueStr, XMLNODE_ATTRIBUTE, NULL);
+				initXMLParserState(&state, valueStr, XMLNODE_ATTRIBUTE, NULL,
+								   NULL, NULL);
 				valueStr = readXMLAttValue(&state, true, &valueHasRefs);
 
 				/*
@@ -913,7 +850,7 @@ xmlelement(PG_FUNCTION_ARGS)
 	 * If initialized for XMLNODE_ELEMENT, the parser state has no memory
 	 * allocated so we don't have to call finalizeXMLParserState().
 	 */
-	initXMLParserState(&namePState, elName, XMLNODE_ELEMENT, NULL);
+	initXMLParserState(&namePState, elName, XMLNODE_ELEMENT, NULL, NULL, NULL);
 	readXMLName(&namePState, false, true, true, &firstColPos);
 
 	if (*namePState.c != '\0')
@@ -1106,6 +1043,7 @@ xmlelement(PG_FUNCTION_ARGS)
 	PG_RETURN_POINTER(result);
 }
 
+
 PG_FUNCTION_INFO_V1(xmlfragment);
 
 /*
@@ -1149,10 +1087,10 @@ xmlfragment(PG_FUNCTION_ARGS)
 	newNode = XNODE_ROOT(newNodeVar);
 	nodeCount = 0;
 
-	if (newNode->kind == XMLNODE_DOC || newNode->kind >= XNTNODE_ROOT)
-	{
+	Assert(newNode->kind < XMLNODE_NODE);
+
+	if (newNode->kind == XMLNODE_DOC)
 		elog(ERROR, "node of kind %u can't be concatenated to anything", newNode->kind);
-	}
 
 	/* Evaluate the 'state node'... */
 	getNodeInfo(node, &nodeSize, &nodeCount);

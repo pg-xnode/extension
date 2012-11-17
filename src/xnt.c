@@ -2,6 +2,7 @@
  * Copyright (C) 2012, Antonin Houska
  */
 
+#include "template.h"
 #include "xmlnode.h"
 #include "xml_parser.h"
 #include "xmlnode_util.h"
@@ -13,7 +14,7 @@
  * the optional. (This restriction only applies to 'xmlAttributInfo', not to
  * the actual input document.)
  */
-XNTAttrNames xntAttributeInfo[] = {
+XNodeSpecAttributes xntAttributeInfo[] = {
 	/* XNTNODE_TEMPLATE */
 	{1, {"preserve-space"}, {false}},
 	/* XNTNODE_COPY_OF */
@@ -24,22 +25,15 @@ XNTAttrNames xntAttributeInfo[] = {
 	{2, {"name", "value"}, {true, true}}
 };
 
-static int	paramNameComparator(const void *left, const void *right);
-static XPathExpression getXPathExpression(char *src, unsigned int termFlags, XMLNodeContainer paramNames,
-				   unsigned short *endPos);
-static char *getAttrValueTokenized(char *attrValue, unsigned int *valueSize, XMLNodeContainer paramNames);
-static void visitXMLNodeForValidation(XMLNodeHdr *stack, unsigned int depth, void *userData);
-static Datum castParameterValue(Datum value, Oid sourceType, Oid targetType);
+static XMLNodeKind getXNTNodeKind(char *name);
+static char *getXNTNodeName(XMLNodeKind kind, char *nmspPrefix);
+static void validateXNTTree(XMLNodeHdr root);
+static void validateXNTNode(XMLNodeHdr *stack, unsigned int depth, void *userData);
 static void buildNewNodeTree(XMLNodeHdr node, XNodeInternal parent, unsigned int *storageSize,
 				 XPathExprOperandValue paramValues, unsigned short *paramMap, XPathExprState exprState,
 				 bool preserveSpace);
-static XMLNodeHdr getNewAttribute(char *name, uint8 flags, char *value, char decideOnDelim, unsigned int *size);
 static XNodeInternal getInternalNode(XMLNodeHdr node, bool copy);
 static void freeTemplateTree(XNodeInternal root);
-static XMLCompNodeHdr getTemplateFromDoc(XMLCompNodeHdr docRoot);
-static XPathExpression substituteParameters(XPathExprState exprState, XPathExpression expression,
-				XPathExprOperandValue paramValues, unsigned short *paramMap);
-static bool whitespacesOnly(char *str);
 
 static XNodeInternal xntProcessCopyOf(XMLNodeHdr node, XNodeInternal parent,
 				 bool preserveSpace, XPathExprOperandValue paramValues,
@@ -53,20 +47,13 @@ static XNodeInternal xntProcessAttribute(XMLNodeHdr node,
 				 XPathExprOperandValue paramValues, unsigned short *paramMap,
 					XPathExprState exprState, unsigned int *storageSize);
 
-XNTParamNameSorted *getParameterNames(ArrayType * parNameArray, unsigned int templateParamCount,
-				  char **templParNames, unsigned short *paramMap);
-
-static XPathExprOperandValue getParameterValues(Datum row,
-	   unsigned int templateParamCount, XPathExprState exprState, Oid fnOid);
-static char *getAttributeName(char *prefix, char *attrNamePrefixed,
-				 XMLNodeContainer nmspDecls, char *parserOutput);
 
 PG_FUNCTION_INFO_V1(xnode_template_in);
 
 Datum
 xnode_template_in(PG_FUNCTION_ARGS)
 {
-	XMLNodeParserStateData parserState;
+	XMLParserStateData parserState;
 	char	   *input = PG_GETARG_CSTRING(0);
 	XMLNodeOffset *rootOffPtr;
 	XMLNodeHdr	root;
@@ -75,12 +62,13 @@ xnode_template_in(PG_FUNCTION_ARGS)
 	{
 		elog(ERROR, "zero length input string");
 	}
-	initXMLParserState(&parserState, input, XNTNODE_ROOT, getXNTNodeKind);
+	initXMLParserState(&parserState, input, XMLTEMPLATE_ROOT, XNTNODE_NAMESPACE_URI,
+					   getXNTNodeKind, getXNTNodeName);
 	xmlnodeParseDoc(&parserState);
 
 	rootOffPtr = (XMLNodeOffset *) (parserState.tree + parserState.dstPos - sizeof(XMLNodeOffset));
 	root = (XMLNodeHdr) (parserState.tree + *rootOffPtr);
-	Assert(root->kind == XNTNODE_ROOT);
+	Assert(root->kind == XMLTEMPLATE_ROOT);
 	validateXNTTree(root);
 
 	finalizeXMLParserState(&parserState);
@@ -96,825 +84,8 @@ xnode_template_out(PG_FUNCTION_ARGS)
 	char	   *data = (char *) VARDATA(template);
 	XMLNodeOffset rootNdOff = XNODE_ROOT_OFFSET(template);
 
-	PG_RETURN_CSTRING(dumpXMLNode(data, rootNdOff, VARSIZE(template)));
-}
-
-XMLNodeKind
-getXNTNodeKind(char *name)
-{
-	char	   *colon = strrchr(name, XNODE_CHAR_COLON);
-
-	if (colon != NULL)
-	{
-		/* skip the prefix */
-		name = colon + 1;
-	}
-
-	if (strcmp(name, XNT_TEMPLATE) == 0)
-	{
-		return XNTNODE_TEMPLATE;
-	}
-	else if (strcmp(name, XNT_COPY_OF) == 0)
-	{
-		return XNTNODE_COPY_OF;
-	}
-	else if (strcmp(name, XNT_ELEMENT) == 0)
-	{
-		return XNTNODE_ELEMENT;
-	}
-	else if (strcmp(name, XNT_ATTRIBUTE) == 0)
-	{
-		return XNTNODE_ATTRIBUTE;
-	}
-	elog(ERROR, "unrecognized xnt node '%s'", name);
-	return 0;
-}
-
-char *
-getXNTNodeName(XMLNodeKind kind, char *nmspPrefix)
-{
-	StringInfoData out;
-	char	   *name;
-
-	xnodeInitStringInfo(&out, 32);
-
-	switch (kind)
-	{
-		case XNTNODE_TEMPLATE:
-			name = XNT_TEMPLATE;
-			break;
-
-		case XNTNODE_COPY_OF:
-			name = XNT_COPY_OF;
-			break;
-
-		case XNTNODE_ELEMENT:
-			name = XNT_ELEMENT;
-			break;
-
-		case XNTNODE_ATTRIBUTE:
-			name = XNT_ATTRIBUTE;
-			break;
-
-		default:
-			elog(ERROR, "unrecognized xnt node kind %u", kind);
-			return NULL;
-	}
-
-	if (nmspPrefix != NULL && strlen(nmspPrefix) > 0)
-	{
-		appendStringInfo(&out, "%s:", nmspPrefix);
-	}
-	appendStringInfoString(&out, name);
-	return out.data;
-}
-
-/*
- * Returns name of special (reserved) attribute.
- * Name of such an attribute is determined by position in the array of
- * children. The name is not stored in the document tree.
- */
-char *
-getXNTAttributeName(XMLNodeKind kind, unsigned short attrNr)
-{
-	XNTAttrNames *attrInfo = xntAttributeInfo + (kind - XNTNODE_TEMPLATE);
-
-	if (attrNr >= attrInfo->number)
-	{
-		return NULL;
-	}
-	return attrInfo->names[attrNr];
-}
-
-void
-validateXNTTree(XMLNodeHdr root)
-{
-	bool		hasRootTemplate = false;
-
-	walkThroughXMLTree(root, visitXMLNodeForValidation, false, (void *) &hasRootTemplate);
-	if (!hasRootTemplate)
-	{
-		elog(ERROR, "'xnt:template' must be the root element");
-	}
-}
-
-/*
- * Ensure that:
- *
- * 1. Reserved attribute are stored at defined positions.
- * 2. Name is not stored for the reserved attributes (the position determines
- * the attribute itself).
- * 3. Where appropriate, the attribute value is stored in special binary format
- * as opposed to NULL-terminated string.
- *
- * 'prefix' - namespace prefix of the owning node of the attributes.
- * The namespace should have been validated when passed here.
- *
- * 'nmspDecls' - namespace declarations valid in the current context.
- *
- * 'attrOffsets' - both input and output. It's expected to provide offsets of
- * attributes to be checked. Offsets of the processed attributes are returned.
- * Therefore there has to be sufficient space for slots for optional attributes
- * that the input document does not contain.
- * 'attrCount + XNT_SPECIAL_ATTRS_MAX' is always the safe size.
- *
- * 'attrCount' - the actual number of attributes that the template element contains.
- *
- * 'offsetsValid' - if given attribute is optional and the input element does not
- * contain it, then the corresponding position in 'attrOfsets' will be marked
- * as invalid. Size must be equal to that of 'attrOffsets'.
- *
- */
-char *
-preprocessXNTAttributes(char *prefix, XMLNodeContainer nmspDecls,
-	XNodeListItem *attrOffsets, unsigned short attrCount, char *parserOutput,
-  XMLNodeKind specNodeKind, bool * offsetsValid, unsigned int *specAttrCount,
-  unsigned int *outSize, unsigned int *outCount, XMLNodeContainer paramNames)
-{
-	unsigned short i;
-	XNTAttrNames *attrInfo = xntAttributeInfo + (specNodeKind - XNTNODE_TEMPLATE);
-	XMLNodeHdr *attrsSorted = NULL;
-
-	/*
-	 * Space for the reserved attributes must always be there, even if all
-	 * attributes of the given element are optional and user does not use any
-	 * (namespace declarations are always allowed so the corner case is that
-	 * user only specifies namespace declarations and nothing else).
-	 */
-	unsigned int outAttrsMax = attrCount + attrInfo->number;
-	bool	   *attrValsToFree = NULL;
-	char	   *resTmp,
-			   *result = NULL;
-	unsigned int *attrSizes = NULL;
-	unsigned int indGen;
-	unsigned int outSizeMax = 0;
-
-	*outCount = 0;
-	*specAttrCount = 0;
-
-	if (outAttrsMax > 0)
-	{
-		unsigned int size;
-
-		size = outAttrsMax * sizeof(bool);;
-		attrValsToFree = (bool *) palloc(size);
-		memset(attrValsToFree, false, size);
-
-		size = outAttrsMax * sizeof(unsigned int);
-		attrSizes = (unsigned int *) palloc(size);
-		memset(attrSizes, 0, size);
-
-		size = outAttrsMax * sizeof(XMLNodeHdr);
-		attrsSorted = (XMLNodeHdr *) palloc(size);
-		memset(attrsSorted, 0, size);
-	}
-
-	/*
-	 * 'attrsSorted' will start with the special (reserved) attrs, while those
-	 * 'generic' will follow.
-	 */
-	indGen = attrInfo->number;
-
-	/*
-	 * Sort the attributes, i.e. put the reserved into the slots at the start
-	 * of 'attrsSorted'.
-	 */
-	for (i = 0; i < attrCount; i++)
-	{
-		unsigned short j;
-		XNodeListItem *attrItem = attrOffsets + i;
-		XMLNodeHdr	attr = (XMLNodeHdr) (parserOutput + attrItem->value.singleOff);
-		char	   *attrName,
-				   *attrValue;
-		bool		found = false;
-
-		attrName = XNODE_CONTENT(attr);
-
-		if (attr->flags & XNODE_NMSP_PREFIX)
-			attrName = getAttributeName(prefix, attrName, nmspDecls, parserOutput);
-
-		attrValue = attrName + strlen(attrName) + 1;
-
-		/* Is this a reserved attribute? */
-		for (j = 0; j < attrInfo->number; j++)
-		{
-			if (strcmp(attrName, attrInfo->names[j]) == 0)
-			{
-				XMLNodeHdr	specNode;
-				char	   *specNodeValue;
-				unsigned int valueSize,
-							newAttrSize;
-				XPathExpression expr = NULL;
-				char	   *attrValueTokenized = NULL;
-
-				if (specNodeKind == XNTNODE_COPY_OF && strcmp(attrName, attrInfo->names[XNT_COPY_OF_EXPR]) == 0)
-				{
-					expr = getXPathExpression(attrValue, XPATH_TERM_NULL, paramNames, NULL);
-					valueSize = expr->common.size;
-				}
-				else if (strlen(attrValue) > 0 && strchr(attrValue, XNODE_CHAR_LBRKT_CUR) != NULL)
-				{
-					attrValueTokenized = getAttrValueTokenized(attrValue, &valueSize, paramNames);
-				}
-				else
-				{
-					/* Plain string or empty attribute. */
-					valueSize = strlen(attrValue) + 1;
-				}
-
-				newAttrSize = sizeof(XMLNodeHdrData) + valueSize;
-				specNode = (XMLNodeHdr) palloc(newAttrSize);
-				specNode->kind = attr->kind;
-				specNode->flags = attr->flags;
-				/* There's no need to store special attribute's name. */
-				specNodeValue = XNODE_CONTENT(specNode);
-
-				if (expr != NULL)
-				{
-					/*
-					 * 'expr' is now treated as as binary stream (no access to
-					 * the structures) so we can forget about alignment for a
-					 * while. All we need to know is where the data start in
-					 * the new node. This position will control the alignment
-					 * in the resulting document.
-					 */
-					memcpy(specNodeValue, expr, valueSize);
-					pfree(expr);
-					specNode->flags |= XNODE_ATTR_VALUE_BINARY;
-				}
-				else if (attrValueTokenized != NULL)
-				{
-					/* Likewise, see the comment above. */
-					memcpy(specNodeValue, attrValueTokenized, valueSize);
-					pfree(attrValueTokenized);
-					specNode->flags |= XNODE_ATTR_VALUE_BINARY;
-				}
-				else
-				{
-					strcpy(specNodeValue, attrValue);
-				}
-
-				attrsSorted[j] = specNode;
-				outSizeMax += newAttrSize;
-				if (expr != NULL || attrValueTokenized != NULL)
-				{
-					outSizeMax += MAX_PADDING(XPATH_ALIGNOF_EXPR);
-				}
-				attrSizes[j] = newAttrSize;
-				attrValsToFree[j] = true;
-				found = true;
-				(*specAttrCount)++;
-				break;
-			}
-		}
-
-		if (!found)
-		{
-			/* Namespace declaration is the only generic attribute allowed. */
-			/* Either "xmlns:<namespace>"=... */
-			if (((attr->flags & XNODE_NMSP_PREFIX) &&
-				 XNODE_IS_NAMESPACE_DECL(attrName))
-			/* Or "xmlns"=... */
-				|| XNODE_IS_DEF_NAMESPACE_DECL(attrName))
-			{
-
-				attrValue = attrName + strlen(attrName) + 1;
-				/* The whole attribute is stored in this case. */
-				attrsSorted[indGen] = attr;
-				attrSizes[indGen] = sizeof(XMLNodeHdrData) + strlen(attrName) +strlen(attrValue) + 2;
-				outSizeMax += attrSizes[indGen];
-				indGen++;
-			}
-			else
-			{
-				elog(ERROR, "element '%s' does not accept attribute '%s'",
-					 getXNTNodeName(specNodeKind, NULL), attrName);
-			}
-		}
-	}
-
-	/* Check for missing required attributes */
-	for (i = 0; i < attrInfo->number; i++)
-	{
-		if (attrInfo->required[i] && (i >= attrCount || attrsSorted[i] == NULL))
-		{
-			elog(ERROR, "required attribute '%s' missing in element '%s'", attrInfo->names[i],
-				 getXNTNodeName(specNodeKind, NULL));
-		}
-	}
-
-	if (outAttrsMax > 0)
-	{
-		XNodeListItem *attrItem = attrOffsets;
-
-		/*
-		 * The first offset does not change so we can use it as initial new
-		 * value.
-		 */
-		XMLNodeOffset offNew = attrItem->value.singleOff;
-
-		result = resTmp = (char *) palloc(outSizeMax);
-
-		/*
-		 * Construct the new sequence of attributes and adjust parent's
-		 * offsets.
-		 */
-		for (i = 0; i < indGen; i++)
-		{
-			unsigned int currentSize = attrSizes[i];
-
-			if (currentSize > 0)
-			{
-				char	   *ptr,
-						   *ptrAligned;
-				unsigned int padding = 0;
-				XMLNodeHdr	attribute;
-
-				Assert(attrsSorted[i] != NULL);
-				attribute = attrsSorted[i];
-
-				if (attribute->flags & XNODE_ATTR_VALUE_BINARY)
-				{
-					/*
-					 * If the next node is located immediately after the
-					 * previous, then 'ptr' is the position inside the new
-					 * node controlling the alignment (typically XPath
-					 * expression). As the 'binary nodes' have the
-					 * alignment-sensitive data right after the header, the
-					 * header size is used to derive the position.
-					 */
-					ptr = resTmp + sizeof(XMLNodeHdrData);
-
-					/*
-					 * If that address is not aligned, padding must be
-					 * prepended.
-					 */
-					ptrAligned = (char *) TYPEALIGN(XPATH_ALIGNOF_EXPR, ptr);
-					padding = ptrAligned - ptr;
-				}
-
-				resTmp += padding;
-				memcpy(resTmp, attrsSorted[i], currentSize);
-				resTmp += currentSize;
-				offNew += padding;
-				offsetsValid[i] = true;
-			}
-			else
-			{
-				Assert(attrsSorted[i] == NULL);
-				offsetsValid[i] = false;
-			}
-
-			attrItem->value.singleOff = offNew;
-			offNew += currentSize;
-			attrItem++;
-		}
-
-		*outCount = indGen;
-		*outSize = resTmp - result;
-
-		for (i = 0; i < outAttrsMax; i++)
-		{
-			if (attrValsToFree[i])
-			{
-				pfree(attrsSorted[i]);
-			}
-		}
-		pfree(attrValsToFree);
-		pfree(attrSizes);
-		pfree(attrsSorted);
-	}
-	return result;
-}
-
-/*
- * Attributes of 'ordinary' elements (i.e. those having neither 'xnt' nor 'xmlns' prefix) might reference parameters.
- * For example: '<section name="{$par1}"/>
- */
-char *
-preprocessXNTAttrValues(XNodeListItem *attrOffsets, unsigned short attrCount, char *parserOutput,
-						unsigned int *outSize, XMLNodeContainer paramNames)
-{
-	unsigned short i;
-	bool		workToDo = false;
-	XMLNodeHdr *attrNodes = (XMLNodeHdr *) palloc(attrCount * sizeof(XMLNodeHdr));
-	unsigned int arrSize;
-	bool	   *toReplace;
-	unsigned int *valueSizes,
-			   *fixedSizes;
-	char	  **valuesNew = NULL;
-	char	   *result = NULL;
-	char	   *resCursor;
-	XNodeListItem *attrItem;
-	XMLNodeOffset offNew;
-	unsigned int outSizeMax = 0;
-
-	arrSize = attrCount * sizeof(bool);
-	toReplace = (bool *) palloc(arrSize);
-	memset(toReplace, false, arrSize);
-
-	arrSize = attrCount * sizeof(unsigned int);
-	valueSizes = (unsigned int *) palloc(arrSize);
-	fixedSizes = (unsigned int *) palloc(arrSize);;
-
-	arrSize = attrCount * sizeof(char *);
-	valuesNew = (char **) palloc(arrSize);
-	memset(valuesNew, 0, arrSize);
-
-	for (i = 0; i < attrCount; i++)
-	{
-		XNodeListItem *attrItem = attrOffsets + i;
-		XMLNodeHdr	attr = (XMLNodeHdr) (parserOutput + attrItem->value.singleOff);
-		char	   *attrName = XNODE_CONTENT(attr);
-		char	   *attrValue;
-
-		attrNodes[i] = attr;
-		attrValue = attrName + strlen(attrName) + 1;
-
-		if (strlen(attrValue) > 0 && strchr(attrValue, XNODE_CHAR_LBRKT_CUR) != NULL)
-		{
-			toReplace[i] = true;
-			if (!workToDo)
-			{
-				workToDo = true;
-			}
-		}
-		fixedSizes[i] = sizeof(XMLNodeHdrData) + strlen(attrName) +1;
-		valueSizes[i] = strlen(attrValue) + 1;
-		valuesNew[i] = attrValue;
-	}
-
-	if (!workToDo)
-	{
-		pfree(attrNodes);
-		pfree(toReplace);
-		pfree(fixedSizes);
-		pfree(valueSizes);
-		pfree(valuesNew);
-		return NULL;
-	}
-
-
-	for (i = 0; i < attrCount; i++)
-	{
-		if (toReplace[i])
-		{
-			XMLNodeHdr	attrOrig = attrNodes[i];
-			char	   *attrName = XNODE_CONTENT(attrOrig);
-			char	   *attrValue = attrName + strlen(attrName) + 1;
-			unsigned int valueSizeNew = 0;
-
-			valuesNew[i] = getAttrValueTokenized(attrValue, &valueSizeNew, paramNames);
-			valueSizes[i] = valueSizeNew;
-
-			outSizeMax += MAX_PADDING(XPATH_ALIGNOF_EXPR);
-		}
-		outSizeMax += fixedSizes[i] + valueSizes[i];
-	}
-
-	result = resCursor = (char *) palloc(outSizeMax);
-
-	attrItem = attrOffsets;
-	offNew = attrItem->value.singleOff;
-
-	for (i = 0; i < attrCount; i++)
-	{
-		XMLNodeHdr	attr = attrNodes[i];
-		XMLNodeHdr	attrNew;
-		char	   *ptr,
-				   *ptrAligned;
-		unsigned int padding = 0;
-
-		if (toReplace[i])
-		{
-			/* See preprocessXNTAttributes() for explanation. */
-			ptr = resCursor + fixedSizes[i];
-			ptrAligned = (char *) TYPEALIGN(XPATH_ALIGNOF_EXPR, ptr);
-			padding = ptrAligned - ptr;
-		}
-
-		/*
-		 * Header and attribute name is always copied from the original
-		 * attribute.
-		 */
-		resCursor += padding;
-		memcpy(resCursor, attr, fixedSizes[i]);
-		attrNew = (XMLNodeHdr) resCursor;
-		resCursor += fixedSizes[i];
-		offNew += padding;
-
-		/*
-		 * The value is either modified (binary) or the original (plain
-		 * string).
-		 */
-		if (toReplace[i])
-		{
-			attrNew->flags |= XNODE_ATTR_VALUE_BINARY;
-			memcpy(resCursor, valuesNew[i], valueSizes[i]);
-			pfree(valuesNew[i]);
-		}
-		else
-		{
-			strcpy(resCursor, valuesNew[i]);
-		}
-		resCursor += valueSizes[i];
-
-		attrItem->value.singleOff = offNew;
-		offNew += fixedSizes[i] + valueSizes[i];
-		attrItem++;
-	}
-
-	*outSize = resCursor - result;
-
-	pfree(attrNodes);
-	pfree(toReplace);
-	pfree(fixedSizes);
-	pfree(valueSizes);
-	pfree(valuesNew);
-	return result;
-}
-
-/*
- * If 'paramNames' is not-NULL, then 'paramValues', 'paramMap' and 'exprState' must be passed
- * and the function evaluates each expression that the attribute value contains and returns
- * the value as string.
- *
- * If 'exprState' is NULL then the function returns source text of the contained expression(s).
- * Otherwise it uses 'exprState' to evaluate the expression(s).
- */
-char *
-dumpBinaryAttrValue(char *binValue, char **paramNames, XPathExprOperandValue paramValues,
-					unsigned short *paramMap, XPathExprState exprState)
-{
-	StringInfoData output;
-	char	   *cursor = binValue;
-	unsigned short tokenCount,
-				i;
-
-	tokenCount = *((uint8 *) cursor);
-	Assert(tokenCount > 0);
-	xnodeInitStringInfo(&output, 32);
-
-	cursor++;
-	for (i = 0; i < tokenCount; i++)
-	{
-		bool		isExpr = *((bool *) cursor++);
-
-		if (isExpr)
-		{
-			XPathExpression expr;
-
-			cursor = (char *) TYPEALIGN(XPATH_ALIGNOF_EXPR, cursor);
-			expr = (XPathExpression) cursor;
-
-			if (exprState == NULL)
-			{
-				appendStringInfoChar(&output, XNODE_CHAR_LBRKT_CUR);
-				dumpXPathExpression(expr, NULL, &output, true, paramNames, false);
-				appendStringInfoChar(&output, XNODE_CHAR_RBRKT_CUR);
-			}
-			else
-			{
-				XPathExprOperandValueData result,
-							resultCast;
-				XPathExpression exprCopy;
-
-				exprCopy = substituteParameters(exprState, expr, paramValues, paramMap);
-				evaluateXPathExpression(exprState, exprCopy, 0, &result);
-
-				if (result.type == XPATH_VAL_NODESET)
-				{
-					elog(ERROR, "node-set is not expected in attribute value");
-				}
-				if (!result.isNull)
-				{
-					char	   *valueStr;
-
-					castXPathExprOperandToStr(exprState, &result, &resultCast);
-					valueStr = (char *) getXPathOperandValue(exprState, resultCast.v.stringId, XPATH_VAR_STRING);
-					appendStringInfoString(&output, valueStr);
-				}
-
-				pfree(exprCopy);
-			}
-			cursor += expr->common.size;
-		}
-		else
-		{
-			appendStringInfoString(&output, cursor);
-			cursor += strlen(cursor) + 1;
-		}
-	}
-	return output.data;
-}
-
-static int
-paramNameComparator(const void *left, const void *right)
-{
-	return strcmp(((XNTParamNameSorted *) left)->name, ((XNTParamNameSorted *) right)->name);
-}
-
-static XPathExpression
-getXPathExpression(char *src, unsigned int termFlags, XMLNodeContainer paramNames,
-				   unsigned short *endPos)
-{
-	XPathExpression expr = (XPathExpression) palloc(XPATH_EXPR_BUFFER_SIZE);
-	XPathOffset outPos = 0;
-	XPathParserStateData state;
-
-	expr->needsContext = false;
-	state.c = src;
-	state.cWidth = 0;
-	state.pos = 0;
-
-	parseXPathExpression(expr, &state, termFlags, NULL, (char *) expr, &outPos, false, false, NULL, NULL,
-						 paramNames);
-
-	if (expr->needsContext)
-	{
-		elog(ERROR, "one or more operands of the XPath expression require context");
-	}
-
-	if (endPos != NULL)
-	{
-		*endPos = state.pos;
-	}
-	return expr;
-}
-
-static char *
-getAttrValueTokenized(char *attrValue, unsigned int *valueSize, XMLNodeContainer paramNames)
-{
-	unsigned short tokenCount = 0;
-	char	   *tokens[XNT_ATTR_VALUE_MAX_TOKENS];
-	bool		tokenIsExpr[XNT_ATTR_VALUE_MAX_TOKENS];
-	unsigned int tokenSizes[XNT_ATTR_VALUE_MAX_TOKENS];
-	char	   *c = attrValue;
-	unsigned short k;
-	char	   *result,
-			   *resCursor;
-	unsigned int valueSizeMax = 0;
-
-	/*
-	 * Attribute value contains xpath expressions and therefore must be
-	 * tokenized.
-	 */
-
-	/* Each iteration processes 1 token. */
-	while (*c != '\0')
-	{
-		if (tokenCount == XNT_ATTR_VALUE_MAX_TOKENS)
-		{
-			elog(ERROR, "xnt attribute value must not consist of more than %u tokens",
-				 XNT_ATTR_VALUE_MAX_TOKENS);
-		}
-
-		if (*c == XNODE_CHAR_LBRKT_CUR)
-		{
-			XPathExpression tokenExpr;
-			unsigned short endPos = 0;
-
-			c++;				/* Skip the left curly bracket. */
-
-			/* Parse the xpath expression, ending with '}' */
-			tokenExpr = getXPathExpression(c, XPATH_TERM_RBRKT_CRL, paramNames, &endPos);
-			tokens[tokenCount] = (char *) tokenExpr;
-			tokenSizes[tokenCount] = tokenExpr->common.size;
-			tokenIsExpr[tokenCount] = true;
-			tokenCount++;
-			valueSizeMax += MAX_PADDING(XPATH_ALIGNOF_EXPR) + tokenExpr->common.size;
-			c += endPos;
-		}
-		else
-		{
-			char	   *tokStart = c;
-			unsigned int tokLen = 0;
-
-			/* plain string */
-			while (*c != '\0' && *c != XNODE_CHAR_LBRKT_CUR)
-			{
-				unsigned int cWidth = pg_utf_mblen((unsigned char *) c);
-
-				c += cWidth;
-				tokLen += cWidth;
-			}
-
-			if (tokLen > 0)
-			{
-				unsigned int size = tokLen + 1;
-				char	   *token = (char *) palloc(size);
-
-				memcpy(token, tokStart, tokLen);
-				token[tokLen] = '\0';
-				tokens[tokenCount] = token;
-				tokenSizes[tokenCount] = size;
-				tokenIsExpr[tokenCount] = false;
-				tokenCount++;
-				valueSizeMax += size;
-			}
-		}
-	}
-
-	Assert(tokenCount > 0);
-
-	/* Add space for the total number of tokens as well as type of each token. */
-	valueSizeMax += tokenCount * sizeof(bool) + sizeof(uint8);
-
-	/* Construct the tokenized binary value. */
-	result = resCursor = (char *) palloc(valueSizeMax);
-	*((uint8 *) resCursor) = tokenCount;
-	resCursor++;
-
-	for (k = 0; k < tokenCount; k++)
-	{
-		bool		isExpression = tokenIsExpr[k];
-
-		*((bool *) resCursor) = isExpression;
-		resCursor++;
-		if (isExpression)
-		{
-			resCursor = (char *) TYPEALIGN(XPATH_ALIGNOF_EXPR, resCursor);
-		}
-		memcpy(resCursor, tokens[k], tokenSizes[k]);
-		resCursor += tokenSizes[k];
-		pfree(tokens[k]);
-	}
-	*valueSize = resCursor - result;
-	return result;
-}
-
-static void
-visitXMLNodeForValidation(XMLNodeHdr *stack, unsigned int depth, void *userData)
-{
-	XMLNodeHdr	node = stack[depth];
-	XMLNodeHdr	parent = NULL;
-
-	if ((node->kind >= XNTNODE_ROOT) == 0)
-	{
-		return;
-	}
-
-	if (depth >= 1)
-	{
-		parent = stack[depth - 1];
-	}
-
-	switch (node->kind)
-	{
-		case XNTNODE_ROOT:
-			Assert(depth == 0);
-			break;
-
-		case XNTNODE_TEMPLATE:
-			if (depth == 1)
-			{
-				bool	   *hasRootTemplate = (bool *) userData;
-
-				if (node->flags & XNODE_EMPTY)
-				{
-					elog(ERROR, "root template must not be empty");
-				}
-				*hasRootTemplate = true;
-				return;
-			}
-			else
-			{
-				elog(ERROR, "'xnt:template' element is only allowed as the root element");
-			}
-			break;
-
-		case XNTNODE_COPY_OF:
-			if (!(node->flags & XNODE_EMPTY))
-			{
-				elog(ERROR, "'xnt:copy-of' element must be empty");
-			}
-			break;
-
-		case XNTNODE_ELEMENT:
-			break;
-
-		case XNTNODE_ATTRIBUTE:
-			if (!(parent != NULL && parent->kind == XNTNODE_ELEMENT))
-			{
-				elog(ERROR, "'xnt:element' must be parent of 'xnt:attribute'");
-			}
-
-			if (!(node->flags & XNODE_EMPTY))
-			{
-				/*
-				 * It doesn't seem to bring additional value if node content
-				 * could represent the attribute value, for example:
-				 *
-				 * <xnt:attribute name="x">1</xnt:attribute>
-				 */
-				elog(ERROR, "'xnt:attribute' element must be empty");
-			}
-			break;
-
-		default:
-			elog(ERROR, "unrecognized node kind %u found during validation", node->kind);
-			break;
-	}
+	PG_RETURN_CSTRING(dumpXMLNode(data, rootNdOff, VARSIZE(template),
+								  XNTNODE_NAMESPACE_URI, getXNTNodeName));
 }
 
 
@@ -929,10 +100,10 @@ xnode_from_template(PG_FUNCTION_ARGS)
 	char	   *templHdrData,
 			   *templData;
 	char	  **templParNames = NULL;
-	XNTHeader	templHdr;
+	XMLTemplateHeader templHdr;
 	ArrayType  *parNameArr;
 	int			parNameCount = 0;
-	XNTParamNameSorted *parNames = NULL;
+	XMLParamNameSorted *parNames = NULL;
 	unsigned int substNodeCount = 0;
 	XMLNodeOffset *substNodes = NULL;
 	Datum		row;
@@ -949,7 +120,7 @@ xnode_from_template(PG_FUNCTION_ARGS)
 	template = (xnt) PG_GETARG_VARLENA_P(0);
 	templData = VARDATA(template);
 	templDocRoot = (XMLCompNodeHdr) XNODE_ROOT(template);
-	Assert(templDocRoot->common.kind == XNTNODE_ROOT);
+	Assert(templDocRoot->common.kind == XMLTEMPLATE_ROOT);
 
 	templHdrData = XNODE_ELEMENT_NAME(templDocRoot);
 
@@ -959,12 +130,12 @@ xnode_from_template(PG_FUNCTION_ARGS)
 		templHdrData += sizeof(XMLDeclData);
 	}
 
-	templHdrData = (char *) TYPEALIGN(XNODE_ALIGNOF_XNT_HDR, templHdrData);
-	templHdr = (XNTHeader) templHdrData;
+	templHdrData = (char *) TYPEALIGN(XNODE_ALIGNOF_TEMPL_HDR, templHdrData);
+	templHdr = (XMLTemplateHeader) templHdrData;
 
 	if (templHdr->paramCount > 0 || templHdr->substNodesCount > 0)
 	{
-		templHdrData += sizeof(XNTHeaderData);
+		templHdrData += sizeof(XMLTemplateHeaderData);
 	}
 
 	if (templHdr->paramCount > 0)
@@ -990,7 +161,7 @@ xnode_from_template(PG_FUNCTION_ARGS)
 	/* Retrieve names of the attributes that the function caller provides. */
 	parNameArr = PG_GETARG_ARRAYTYPE_P(1);
 	paramMap = (unsigned short *) palloc(templHdr->paramCount * sizeof(unsigned short));
-	parNames = getParameterNames(parNameArr, templHdr->paramCount, templParNames, paramMap);
+	parNames = getXMLTemplateParamNames(parNameArr, templHdr->paramCount, templParNames, paramMap);
 
 	/*
 	 * More than the default size because it will be used for all expressions
@@ -1001,10 +172,10 @@ xnode_from_template(PG_FUNCTION_ARGS)
 
 	/* Retrieve values of the parameters. */
 	row = PG_GETARG_DATUM(2);
-	parValues = getParameterValues(row, templHdr->paramCount, exprState, fcinfo->flinfo->fn_oid);
+	parValues = getXMLTemplateParamValues(row, templHdr->paramCount, exprState, fcinfo->flinfo->fn_oid);
 
 
-	templNode = getTemplateFromDoc(templDocRoot);
+	templNode = getXMLDocRootElement(templDocRoot, XNTNODE_TEMPLATE);
 
 	newTreeRoot = (XNodeInternal) palloc(sizeof(XNodeInternalData));
 	newTreeRoot->node = (XMLNodeHdr) templNode;
@@ -1100,34 +271,154 @@ xnode_from_template(PG_FUNCTION_ARGS)
 	}
 }
 
-/*
- * Caller must not pass combination of source and target types for which
- * there's no entry in pg_cast.
- */
-static Datum
-castParameterValue(Datum value, Oid sourceType, Oid targetType)
+static XMLNodeKind
+getXNTNodeKind(char *name)
 {
-	HeapTuple	tup;
-	Form_pg_cast castStruct;
-	Oid			castFuncOid;
+	char	   *colon = strrchr(name, XNODE_CHAR_COLON);
 
-	if (sourceType == targetType)
+	if (colon != NULL)
 	{
-		return value;
+		/* skip the prefix */
+		name = colon + 1;
 	}
 
-	tup = SearchSysCache2(CASTSOURCETARGET, ObjectIdGetDatum(sourceType), ObjectIdGetDatum(targetType));
-	Assert(HeapTupleIsValid(tup));
-	castStruct = (Form_pg_cast) GETSTRUCT(tup);
-	castFuncOid = castStruct->castfunc;
-	ReleaseSysCache(tup);
-
-	if (castFuncOid == 0)
+	if (strcmp(name, XNT_TEMPLATE) == 0)
 	{
-		return value;
+		return XNTNODE_TEMPLATE;
+	}
+	else if (strcmp(name, XNT_COPY_OF) == 0)
+	{
+		return XNTNODE_COPY_OF;
+	}
+	else if (strcmp(name, XNT_ELEMENT) == 0)
+	{
+		return XNTNODE_ELEMENT;
+	}
+	else if (strcmp(name, XNT_ATTRIBUTE) == 0)
+	{
+		return XNTNODE_ATTRIBUTE;
+	}
+	elog(ERROR, "unrecognized XNT node '%s'", name);
+	return 0;
+}
+
+static char *
+getXNTNodeName(XMLNodeKind kind, char *nmspPrefix)
+{
+	StringInfoData out;
+	char	   *name;
+
+	xnodeInitStringInfo(&out, 32);
+
+	switch (kind)
+	{
+		case XNTNODE_TEMPLATE:
+			name = XNT_TEMPLATE;
+			break;
+
+		case XNTNODE_COPY_OF:
+			name = XNT_COPY_OF;
+			break;
+
+		case XNTNODE_ELEMENT:
+			name = XNT_ELEMENT;
+			break;
+
+		case XNTNODE_ATTRIBUTE:
+			name = XNT_ATTRIBUTE;
+			break;
+
+		default:
+			elog(ERROR, "unrecognized xnt node kind %u", kind);
+			return NULL;
 	}
 
-	return OidFunctionCall1(castFuncOid, value);
+	if (nmspPrefix != NULL && strlen(nmspPrefix) > 0)
+	{
+		appendStringInfo(&out, "%s:", nmspPrefix);
+	}
+	appendStringInfoString(&out, name);
+	return out.data;
+}
+
+static void
+validateXNTTree(XMLNodeHdr root)
+{
+	bool		hasRootTemplate = false;
+
+	walkThroughXMLTree(root, validateXNTNode, false, (void *) &hasRootTemplate);
+	if (!hasRootTemplate)
+	{
+		elog(ERROR, "valid stylesheet (bound to the correct namespace) must be the root element");
+	}
+}
+
+static void
+validateXNTNode(XMLNodeHdr *stack, unsigned int depth, void *userData)
+{
+	XMLNodeHdr	node = stack[depth];
+	XMLNodeHdr	parent = NULL;
+
+	if (node->kind < XNTNODE_TEMPLATE)
+		return;
+
+	if (depth >= 1)
+	{
+		parent = stack[depth - 1];
+	}
+
+	switch (node->kind)
+	{
+		case XNTNODE_TEMPLATE:
+			if (depth == 1)
+			{
+				bool	   *hasRootTemplate = (bool *) userData;
+
+				if (node->flags & XNODE_EMPTY)
+				{
+					elog(ERROR, "root template must not be empty");
+				}
+				*hasRootTemplate = true;
+				return;
+			}
+			else
+			{
+				elog(ERROR, "'xnt:template' element is only allowed as the root element");
+			}
+			break;
+
+		case XNTNODE_COPY_OF:
+			if (!(node->flags & XNODE_EMPTY))
+			{
+				elog(ERROR, "'xnt:copy-of' element must be empty");
+			}
+			break;
+
+		case XNTNODE_ELEMENT:
+			break;
+
+		case XNTNODE_ATTRIBUTE:
+			if (!(parent != NULL && parent->kind == XNTNODE_ELEMENT))
+			{
+				elog(ERROR, "'xnt:element' must be parent of 'xnt:attribute'");
+			}
+
+			if (!(node->flags & XNODE_EMPTY))
+			{
+				/*
+				 * It doesn't seem to bring additional value if node content
+				 * could represent the attribute value, for example:
+				 *
+				 * <xnt:attribute name="x">1</xnt:attribute>
+				 */
+				elog(ERROR, "'xnt:attribute' element must be empty");
+			}
+			break;
+
+		default:
+			elog(ERROR, "unrecognized node kind %u found during validation", node->kind);
+			break;
+	}
 }
 
 /*
@@ -1172,7 +463,7 @@ buildNewNodeTree(XMLNodeHdr node, XNodeInternal parent, unsigned int *storageSiz
 		if (node->kind == XMLNODE_ELEMENT)
 			initXMLNodeIterator(&iterator, compNode, true);
 		else
-			initXMLNodeIteratorSpecial(&iterator, compNode, true, xntAttributeInfo);
+			initXMLNodeIteratorSpecial(&iterator, compNode, true);
 
 		while ((childNode = getNextXMLNodeChild(&iterator)) != NULL)
 		{
@@ -1180,7 +471,7 @@ buildNewNodeTree(XMLNodeHdr node, XNodeInternal parent, unsigned int *storageSiz
 
 			if (node->kind == XNTNODE_TEMPLATE)
 			{
-				XNTAttrNames *attrInfo = xntAttributeInfo;
+				XNodeSpecAttributes *attrInfo = xntAttributeInfo;
 				XMLNodeOffset childRef;
 
 				if (children <= attrInfo->number)
@@ -1206,7 +497,7 @@ buildNewNodeTree(XMLNodeHdr node, XNodeInternal parent, unsigned int *storageSiz
 			}
 
 			if ((childNode->kind == XMLNODE_TEXT || childNode->kind == XMLNODE_CDATA) &&
-				!preserveSpace && whitespacesOnly(XNODE_CONTENT(childNode)))
+				!preserveSpace && xmlStringWhitespaceOnly(XNODE_CONTENT(childNode)))
 			{
 				continue;
 			}
@@ -1280,8 +571,8 @@ buildNewNodeTree(XMLNodeHdr node, XNodeInternal parent, unsigned int *storageSiz
 			attrOrig = node;
 			name = XNODE_CONTENT(attrOrig);
 			valueOrig = name + strlen(name) + 1;
-			valueNew = dumpBinaryAttrValue(valueOrig, NULL, paramValues, paramMap, exprState);
-			attrNew = getNewAttribute(name, attrOrig->flags, valueNew, false, &sizeNew);
+			valueNew = dumpXMLAttrBinaryValue(valueOrig, NULL, paramValues, paramMap, exprState);
+			attrNew = getNewXMLAttribute(name, attrOrig->flags, valueNew, false, &sizeNew);
 			nodeInternal = getInternalNode(attrNew, true);
 			pfree(valueNew);
 			*storageSize += sizeNew;
@@ -1301,110 +592,6 @@ buildNewNodeTree(XMLNodeHdr node, XNodeInternal parent, unsigned int *storageSiz
 	}
 }
 
-/*
- * Returns a new attribute node where the value has been validated and flags set as appropriate.
- */
-static XMLNodeHdr
-getNewAttribute(char *name, uint8 flags, char *value, char decideOnDelim, unsigned int *size)
-{
-	XMLNodeParserStateData state;
-	char	   *valueValidated;
-	bool		refs = false;
-	XMLNodeHdr	result;
-	char	   *c;
-	char		delimiter;
-	bool		seenApostrophe = false;
-	bool		mixture = false;
-
-	if (decideOnDelim)
-	{
-		delimiter = XNODE_CHAR_QUOTMARK;
-	}
-	else
-	{
-		delimiter = ((flags & XNODE_ATTR_APOSTROPHE) == 0) ? XNODE_CHAR_QUOTMARK : XNODE_CHAR_APOSTR;
-	}
-
-	initXMLParserState(&state, value, XMLNODE_ATTRIBUTE, NULL);
-
-	/*
-	 * If the value contains character references then the binary value will
-	 * be different. That's why use 'valueNewChecked' in the next steps.
-	 */
-	valueValidated = readXMLAttValue(&state, true, &refs);
-	c = valueValidated;
-
-	while (*c != '\0')
-	{
-		if (decideOnDelim)
-		{
-			/*
-			 * Check for mixture of apostrophes and quotation marks is not
-			 * necessary, readXMLName() shouldn't accept it. However it's not
-			 * a significant overhead to cross-check for such mixtures while
-			 * determining the delimiter.
-			 */
-			if (*c == XNODE_CHAR_APOSTR)
-			{
-				if (delimiter == XNODE_CHAR_APOSTR)
-				{
-					/*
-					 * We already switched the delimiter from quotation mark
-					 * to apostrophe, so the quot. mark is there too.
-					 */
-					mixture = true;
-					break;
-				}
-				seenApostrophe = true;
-			}
-			else if (*c == XNODE_CHAR_QUOTMARK)
-			{
-				/* Try to change the delimiter to apostrophe. */
-				if (!seenApostrophe)
-				{
-					delimiter = XNODE_CHAR_APOSTR;
-				}
-				else
-				{
-					mixture = true;
-					break;
-				}
-			}
-
-		}
-		else
-		{
-			/*
-			 * If apostrophe is used as delimiter in the template, then it
-			 * must not be inserted via parameter. The same is valid for
-			 * quotation mark.
-			 */
-			if ((*c == XNODE_CHAR_QUOTMARK && ((flags & XNODE_ATTR_APOSTROPHE) == 0)) ||
-				(*c == XNODE_CHAR_APOSTR && (flags & XNODE_ATTR_APOSTROPHE)))
-			{
-				elog(ERROR, "attribute value delimiter must not be used within the value");
-			}
-		}
-		c += pg_utf_mblen((unsigned char *) c);
-	}
-
-	if (mixture)
-	{
-		elog(ERROR, "attribute value must not contain both quotation mark and apostrophe.");
-	}
-
-	*size = sizeof(XMLNodeHdr) + strlen(name) +strlen(valueValidated) + 2;
-	result = (XMLNodeHdr) palloc(*size);
-	result->kind = XMLNODE_ATTRIBUTE;
-	c = XNODE_CONTENT(result);
-	strcpy(c, name);
-	c += strlen(name) + 1;
-	strcpy(c, valueValidated);
-
-	result->flags = getXMLAttributeFlags(valueValidated, refs, delimiter == XNODE_CHAR_APOSTR);
-	finalizeXMLParserState(&state);
-	return result;
-}
 
 static XNodeInternal
 getInternalNode(XMLNodeHdr node, bool copy)
@@ -1444,143 +631,6 @@ freeTemplateTree(XNodeInternal root)
 	pfree(root);
 }
 
-/*
- * The template document might contain multiple root nodes, even though there's
- * exactly one root element). This function returns that root element, i.e. 'xnt:template'
- */
-static XMLCompNodeHdr
-getTemplateFromDoc(XMLCompNodeHdr docRoot)
-{
-	XMLNodeIteratorData iterator;
-	XMLNodeHdr	child;
-
-	Assert(docRoot->common.kind == XNTNODE_ROOT);
-
-	/*
-	 * 'attrsSpecial == true' to avoid skipping special attributes. This node
-	 * has no attributes anyway.
-	 */
-	initXMLNodeIteratorSpecial(&iterator, docRoot, true, NULL);
-
-	while ((child = getNextXMLNodeChild(&iterator)) != NULL)
-	{
-		if (child->kind == XNTNODE_TEMPLATE)
-		{
-			break;
-		}
-	}
-
-	Assert(child != NULL && child->kind == XNTNODE_TEMPLATE);
-	return (XMLCompNodeHdr) child;
-}
-
-static XPathExpression
-substituteParameters(XPathExprState exprState, XPathExpression expression, XPathExprOperandValue paramValues,
-					 unsigned short *paramMap)
-{
-	unsigned short i;
-	XPathExpression result = (XPathExpression) palloc(expression->common.size);
-	XPathOffset *varOffPtr = (XPathOffset *) ((char *) result + sizeof(XPathExpressionData));
-
-	memcpy(result, expression, expression->common.size);
-
-	for (i = 0; i < result->variables; i++)
-	{
-		XPathExprOperand opnd = (XPathExprOperand) ((char *) result + *varOffPtr);
-
-		if (opnd->common.type == XPATH_OPERAND_PARAMETER)
-		{
-			unsigned short valueId;
-			XPathExprOperandValue value;
-			XMLCompNodeHdr fragment = NULL;
-			XPathExprGenericValue *valDst;
-
-			valueId = paramMap[opnd->value.v.paramId];
-			value = paramValues + valueId;
-
-			/*
-			 * 'negative' is not set, that of the source expression must be
-			 * preserved.
-			 */
-			opnd->value.castToNumber = value->castToNumber;
-			opnd->value.isNull = value->isNull;
-			opnd->value.type = value->type;
-
-			/*
-			 * Document fragment has to be turned into node set.
-			 *
-			 * This only makes sense if the operand contains exactly one node.
-			 * There's no known case where array of document fragments could
-			 * be constructed.
-			 */
-
-			if (!value->isNull && value->type == XPATH_VAL_NODESET && value->v.nodeSet.count == 1)
-			{
-				XMLNodeHdr	node = getXPathOperandValue(exprState, value->v.nodeSet.nodes.nodeId, XPATH_VAR_NODE_SINGLE);
-
-				if (node->kind == XMLNODE_DOC_FRAGMENT)
-				{
-					fragment = (XMLCompNodeHdr) node;
-				}
-			}
-
-			valDst = &opnd->value.v;
-
-			if (fragment != NULL)
-			{
-				XPathNodeSet ns = &valDst->nodeSet;
-				unsigned short j = 0;
-				XMLNodeHdr *children;
-				XMLNodeIteratorData iterator;
-				XMLNodeHdr	child;
-
-				Assert(fragment->children > 1);
-
-				children = (XMLNodeHdr *) palloc(fragment->children * sizeof(XMLNodeHdr));
-				ns->isDocument = false;
-				ns->count = fragment->children;
-
-				initXMLNodeIterator(&iterator, fragment, true);
-
-				while ((child = getNextXMLNodeChild(&iterator)) != NULL)
-				{
-					children[j++] = child;
-				}
-				ns->nodes.arrayId = getXPathOperandId(exprState, (void *) children, XPATH_VAR_NODE_ARRAY);
-			}
-			else
-			{
-				XPathExprGenericValue *valSrc;
-
-				valSrc = &value->v;
-				memcpy(valDst, valSrc, sizeof(XPathExprGenericValue));
-			}
-
-		}
-		varOffPtr++;
-	}
-	return result;
-
-}
-
-static bool
-whitespacesOnly(char *str)
-{
-	while (*str != '\0')
-	{
-		unsigned int cWidth = pg_utf_mblen((unsigned char *) str);
-
-		if (!XNODE_WHITESPACE(str))
-		{
-			break;
-		}
-		str += cWidth;
-	}
-
-	/* The string contains merely white spaces. */
-	return (*str == '\0');
-}
-
 static XNodeInternal
 xntProcessCopyOf(XMLNodeHdr node, XNodeInternal parent,
 				 bool preserveSpace, XPathExprOperandValue paramValues,
@@ -1614,7 +664,7 @@ xntProcessCopyOf(XMLNodeHdr node, XNodeInternal parent,
 	 * position.)
 	 */
 	expr = (XPathExpression) XNODE_CONTENT(attrNode);
-	exprCopy = substituteParameters(exprState, expr, paramValues, paramMap);
+	exprCopy = substituteXMLTemplateParams(exprState, expr, paramValues, paramMap);
 	evaluateXPathExpression(exprState, exprCopy, 0, &exprResult);
 
 	if (!exprResult.isNull)
@@ -1648,7 +698,7 @@ xntProcessCopyOf(XMLNodeHdr node, XNodeInternal parent,
 				 */
 				Assert(singleNode->kind != XMLNODE_DOC_FRAGMENT);
 
-				if ((singleNode->kind == XMLNODE_TEXT && whitespacesOnly(XNODE_CONTENT(singleNode))) ||
+				if ((singleNode->kind == XMLNODE_TEXT && xmlStringWhitespaceOnly(XNODE_CONTENT(singleNode))) ||
 					singleNode->kind == XMLNODE_COMMENT)
 				{
 					continue;
@@ -1725,7 +775,7 @@ xntProcessElement(XMLNodeHdr node, bool preserveSpace,
 
 	if (attrNode->flags & XNODE_ATTR_VALUE_BINARY)
 	{
-		elName = dumpBinaryAttrValue(elName, NULL, paramValues, paramMap, exprState);
+		elName = dumpXMLAttrBinaryValue(elName, NULL, paramValues, paramMap, exprState);
 		elNameCopy = true;
 	}
 	if (!isValidXMLName(elName))
@@ -1798,7 +848,7 @@ xntProcessElement(XMLNodeHdr node, bool preserveSpace,
 		offRel = readXMLNodeOffset(&refPtr, bwidth, true);
 		childNode = (XMLNodeHdr) ((char *) xntNode - offRel);
 
-		if ((childNode->kind == XMLNODE_TEXT && whitespacesOnly(XNODE_CONTENT(childNode))) ||
+		if ((childNode->kind == XMLNODE_TEXT && xmlStringWhitespaceOnly(XNODE_CONTENT(childNode))) ||
 			childNode->kind == XMLNODE_COMMENT)
 		{
 			continue;
@@ -1848,7 +898,7 @@ xntProcessAttribute(XMLNodeHdr node,
 	attrName = XNODE_CONTENT(attrNode);
 	if (attrNode->flags & XNODE_ATTR_VALUE_BINARY)
 	{
-		attrName = dumpBinaryAttrValue(attrName, NULL, paramValues, paramMap, exprState);
+		attrName = dumpXMLAttrBinaryValue(attrName, NULL, paramValues, paramMap, exprState);
 		attrNameCopy = true;
 	}
 	if (!isValidXMLName(attrName))
@@ -1862,9 +912,9 @@ xntProcessAttribute(XMLNodeHdr node,
 	attrValue = XNODE_CONTENT(attrNode);
 	if (attrNode->flags & XNODE_ATTR_VALUE_BINARY)
 	{
-		attrValue = dumpBinaryAttrValue(attrValue, NULL, paramValues, paramMap, exprState);
+		attrValue = dumpXMLAttrBinaryValue(attrValue, NULL, paramValues, paramMap, exprState);
 		resultNodeSize = 0;
-		resultNode = getNewAttribute(attrName, 0, attrValue, true, &resultNodeSize);
+		resultNode = getNewXMLAttribute(attrName, 0, attrValue, true, &resultNodeSize);
 		attrValueCopy = true;
 	}
 	else
@@ -1897,359 +947,4 @@ xntProcessAttribute(XMLNodeHdr node,
 	*storageSize += resultNodeSize + sizeof(XMLNodeOffset);
 
 	return resultInternal;
-}
-
-/*
- * Get parameter values out of the input row.
- *
- *
- * 'parNameArray' - the array of parameter names that user passes.
- *
- * 'paraNameCount' - how many elements that array contains.
- *
- * 'templateParamCount' - how many parameters the template contains.
- *
- *	'paramMap' - receives array mapping template parameters to names of the
- *	parameters passed by user for substitution. Size of this array must not
- *	be less than 'templateParamCount'
- *
- *	Returns array of parameter names passed by user for substitution.
- */
-XNTParamNameSorted *
-getParameterNames(ArrayType * parNameArray, unsigned int templateParamCount,
-				  char **templParNames, unsigned short *paramMap)
-{
-	XNTParamNameSorted *parNames = NULL;
-	unsigned int parNameCount;
-
-	if (ARR_NDIM(parNameArray) == 0)
-	{
-		parNameCount = 0;
-	}
-	else if (ARR_NDIM(parNameArray) == 1)
-	{
-		int		   *attrArrDims = ARR_DIMS(parNameArray);
-
-		parNameCount = attrArrDims[0];
-	}
-	else
-	{
-		elog(ERROR, "parameter names must be passed in 1-dimensional array");
-	}
-
-	if (parNameCount != templateParamCount)
-	{
-		elog(ERROR, "number of parameter names passed must be equal to the number of parameters that the template references");
-	}
-
-	if (parNameCount > 0)
-	{
-		Oid			elType,
-					arrType;
-		int16		arrTypLen,
-					elTypLen;
-		bool		elByVal;
-		char		elAlign;
-		XNTParamNameSorted *parNamesTmp;
-		unsigned int i;
-
-		elType = parNameArray->elemtype;
-		arrType = get_array_type(elType);
-		Assert(arrType != InvalidOid);
-		arrTypLen = get_typlen(arrType);
-		get_typlenbyvalalign(elType, &elTypLen, &elByVal, &elAlign);
-
-		/*
-		 * Get the parameter names from the array. There's no need to validate
-		 * characters. The validation is performed when parsing the template,
-		 * so invalid parameter names simply won't match.
-		 */
-		parNames = parNamesTmp = (XNTParamNameSorted *) palloc(parNameCount * sizeof(XNTParamNameSorted));
-
-		for (i = 0; i < parNameCount; i++)
-		{
-			int			subscr[1];
-			Datum		elDatum;
-			bool		elIsNull;
-			char	   *parName;
-
-			subscr[0] = i + 1;
-			elDatum = array_ref(parNameArray, 1, subscr, arrTypLen, elTypLen, elByVal, elAlign, &elIsNull);
-			if (elIsNull)
-			{
-				elog(ERROR, "all parameter names must be not-NULL");
-			}
-			parName = TextDatumGetCString(elDatum);
-			if (strlen(parName) == 0)
-			{
-				elog(ERROR, "all parameter names must have non-zero length");
-			}
-			parNamesTmp->order = i;
-			parNamesTmp->name = parName;
-			parNamesTmp++;
-		}
-
-		if (parNameCount > 0)
-		{
-			char	   *prev;
-
-			if (parNameCount > 1)
-			{
-				/* Sort by the name. */
-				qsort(parNames, parNameCount, sizeof(XNTParamNameSorted), paramNameComparator);
-
-				/* Check if there's no duplicate. */
-				parNamesTmp = parNames;
-				prev = parNamesTmp->name;
-				parNamesTmp++;
-
-				for (i = 1; i < parNameCount; i++)
-				{
-					if (strcmp(prev, parNamesTmp->name) == 0)
-					{
-						elog(ERROR, "parameter '%s' is passed more than once", prev);
-					}
-					prev = parNamesTmp->name;
-					parNamesTmp++;
-				}
-			}
-
-			/* Match the template parameters to those passed to the function. */
-			for (i = 0; i < templateParamCount; i++)
-			{
-				XNTParamNameSorted key;
-				XNTParamNameSorted *matching;
-
-				key.name = templParNames[i];
-				matching = (XNTParamNameSorted *) bsearch(&key, parNames, parNameCount,
-							sizeof(XNTParamNameSorted), paramNameComparator);
-
-				if (matching != NULL)
-				{
-					/*
-					 * 'i' is the order that template expressions use to
-					 * reference parameter names (i. e. the order of given
-					 * parameter in the list stored in template header).
-					 *
-					 * paramMap[i] says at which position user passes the
-					 * corresponding parameter in the function argument list.
-					 */
-					paramMap[i] = matching->order;
-				}
-				else
-				{
-					elog(ERROR, "the template references parameter '%s' but it's not passed", key.name);
-				}
-			}
-		}
-	}
-
-	return parNames;
-}
-
-/*
- * Get parameter values out of the input row.
- *
- *
- * 'templateParamCount' - number of parameters the template requires.
- *
- * 'exprState' - variable cache to be used to evaluate template expressions.
- *
- * 'fnOid' - OID of the function that performs the substitution. It's needed
- * to identify type of the input row.
- *
- */
-static XPathExprOperandValue
-getParameterValues(Datum row,
-		unsigned int templateParamCount, XPathExprState exprState, Oid fnOid)
-{
-	Form_pg_proc procStruct;
-	HeapTupleData tmpTup,
-			   *tup;
-	Oid			nodeOid;
-	unsigned int i;
-	HeapTupleHeader tupHdr = DatumGetHeapTupleHeader(row);
-	Oid			tupType = HeapTupleHeaderGetTypeId(tupHdr);
-	int32		tupTypmod = HeapTupleHeaderGetTypMod(tupHdr);
-	TupleDesc	tupDesc = lookup_rowtype_tupdesc(tupType, tupTypmod);
-	XPathExprOperandValue parValues;
-
-	/*
-	 * It must have already been verified that the template has the number of
-	 * parameters equal to the number of parameter names passed by user.
-	 */
-	if (tupDesc->natts != templateParamCount)
-	{
-		elog(ERROR, "the number of parameter values must be equal to that of names");
-	}
-
-	/*
-	 * As there are no fixed OIDs for our types, let's get it from catalog.
-	 * 'node' is the return type.
-	 */
-	tup = SearchSysCache1(PROCOID, ObjectIdGetDatum(fnOid));
-	Assert(HeapTupleIsValid(tup));
-	procStruct = (Form_pg_proc) GETSTRUCT(tup);
-	nodeOid = procStruct->prorettype;
-	ReleaseSysCache(tup);
-
-	tmpTup.t_len = HeapTupleHeaderGetDatumLength(tupHdr);
-	tmpTup.t_data = tupHdr;
-	tup = &tmpTup;
-
-	parValues = (XPathExprOperandValue) palloc(tupDesc->natts * sizeof(XPathExprOperandValueData));
-
-	for (i = 0; i < tupDesc->natts; i++)
-	{
-		Oid			attTyp;
-		Datum		attValue;
-		bool		isnull = false;
-		XPathExprOperandValue parValue;
-
-		attTyp = tupDesc->attrs[i]->atttypid;
-		attValue = heap_getattr(tup, i + 1, tupDesc, &isnull);
-		parValue = parValues + i;
-
-		if (isnull)
-		{
-			parValue->isNull = true;
-			continue;
-		}
-
-		/*
-		 * Set default values. 'negative' is not set because
-		 * substituteParameters() ignores it anyway, in order to preserve sign
-		 * that the source expression might contain.
-		 */
-		parValue->isNull = false;
-		parValue->castToNumber = false;
-
-		/* 'nodeOid' is not a constant so can't be used with 'switch'. */
-		if (attTyp == nodeOid)
-		{
-			xmlnode		node = PG_DETOAST_DATUM(attValue);
-			XMLNodeHdr	root = XNODE_ROOT(node);
-
-			parValue->v.nodeSet.count = 1;
-			parValue->v.nodeSet.isDocument = false;
-			parValue->v.nodeSet.nodes.nodeId = getXPathOperandId(exprState,
-									   (void *) root, XPATH_VAR_NODE_SINGLE);
-			parValue->type = XPATH_VAL_NODESET;
-		}
-		else
-		{
-			switch (attTyp)
-			{
-				case BOOLOID:
-					parValue->v.boolean = DatumGetBool(
-							  castParameterValue(attValue, attTyp, BOOLOID));
-					parValue->type = XPATH_VAL_BOOLEAN;
-					break;
-
-				case INT2OID:
-				case INT4OID:
-				case INT8OID:
-				case NUMERICOID:
-				case FLOAT4OID:
-				case FLOAT8OID:
-					parValue->v.num = DatumGetFloat8(castParameterValue(attValue, attTyp, FLOAT8OID));
-					parValue->type = XPATH_VAL_NUMBER;
-					break;
-
-				case BPCHAROID:
-				case VARCHAROID:
-				case TEXTOID:
-					{
-						char	   *valStr;
-
-						valStr = TextDatumGetCString(castParameterValue(attValue, attTyp, TEXTOID));
-
-						/*
-						 * Maybe too restrictive, but that's not a problem.
-						 * Only the resulting document is restricted by XML
-						 * specification, whereas the XNT parameters are not.
-						 * Thus so this check may be more strict if simplicity
-						 * demands it.
-						 */
-						if (strchr(valStr, XNODE_CHAR_LARROW) || strchr(valStr, XNODE_CHAR_RARROW) ||
-							strchr(valStr, XNODE_CHAR_AMPERSAND))
-						{
-							elog(ERROR, "the following characters are is not allowed in text parameter: '<', '>', '&'.");
-						}
-						parValue->v.stringId = getXPathOperandId(exprState, (void *) valStr, XPATH_VAR_STRING);
-						parValue->type = XPATH_VAL_STRING;
-						break;
-					}
-
-				default:
-					elog(ERROR, "value of parameter %u has unrecognized type", i + 1);
-					break;
-			}
-		}
-	}
-
-	ReleaseTupleDesc(tupDesc);
-	return parValues;
-}
-
-/*
- * If the attribute has the correct prefix, let's ignore the prefix for
- * simplicity. If the prefix is not correct (e.g. bound to wrong URI), return
- * the original (prefixed) name, so it fails to match to any attribute
- * of given special element.
- */
-static char *
-getAttributeName(char *prefix, char *attrNamePrefixed,
-				 XMLNodeContainer nmspDecls, char *parserOutput)
-{
-	unsigned int prefLenEl = strlen(prefix);
-	char	   *result = attrNamePrefixed;
-
-	if (strncmp(prefix, attrNamePrefixed, prefLenEl) == 0 &&
-		attrNamePrefixed[prefLenEl] == XNODE_CHAR_COLON)
-	{
-		/* Skip both the prefix and colon. */
-		result += prefLenEl + 1;
-	}
-	else
-	{
-		char	   *colon,
-				   *nmspURIAttr,
-				   *nmspURIElement,
-				   *prefAttr;
-		unsigned int prefAttrLen;
-
-		/*
-		 * In rare cases the attribute can have different prefix from that of
-		 * the element, but eventually both might be bound to the same URI.
-		 */
-
-		/*
-		 * The *last* colon because namespace prefix may contain multiple
-		 * colons.
-		 */
-		colon = strrchr(attrNamePrefixed, XNODE_CHAR_COLON);
-		Assert(colon != NULL);
-		prefAttrLen = colon - attrNamePrefixed;
-		prefAttr = pnstrdup(attrNamePrefixed, prefAttrLen);
-
-		if (XNODE_IS_DEF_NAMESPACE_DECL(prefAttr))
-		{
-			/* Not interested in namespace declarations. */
-			pfree(prefAttr);
-			return result;
-		}
-
-		nmspURIAttr = getXMLNamespaceURI(prefAttr, nmspDecls, parserOutput);
-		nmspURIElement = getXMLNamespaceURI(
-				   *prefix != '\0' ? prefix : NULL, nmspDecls, parserOutput);
-		if (nmspURIAttr != NULL && nmspURIElement != NULL &&
-			strcmp(nmspURIAttr, nmspURIElement) == 0)
-		{
-			/* Skip both the prefix and colon. */
-			result += prefAttrLen + 1;
-		}
-		pfree(prefAttr);
-	}
-	return result;
 }

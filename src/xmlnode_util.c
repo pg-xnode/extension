@@ -737,6 +737,24 @@ xmlStringIsNumber(char *str, double *numValue, char **end, bool skipWhitespace)
 	}
 }
 
+bool
+xmlStringWhitespaceOnly(char *str)
+{
+	while (*str != '\0')
+	{
+		unsigned int cWidth = pg_utf_mblen((unsigned char *) str);
+
+		if (!XNODE_WHITESPACE(str))
+		{
+			break;
+		}
+		str += cWidth;
+	}
+
+	/* The string contains merely white spaces. */
+	return (*str == '\0');
+}
+
 /*
  * It shouldn't be possible to create a document fragment containing mixture
  * of attribute and non-attribute nodes. Nevertheless, it's better to check all
@@ -788,10 +806,10 @@ xmlTreeWalker(XMLTreeWalkerContext *context)
 
 	context->visitor(context->stack, context->depth, context->userData);
 
-	if (XNODE_IS_COMPOUND(node) || node->kind >= XNTNODE_ROOT)
+	if (XNODE_IS_COMPOUND(node) || node->kind >= XMLTEMPLATE_ROOT)
 	{
 		XMLCompNodeHdr compNode = (XMLCompNodeHdr) node;
-		bool		isSpecial = compNode->common.kind >= XNTNODE_ROOT;
+		bool		isTemplate = compNode->common.kind >= XMLTEMPLATE_ROOT;
 		XMLNodeIteratorData iterator;
 		XMLNodeHdr	child;
 		unsigned int childNr = 0;
@@ -808,14 +826,14 @@ xmlTreeWalker(XMLTreeWalkerContext *context)
 			context->stack = (XMLNodeHdr *) repalloc(context->stack, context->stackSize);
 		}
 
-		if (isSpecial)
-			initXMLNodeIteratorSpecial(&iterator, compNode, true, xntAttributeInfo);
+		if (isTemplate)
+			initXMLNodeIteratorSpecial(&iterator, compNode, true);
 		else
 			initXMLNodeIterator(&iterator, compNode, true);
 
 		while ((child = getNextXMLNodeChild(&iterator)) != NULL)
 		{
-			if (isSpecial && (child == (XMLNodeHdr) compNode))
+			if (isTemplate && (child == (XMLNodeHdr) compNode))
 
 				/*
 				 * 'child == compNode' indicates 'XMLNodeOffsetInvalid'. In
@@ -884,8 +902,8 @@ xnodeInitStringInfo(StringInfo stringInfo, int len)
 void
 initXMLNodeIterator(XMLNodeIterator iterator, XMLCompNodeHdr node, bool attributes)
 {
-	if (!XNODE_IS_COMPOUND((XMLNodeHdr) node))
-		elog(ERROR, "element, document or document fragment expected for iteration, %u received instead",
+	if (!XNODE_IS_COMPOUND((XMLNodeHdr) node) && node->common.kind != XMLTEMPLATE_ROOT)
+		elog(ERROR, "element, document, document fragment or template expected for iteration, %u received instead",
 			 node->common.kind);
 
 	iterator->node = node;
@@ -897,14 +915,12 @@ initXMLNodeIterator(XMLNodeIterator iterator, XMLCompNodeHdr node, bool attribut
 
 void
 initXMLNodeIteratorSpecial(XMLNodeIterator iterator, XMLCompNodeHdr node,
-						   bool attrsSpecial, XNTAttrNames *specAttrInfo)
+						   bool attrsSpecial)
 {
 	XMLNodeKind kind = node->common.kind;
-	unsigned int attrsToSkip;
 
-
-	if (kind < XNTNODE_ROOT)
-		elog(ERROR, "special node expected for iteration, %u received instead", kind);
+	if (kind < XMLTEMPLATE_ROOT)
+		elog(ERROR, "template node expected for iteration, %u received instead", kind);
 
 	/*
 	 * Set fake value so there is no error when reusing the simpler
@@ -916,26 +932,11 @@ initXMLNodeIteratorSpecial(XMLNodeIterator iterator, XMLCompNodeHdr node,
 	/* Finally restore the original kind. */
 	iterator->node->common.kind = node->common.kind = kind;
 
-	if (!attrsSpecial)
+	if (kind > XMLTEMPLATE_ROOT && !attrsSpecial)
 	{
 		unsigned int i;
-
-		/*
-		 * Each new special document will have node kinds higher. Therefore
-		 * the respective tests should be added at the top here, letting
-		 * particular test fall through to the correct range.
-		 */
-		if (kind >= XNTNODE_ROOT)
-		{
-			attrsToSkip = specAttrInfo[kind - XNTNODE_TEMPLATE].number;
-		}
-		else
-
-			/*
-			 * As long as we test the kind at the top, this check should never
-			 * be reached.
-			 */
-			elog(ERROR, "unrecognized special node kind %u", kind);
+		XNodeSpecAttributes *specAttrInfo = getXNodeAttrInfo(kind);
+		unsigned int attrsToSkip = specAttrInfo->number;
 
 		Assert(attrsToSkip <= node->children);
 
@@ -974,9 +975,10 @@ getNextXMLNodeChild(XMLNodeIterator iterator)
 
 	/*
 	 * The following does not make sense for special node because that can
-	 * have 'childOff == XMLNodeOffsetInvalid'.
+	 * have 'childOff == XMLNodeOffsetInvalid' and therefore 'childNode->kind'
+	 * may be undefined.
 	 */
-	if (iterator->node->common.kind >= XNTNODE_ROOT)
+	if (iterator->node->common.kind < XMLTEMPLATE_ROOT)
 	{
 
 		if (childNode->kind == XMLNODE_ATTRIBUTE && !iterator->attributes)
@@ -998,6 +1000,30 @@ getNextXMLNodeChild(XMLNodeIterator iterator)
 	return childNode;
 }
 
+
+/*
+ * Document root may have multiple children, but exactly one element.
+ * If the document is special (e.g. XNT), 'required' specifies kind of
+ * the element.
+ */
+XMLCompNodeHdr
+getXMLDocRootElement(XMLCompNodeHdr docRoot, XMLNodeKind required)
+{
+	XMLNodeIteratorData iterator;
+	XMLNodeHdr	child;
+
+	initXMLNodeIterator(&iterator, docRoot, false);
+
+	while ((child = getNextXMLNodeChild(&iterator)) != NULL)
+	{
+
+		if (child->kind == required)
+			return (XMLCompNodeHdr) child;
+	}
+
+	elog(ERROR, "failed to find root element.");
+	return NULL;
+}
 
 /*
  * 'node' is either a single node or a root of a subtree. In the 2nd case it has to be
