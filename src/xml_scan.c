@@ -804,7 +804,7 @@ evaluateXPathFunction(XPathExprState exprState, XPathExpression funcExpr, unsign
 				argCursor;
 	XPathFunctionId funcId;
 	XPathFunction function;
-	XpathFuncImpl funcImpl;
+	XPathFuncImpl funcImpl;
 	XPathValueType *argTypes;
 
 	argCursor = args = (XPathExprOperandValue) palloc(funcExpr->members * sizeof(XPathExprOperandValueData));
@@ -1576,7 +1576,7 @@ substituteFunctions(XPathExpression expression, XPathExprState exprState, XMLSca
 		{
 			XPathFunctionId funcId = opnd->value.v.funcId;
 			XPathFunction func;
-			XpathFuncImplNoArgs funcImpl;
+			XPathFuncImplNoArgs funcImpl;
 
 			if (funcId >= XPATH_FUNCTIONS)
 			{

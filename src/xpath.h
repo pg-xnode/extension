@@ -770,9 +770,9 @@ extern XPathHeader getXPathHeader(xpath xpathValue);
 extern XPathExpression getXPathExpressionFromStorage(XPathHeader xpathHeader);
 extern char **getXPathParameterArray(XPathHeader xpathHeader);
 
-typedef void (*XpathFuncImpl) (XPathExprState exprState, unsigned short nargs, XPathExprOperandValue args,
+typedef void (*XPathFuncImpl) (XPathExprState exprState, unsigned short nargs, XPathExprOperandValue args,
 										   XPathExprOperandValue result);
-typedef void (*XpathFuncImplNoArgs) (XMLScan scan, XPathExprState exprState, XPathExprOperandValue result);
+typedef void (*XPathFuncImplNoArgs) (XMLScan scan, XPathExprState exprState, XPathExprOperandValue result);
 
 typedef struct XPathFunctionData
 {
@@ -791,8 +791,8 @@ typedef struct XPathFunctionData
 
 	union
 	{
-		XpathFuncImpl args;
-		XpathFuncImplNoArgs noargs;
+		XPathFuncImpl args;
+		XPathFuncImplNoArgs noargs;
 	}			impl;
 
 	XPathValueType resType;
