@@ -117,7 +117,7 @@ typedef struct XPathHeaderData *XPathHeader;
 
 #define XPATH_SET_MAX_PATHS		0xFF
 
-#define XPATH_HDR_GET_PATH(header, i) ((XPath) (((char *)(header)) + (header)->paths[i]))
+#define XPATH_HDR_GET_PATH(header, i) ((XPath) (((char *)(header)) + (header)->paths[(i)]))
 
 typedef enum XPathExprOperandType
 {
@@ -485,12 +485,15 @@ typedef struct XPathExpressionData *XPathExpression;
 #define XPATH_SUBEXPRESSION_EXPLICIT		(1 << 0)
 
 
+extern char *getXPathExpressionForStorage(XPathExpression expr, XPath *locPaths,
+					unsigned short locPathCount, XMLNodeContainer paramNames,
+							 unsigned short offset, unsigned short *size);
+extern XPath getSingleXPath(XPathExpression expr, XPathHeader xpHdr);
+
 extern void dumpXPathExpression(XPathExpression expr, XPathHeader xpathHdr, StringInfo output, bool main,
 					char **paramNames, bool debug);
 extern void dumpLocationPath(XPathHeader xpathHdr, unsigned short pathNr, StringInfo output, char **paramNames,
 				 bool debug);
-
-extern XPath getSingleXPath(XPathExpression expr, XPathHeader xpHdr);
 
 /*
  * Element of location path, i.e. location step.

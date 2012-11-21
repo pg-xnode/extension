@@ -80,7 +80,7 @@ static void replaceAttributes(XMLParserState state, bool specialNode, XNodeListI
 static void parseTemplateNode(XMLParserState state, XMLParserNodeInfo nodeInfo,
 	 int specialNodeKind, unsigned int attrCount, XNodeListItem *attrOffsets,
    unsigned int nmspDecls, unsigned int *attrCountNew, bool **specAttrsValid,
-				  unsigned int *specAttrCount);
+				  unsigned int *specAttrCount, bool acceptLocPaths);
 static void finalizeElement(XMLParserState state, XMLParserNodeInfo nodeInfo,
 		   unsigned int children, int specialNodeKind, bool *specAttrsValid);
 
@@ -1362,7 +1362,9 @@ processToken(XMLParserState state, XMLParserNodeInfo nodeInfo, XMLNodeToken allo
 			 * this function must be called even if 'attrCount == 0'
 			 */
 			parseTemplateNode(state, nodeInfo, specialNodeKind, attrCount,
-							  attrOffsets, nmspDecls, &attrCountNew, &specAttrsValid, &specAttrCount);
+							  attrOffsets, nmspDecls, &attrCountNew,
+							  &specAttrsValid, &specAttrCount,
+							  false);
 
 			/*
 			 * Empty slots for reserved attributes might have been added.
@@ -2745,7 +2747,7 @@ parseTemplateNode(XMLParserState state, XMLParserNodeInfo nodeInfo,
 				  int specialNodeKind, unsigned int attrCount,
 				  XNodeListItem *attrOffsets, unsigned int nmspDecls,
 				  unsigned int *attrCountNew, bool **specAttrsValid,
-				  unsigned int *specAttrCount)
+				  unsigned int *specAttrCount, bool acceptLocPaths)
 {
 	unsigned int attrsNewMaxCount;
 	XNodeListItem *attrOffsetsNew;
@@ -2799,7 +2801,8 @@ parseTemplateNode(XMLParserState state, XMLParserNodeInfo nodeInfo,
 		attrsNew = preprocessSpecialXMLAttributes(prefix, &state->nmspDecl,
 					 attrOffsetsNew, attrCount, state->tree, specialNodeKind,
 					  specAttrInfo, *specAttrsValid, specAttrCount, &newSize,
-				  attrCountNew, &state->paramNames, state->getXNodeNameFunc);
+				   attrCountNew, &state->paramNames, state->getXNodeNameFunc,
+												  acceptLocPaths);
 		pfree(prefix);
 	}
 	else
@@ -2809,7 +2812,7 @@ parseTemplateNode(XMLParserState state, XMLParserNodeInfo nodeInfo,
 		 * too: some of them may reference parameters in the value.
 		 */
 		attrsNew = preprocessXMLTemplateAttrValues(attrOffsetsNew, attrCount, state->tree, &newSize,
-												   &state->paramNames);
+										 &state->paramNames, acceptLocPaths);
 		*attrCountNew = attrCount;
 	}
 

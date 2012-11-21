@@ -626,6 +626,7 @@ xntProcessCopyOf(XMLNodeHdr node, XNodeInternal parent,
 				 unsigned int *storageSize)
 {
 	XMLCompNodeHdr xntNode;
+	XPathHeader xpHdr;
 	XPathExpression expr,
 				exprCopy;
 	XPathExprOperandValueData exprResult;
@@ -651,7 +652,8 @@ xntProcessCopyOf(XMLNodeHdr node, XNodeInternal parent,
 	 * Special attributes only contain the value. (Name is determined by the
 	 * position.)
 	 */
-	expr = (XPathExpression) XNODE_CONTENT(attrNode);
+	xpHdr = (XPathHeader) XNODE_CONTENT(attrNode);
+	expr = getXPathExpressionFromStorage(xpHdr);
 	exprCopy = substituteXMLTemplateParams(exprState, expr, paramValues, paramMap);
 	evaluateXPathExpression(exprState, exprCopy, 0, &exprResult);
 

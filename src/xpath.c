@@ -35,18 +35,15 @@ Datum
 xpath_in(PG_FUNCTION_ARGS)
 {
 	char	   *xpathStr;
-	XPathHeader xpathHdr;
-	char	   *result,
-			   *out;
-	unsigned short resSize,
-				exprOutPos;
-	XPath		paths[XPATH_MAX_SUBPATHS];
+	unsigned short exprOutPos,
+				outSize;
 	unsigned short pathCount = 0;
 	XPathExpression expr;
 	XPathParserStateData state;
 	XMLNodeContainerData paramNames;
-	char	  **parNamesArray = NULL;
-	unsigned short paramCount = 0;
+	XPath	   *paths;
+	char	   *result;
+	unsigned int offset = VARHDRSZ;
 
 	xpathStr = PG_GETARG_CSTRING(0);
 	expr = (XPathExpression) palloc(XPATH_EXPR_BUFFER_SIZE);
@@ -71,115 +68,18 @@ xpath_in(PG_FUNCTION_ARGS)
 	 * set the 'exprOutPos'.
 	 */
 	exprOutPos = 0;
-	parseXPathExpression(expr, &state, XPATH_TERM_NULL, NULL, (char *) expr, &exprOutPos, false, false, paths,
-						 &pathCount, &paramNames);
+	paths = (XPath *) palloc(XPATH_MAX_SUBPATHS * sizeof(XPath));
+	parseXPathExpression(expr, &state, XPATH_TERM_NULL, NULL, (char *) expr,
+				  &exprOutPos, false, false, paths, &pathCount, &paramNames);
 
-	resSize = VARHDRSZ + MAX_PADDING(XPATH_ALIGNOF_PATH_HDR) + sizeof(XPathHeaderData) +
-		MAX_PADDING(XPATH_ALIGNOF_EXPR) +expr->common.size;
 
-	if (pathCount > 0)
-	{
-		unsigned short i;
+	outSize = 0;
+	result = getXPathExpressionForStorage(expr, paths, pathCount, &paramNames,
+										  offset, &outSize);
 
-		for (i = 0; i < pathCount; i++)
-		{
-			XPath		path = paths[i];
-
-			/*
-			 * We need to store the path itself as well as its offset
-			 * (reference)
-			 */
-			resSize += MAX_PADDING(XPATH_ALIGNOF_LOC_PATH) + path->size;
-
-			/*
-			 * The first offset (i == 0) will be saved inside the
-			 * XPathHeaderData structure
-			 */
-			if (i > 0)
-			{
-				resSize += sizeof(XPathOffset);
-			}
-		}
-	}
-
-	if (paramNames.position > 0)
-	{
-		unsigned short i;
-		XNodeListItem *item = paramNames.content;
-
-		paramCount = paramNames.position;
-		parNamesArray = (char **) palloc(paramCount * sizeof(char *));
-
-		for (i = 0; i < paramCount; i++)
-		{
-			char	   *parName = (char *) item->value.singlePtr;
-
-			parNamesArray[i] = parName;
-			resSize += strlen(parName) + 1;
-			item++;
-		}
-	}
 	xmlnodeContainerFree(&paramNames);
 
-	result = (char *) palloc(resSize);
-	out = (char *) TYPEALIGN(XPATH_ALIGNOF_PATH_HDR, (result + VARHDRSZ));
-	xpathHdr = (XPathHeader) out;
-	xpathHdr->pathCount = 0;
-	xpathHdr->paramCount = 0;
-
-	out += sizeof(XPathHeaderData);
-
-	if (pathCount > 0)
-	{
-		/*
-		 * Leave space for path references. (pathCount - 1) means that the
-		 * array starts inside XPathHeaderData.
-		 */
-		out += (pathCount - 1) * sizeof(XPathOffset);
-	}
-
-	out = (char *) TYPEALIGN(XPATH_ALIGNOF_EXPR, out);
-	memcpy(out, expr, expr->common.size);
-	out += expr->common.size;
-
-	if (pathCount > 0)
-	{
-		/* Save the paths */
-		unsigned short i;
-
-		for (i = 0; i < pathCount; i++)
-		{
-			XPath		path = paths[i];
-
-			out = (char *) TYPEALIGN(XPATH_ALIGNOF_LOC_PATH, out);
-			memcpy(out, path, path->size);
-			xpathHdr->paths[i] = out - (char *) xpathHdr;
-			out += path->size;
-			pfree(path);
-		}
-		xpathHdr->pathCount = pathCount;
-	}
-	pfree(expr);
-
-	xpathHdr->paramFirst = 0;
-	if (paramCount > 0)
-	{
-		unsigned short i;
-
-		xpathHdr->paramFirst = out - (char *) xpathHdr;
-		for (i = 0; i < paramCount; i++)
-		{
-			char	   *name = parNamesArray[i];
-
-			strcpy(out, name);
-			out += strlen(name) + 1;
-			pfree(name);
-		}
-		pfree(parNamesArray);
-		xpathHdr->paramCount = paramCount;
-	}
-
-	SET_VARSIZE(result, out - result);
+	SET_VARSIZE(result, outSize);
 	PG_RETURN_POINTER(result);
 }
 
@@ -236,6 +136,137 @@ xpath_debug_print(PG_FUNCTION_ARGS)
 		pfree(paramNamesArray);
 	}
 	PG_RETURN_TEXT_P(cstring_to_text(output.data));
+}
+
+
+/*
+ * 'offset' says where the we start to save the data. (Space for varlena
+ * header must be left sometimes.)
+ *
+ * 'expr', 'locPaths' and all the paths contained in 'locPaths' are all pfree'd.
+ * On the other hand, 'paramNames' and the strings it points to are preserved.
+ * The reason is that templates need a single set of parameter names to be
+ * referenced by all expressions.
+ */
+char *
+getXPathExpressionForStorage(XPathExpression expr, XPath *locPaths,
+					unsigned short locPathCount, XMLNodeContainer paramNames,
+							 unsigned short offset, unsigned short *size)
+{
+	unsigned short paramCount = 0;
+	char	  **parNamesArray = NULL;
+	char	   *result,
+			   *out;
+	XPathHeader xpathHdr;
+	unsigned int resSize = offset + MAX_PADDING(XPATH_ALIGNOF_PATH_HDR) +
+	sizeof(XPathHeaderData) + MAX_PADDING(XPATH_ALIGNOF_EXPR) +
+	expr->common.size;
+
+	if (locPathCount > 0)
+	{
+		unsigned short i;
+
+		for (i = 0; i < locPathCount; i++)
+		{
+			XPath		path = locPaths[i];
+
+			/*
+			 * We need to store the path itself as well as its offset
+			 * (reference)
+			 */
+			resSize += MAX_PADDING(XPATH_ALIGNOF_LOC_PATH) + path->size;
+
+			/*
+			 * The first offset (i == 0) will be saved inside the
+			 * XPathHeaderData structure
+			 */
+			if (i > 0)
+			{
+				resSize += sizeof(XPathOffset);
+			}
+		}
+	}
+
+	if (paramNames != NULL)
+	{
+		if (paramNames->position > 0)
+		{
+			unsigned short i;
+			XNodeListItem *item = paramNames->content;
+
+			paramCount = paramNames->position;
+			parNamesArray = (char **) palloc(paramCount * sizeof(char *));
+
+			for (i = 0; i < paramCount; i++)
+			{
+				char	   *parName = (char *) item->value.singlePtr;
+
+				parNamesArray[i] = parName;
+				resSize += strlen(parName) + 1;
+				item++;
+			}
+		}
+	}
+
+	result = (char *) palloc(resSize);
+	out = (char *) TYPEALIGN(XPATH_ALIGNOF_PATH_HDR, (result + offset));
+	xpathHdr = (XPathHeader) out;
+	xpathHdr->pathCount = locPathCount;
+	xpathHdr->paramCount = paramCount;
+	xpathHdr->paramFirst = 0;
+
+	out += sizeof(XPathHeaderData);
+
+	if (locPathCount > 0)
+	{
+		/*
+		 * Leave space for path references. (pathCount - 1) means that the
+		 * array starts inside XPathHeaderData.
+		 */
+		out += (locPathCount - 1) * sizeof(XPathOffset);
+	}
+
+	out = (char *) TYPEALIGN(XPATH_ALIGNOF_EXPR, out);
+	memcpy(out, expr, expr->common.size);
+	out += expr->common.size;
+
+	if (locPathCount > 0)
+	{
+		/* Save the paths */
+		unsigned short i;
+
+		for (i = 0; i < locPathCount; i++)
+		{
+			XPath		path = locPaths[i];
+
+			out = (char *) TYPEALIGN(XPATH_ALIGNOF_LOC_PATH, out);
+			memcpy(out, path, path->size);
+			xpathHdr->paths[i] = out - (char *) xpathHdr;
+			out += path->size;
+			pfree(path);
+		}
+	}
+	pfree(locPaths);
+	pfree(expr);
+
+	if (paramCount > 0)
+	{
+		unsigned short i;
+
+		xpathHdr->paramFirst = out - (char *) xpathHdr;
+		for (i = 0; i < paramCount; i++)
+		{
+			char	   *name = parNamesArray[i];
+
+			strcpy(out, name);
+			out += strlen(name) + 1;
+		}
+		pfree(parNamesArray);
+		xpathHdr->paramCount = paramCount;
+	}
+
+	*size = out - result;
+	return result;
 }
 
 XPath
@@ -823,10 +854,13 @@ getXPathExpressionFromStorage(XPathHeader xpathHeader)
 	char	   *resPtr = (char *) xpathHeader;
 
 	resPtr += sizeof(XPathHeaderData);
-	if (xpathHeader->pathCount > 0)
-	{
-		resPtr += (xpathHeader->pathCount - 1) * sizeof(XPathOffset);
-	}
+
+	/*
+	 * If there's only one offset, it's hidden in the structure. Otherwise we
+	 * need to get behind the last one.
+	 */
+	if (xpathHeader->pathCount > 1)
+		resPtr = (char *) &xpathHeader->paths[xpathHeader->pathCount];
 
 	resPtr = (char *) TYPEALIGN(XPATH_ALIGNOF_EXPR, resPtr);
 	return (XPathExpression) resPtr;

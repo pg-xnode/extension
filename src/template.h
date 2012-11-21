@@ -55,16 +55,16 @@ extern XPathExpression substituteXMLTemplateParams(XPathExprState exprState,
 							unsigned short *paramMap);
 extern char *preprocessXMLTemplateAttrValues(XNodeListItem *attrOffsets,
 		 unsigned short attrCount, char *parserOutput, unsigned int *outSize,
-								XMLNodeContainer paramNames);
+						   XMLNodeContainer paramNames, bool acceptLocPaths);
 extern char *dumpXMLAttrBinaryValue(char *binValue, char **paramNames,
 				 XPathExprOperandValue paramValues, unsigned short *paramMap,
 					   XPathExprState exprState);
 extern XMLNodeHdr getNewXMLAttribute(char *name, uint8 flags, char *value,
 				   char decideOnDelim, unsigned int *size);
-extern XPathExpression getXPathExpressionForXMLTemplate(char *src,
+extern XPathHeader getXPathExpressionForXMLTemplate(char *src,
 						 unsigned int termFlags, XMLNodeContainer paramNames,
-								 unsigned short *endPos);
-extern char *getAttrValueForXMLTemplate(char *attrValue, unsigned int *valueSize,
-						   XMLNodeContainer paramNames);
+		unsigned short *endPos, unsigned short *outSize, bool accepLcoPaths);
+extern char *getAttrValueForXMLTemplate(char *attrValue, unsigned short *valueSize,
+						   XMLNodeContainer paramNames, bool acceptLocPaths);
 
 #endif   /* TEMPLATE_H_ */

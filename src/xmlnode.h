@@ -94,7 +94,7 @@ typedef enum XMLNodeKind
 	XNTNODE_TEMPLATE,
 	XNTNODE_COPY_OF,
 	XNTNODE_ELEMENT,
-	XNTNODE_ATTRIBUTE
+	XNTNODE_ATTRIBUTE,
 } XMLNodeKind;
 
 typedef XMLNodeKind (*GetSpecialXNodeKindFunc) (char *name);
@@ -467,6 +467,7 @@ extern char *preprocessSpecialXMLAttributes(char *prefix, XMLNodeContainer nmspD
 	XNodeListItem *attrOffsets, unsigned short attrCount, char *parserOutput,
  XMLNodeKind specNodeKind, XNodeSpecAttributes *attrInfo, bool *offsetsValid,
   unsigned int *specAttrCount, unsigned int *outSize, unsigned int *outCount,
-		   XMLNodeContainer paramNames, GetSpecialXNodNameFunc specNodeName);
+			XMLNodeContainer paramNames, GetSpecialXNodNameFunc specNodeName,
+							   bool acceptLocPaths);
 
 #endif   /* XMLNODE_H */

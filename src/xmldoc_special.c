@@ -45,7 +45,8 @@ preprocessSpecialXMLAttributes(char *prefix, XMLNodeContainer nmspDecls,
 	XNodeListItem *attrOffsets, unsigned short attrCount, char *parserOutput,
  XMLNodeKind specNodeKind, XNodeSpecAttributes *attrInfo, bool *offsetsValid,
   unsigned int *specAttrCount, unsigned int *outSize, unsigned int *outCount,
-			XMLNodeContainer paramNames, GetSpecialXNodNameFunc specNodeName)
+			XMLNodeContainer paramNames, GetSpecialXNodNameFunc specNodeName,
+							   bool acceptLocPaths)
 {
 	unsigned short i;
 	XMLNodeHdr *attrsSorted = NULL;
@@ -117,20 +118,23 @@ preprocessSpecialXMLAttributes(char *prefix, XMLNodeContainer nmspDecls,
 			{
 				XMLNodeHdr	specNode;
 				char	   *specNodeValue;
-				unsigned int valueSize,
+				unsigned short valueSize,
 							newAttrSize;
-				XPathExpression expr = NULL;
+				XPathHeader expr = NULL;
 				char	   *attrValueTokenized = NULL;
 
 				if (specNodeKind == XNTNODE_COPY_OF &&
 					strcmp(attrName, attrInfo->names[XNT_COPY_OF_EXPR]) == 0)
 				{
-					expr = getXPathExpressionForXMLTemplate(attrValue, XPATH_TERM_NULL, paramNames, NULL);
-					valueSize = expr->common.size;
+					valueSize = 0;
+					expr = getXPathExpressionForXMLTemplate(attrValue,
+							   XPATH_TERM_NULL, paramNames, NULL, &valueSize,
+															acceptLocPaths);
 				}
 				else if (strlen(attrValue) > 0 && strchr(attrValue, XNODE_CHAR_LBRKT_CUR) != NULL)
 				{
-					attrValueTokenized = getAttrValueForXMLTemplate(attrValue, &valueSize, paramNames);
+					attrValueTokenized = getAttrValueForXMLTemplate(attrValue,
+									 &valueSize, paramNames, acceptLocPaths);
 				}
 				else
 				{

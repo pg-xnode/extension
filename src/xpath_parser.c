@@ -473,11 +473,6 @@ parseLocationPath(XPath *paths, bool isSubPath, unsigned short *pathCount, char 
 	bool		nonEmpty;
 	LocationPathOutput output;
 
-	if (paths == NULL)
-	{
-		elog(ERROR, "location path not expected here");
-	}
-
 	if (*pathCount == XPATH_SET_MAX_PATHS)
 	{
 		elog(ERROR, "too many paths in an XPath expression");

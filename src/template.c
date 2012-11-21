@@ -403,7 +403,8 @@ substituteXMLTemplateParams(XPathExprState exprState, XPathExpression expression
  */
 char *
 preprocessXMLTemplateAttrValues(XNodeListItem *attrOffsets, unsigned short attrCount, char *parserOutput,
-						  unsigned int *outSize, XMLNodeContainer paramNames)
+						  unsigned int *outSize, XMLNodeContainer paramNames,
+								bool acceptLocPaths)
 {
 	unsigned short i;
 	bool		workToDo = false;
@@ -472,9 +473,10 @@ preprocessXMLTemplateAttrValues(XNodeListItem *attrOffsets, unsigned short attrC
 			XMLNodeHdr	attrOrig = attrNodes[i];
 			char	   *attrName = XNODE_CONTENT(attrOrig);
 			char	   *attrValue = attrName + strlen(attrName) + 1;
-			unsigned int valueSizeNew = 0;
+			unsigned short valueSizeNew = 0;
 
-			valuesNew[i] = getAttrValueForXMLTemplate(attrValue, &valueSizeNew, paramNames);
+			valuesNew[i] = getAttrValueForXMLTemplate(attrValue, &valueSizeNew, paramNames,
+													  acceptLocPaths);
 			valueSizes[i] = valueSizeNew;
 
 			outSizeMax += MAX_PADDING(XPATH_ALIGNOF_EXPR);
@@ -573,15 +575,19 @@ dumpXMLAttrBinaryValue(char *binValue, char **paramNames, XPathExprOperandValue 
 
 		if (isExpr)
 		{
+			XPathHeader hdr;
 			XPathExpression expr;
 
 			cursor = (char *) TYPEALIGN(XPATH_ALIGNOF_EXPR, cursor);
-			expr = (XPathExpression) cursor;
+			hdr = (XPathHeader) cursor;
+
+			expr = getXPathExpressionFromStorage(hdr);
+			cursor = (char *) expr;
 
 			if (exprState == NULL)
 			{
 				appendStringInfoChar(&output, XNODE_CHAR_LBRKT_CUR);
-				dumpXPathExpression(expr, NULL, &output, true, paramNames, false);
+				dumpXPathExpression(expr, hdr, &output, true, paramNames, false);
 				appendStringInfoChar(&output, XNODE_CHAR_RBRKT_CUR);
 			}
 			else
@@ -608,7 +614,21 @@ dumpXMLAttrBinaryValue(char *binValue, char **paramNames, XPathExprOperandValue 
 
 				pfree(exprCopy);
 			}
-			cursor += expr->common.size;
+
+			/*
+			 * If there are not location paths, the next expression is at the
+			 * first (aligned) addres behind 'expr'. Otherwise we must skip
+			 * the location paths too.
+			 */
+			if (hdr->pathCount == 0)
+				cursor += expr->common.size;
+			else
+			{
+				XPath		pathLast = XPATH_HDR_GET_PATH(hdr, hdr->paramCount - 1);
+
+				cursor = (char *) pathLast + pathLast->size;
+			}
+
 		}
 		else
 		{
@@ -724,36 +744,48 @@ getNewXMLAttribute(char *name, uint8 flags, char *value, char decideOnDelim, uns
 	return result;
 }
 
-XPathExpression
+XPathHeader
 getXPathExpressionForXMLTemplate(char *src, unsigned int termFlags, XMLNodeContainer paramNames,
-								 unsigned short *endPos)
+		unsigned short *endPos, unsigned short *outSize, bool acceptLocPaths)
 {
-	XPathExpression expr = (XPathExpression) palloc(XPATH_EXPR_BUFFER_SIZE);
+	XPathExpression expr;
+	XPath	   *locPaths;
 	XPathOffset outPos = 0;
 	XPathParserStateData state;
+	unsigned short locPathCount = 0;
+	XPathHeader result;
 
-	expr->needsContext = false;
 	state.c = src;
 	state.cWidth = 0;
 	state.pos = 0;
 
-	parseXPathExpression(expr, &state, termFlags, NULL, (char *) expr, &outPos, false, false, NULL, NULL,
-						 paramNames);
+	expr = (XPathExpression) palloc(XPATH_EXPR_BUFFER_SIZE);
+	expr->needsContext = false;
+	locPaths = (XPath *) palloc(XPATH_MAX_SUBPATHS * sizeof(XPath));
 
-	if (expr->needsContext)
-	{
-		elog(ERROR, "one or more operands of the XPath expression require context");
-	}
+	parseXPathExpression(expr, &state, termFlags, NULL, (char *) expr,
+				 &outPos, false, false, locPaths, &locPathCount, paramNames);
+
+	if (!acceptLocPaths && locPathCount > 0)
+		elog(ERROR, "template attribute contains location path");
+
+	/*
+	 * No location path implies no context node. This is typical for XNT.
+	 */
+	if (!acceptLocPaths && expr->needsContext)
+		elog(ERROR, "template attribute requires context node");
 
 	if (endPos != NULL)
-	{
 		*endPos = state.pos;
-	}
-	return expr;
+
+	result = (XPathHeader) getXPathExpressionForStorage(expr, locPaths, locPathCount, paramNames,
+														0, outSize);
+	return result;
 }
 
 char *
-getAttrValueForXMLTemplate(char *attrValue, unsigned int *valueSize, XMLNodeContainer paramNames)
+getAttrValueForXMLTemplate(char *attrValue, unsigned short *valueSize,
+						   XMLNodeContainer paramNames, bool acceptLocPaths)
 {
 	unsigned short tokenCount = 0;
 	char	   *tokens[XMLTEMPL_ATTR_VALUE_MAX_TOKENS];
@@ -775,24 +807,34 @@ getAttrValueForXMLTemplate(char *attrValue, unsigned int *valueSize, XMLNodeCont
 	{
 		if (tokenCount == XMLTEMPL_ATTR_VALUE_MAX_TOKENS)
 		{
-			elog(ERROR, "xnt attribute value must not consist of more than %u tokens",
+			elog(ERROR, "template attribute value must not consist of more than %u tokens",
 				 XMLTEMPL_ATTR_VALUE_MAX_TOKENS);
 		}
 
 		if (*c == XNODE_CHAR_LBRKT_CUR)
 		{
-			XPathExpression tokenExpr;
+			XPathHeader tokenExpr;
 			unsigned short endPos = 0;
+			unsigned short outSize = 0;
 
 			c++;				/* Skip the left curly bracket. */
 
 			/* Parse the xpath expression, ending with '}' */
-			tokenExpr = getXPathExpressionForXMLTemplate(c, XPATH_TERM_RBRKT_CRL, paramNames, &endPos);
+			tokenExpr = getXPathExpressionForXMLTemplate(c, XPATH_TERM_RBRKT_CRL,
+							  paramNames, &endPos, &outSize, acceptLocPaths);
+
+			/*
+			 * Even though XPathHeader is less restrictive, this alignment is
+			 * needed to keep the contained expressions aligned during copying
+			 * below.
+			 */
+			Assert(PointerIsAligned(tokenExpr, XPATH_ALIGNOF_EXPR));
+
 			tokens[tokenCount] = (char *) tokenExpr;
-			tokenSizes[tokenCount] = tokenExpr->common.size;
+			tokenSizes[tokenCount] = outSize;
 			tokenIsExpr[tokenCount] = true;
 			tokenCount++;
-			valueSizeMax += MAX_PADDING(XPATH_ALIGNOF_EXPR) + tokenExpr->common.size;
+			valueSizeMax += MAX_PADDING(XPATH_ALIGNOF_EXPR) + outSize;
 			c += endPos;
 		}
 		else

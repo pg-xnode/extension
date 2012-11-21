@@ -461,11 +461,15 @@ dumpAttributes(XMLCompNodeHdr element,
 			{
 				if (element->common.kind == XNTNODE_COPY_OF && i == XNT_COPY_OF_EXPR)
 				{
-					XPathExpression xpExpr = (XPathExpression) attrValue;
+					XPathHeader xpHdr;
+					XPathExpression xpExpr;
 					StringInfoData output;
 
+					xpHdr = (XPathHeader) attrValue;
+					xpExpr = getXPathExpressionFromStorage(xpHdr);
+
 					xnodeInitStringInfo(&output, 32);
-					dumpXPathExpression(xpExpr, NULL, &output, true, paramNames, false);
+					dumpXPathExpression(xpExpr, xpHdr, &output, true, paramNames, false);
 					attrValue = output.data;
 					valueCopy = true;
 				}
