@@ -499,9 +499,24 @@ preprocessXMLTemplateAttrValues(XNodeListItem *attrOffsets, unsigned short attrC
 
 		if (toReplace[i])
 		{
-			/* See preprocessXNTAttributes() for explanation. */
+			/*
+			 * 'ptr' will no point to address immediately after attribute
+			 * (node) header, i.e. where the attribute value would start w/o
+			 * alignment.
+			 */
 			ptr = resCursor + fixedSizes[i];
+
+			/*
+			 * However the attribute value may be binary and may contain XPath
+			 * expression.
+			 */
 			ptrAligned = (char *) TYPEALIGN(XPATH_ALIGNOF_EXPR, ptr);
+
+			/*
+			 * So the whole attribute (including its header) has to be shifted
+			 * by 'padding' to ensure that the value is aligned and the node
+			 * structure is preserved at the same time.
+			 */
 			padding = ptrAligned - ptr;
 		}
 
@@ -779,7 +794,7 @@ getXPathExpressionForXMLTemplate(char *src, unsigned int termFlags, XMLNodeConta
 		*endPos = state.pos;
 
 	result = (XPathHeader) getXPathExpressionForStorage(expr, locPaths, locPathCount, paramNames,
-														0, outSize);
+														false, outSize);
 	return result;
 }
 

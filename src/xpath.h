@@ -487,7 +487,7 @@ typedef struct XPathExpressionData *XPathExpression;
 
 extern char *getXPathExpressionForStorage(XPathExpression expr, XPath *locPaths,
 					unsigned short locPathCount, XMLNodeContainer paramNames,
-							 unsigned short offset, unsigned short *size);
+							 bool varlena, unsigned short *sizeOut);
 extern XPath getSingleXPath(XPathExpression expr, XPathHeader xpHdr);
 
 extern void dumpXPathExpression(XPathExpression expr, XPathHeader xpathHdr, StringInfo output, bool main,
@@ -564,11 +564,14 @@ typedef enum XPathNodeType
 /*
  * XPathHeaderData
  *
- * The following structures (XPathData) don't affect this alignment, because
- * their position is not derived from the preceding structures. Instead,
- * XPathHeaderData contains offset of each XPathData.
+ * ALIGNOF_SHORT would be enough for the structure as such, however
+ * it's usually followed by XPathExpressionData and sometimes copied
+ * together as a single chunk (see parsing of template attributes).
+ * In this case the chunk would have to carry information how far
+ * behind the header the (ALIGNOF_DOUBLE aligned) XPathExpressionData
+ * structure exactly starts.
  */
-#define XPATH_ALIGNOF_PATH_HDR	ALIGNOF_SHORT
+#define XPATH_ALIGNOF_PATH_HDR	ALIGNOF_DOUBLE
 
 /*
  * XPathExprOperandData

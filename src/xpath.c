@@ -35,15 +35,13 @@ Datum
 xpath_in(PG_FUNCTION_ARGS)
 {
 	char	   *xpathStr;
-	unsigned short exprOutPos,
-				outSize;
+	unsigned short exprOutPos;
 	unsigned short pathCount = 0;
 	XPathExpression expr;
 	XPathParserStateData state;
 	XMLNodeContainerData paramNames;
 	XPath	   *paths;
 	char	   *result;
-	unsigned int offset = VARHDRSZ;
 
 	xpathStr = PG_GETARG_CSTRING(0);
 	expr = (XPathExpression) palloc(XPATH_EXPR_BUFFER_SIZE);
@@ -73,13 +71,9 @@ xpath_in(PG_FUNCTION_ARGS)
 				  &exprOutPos, false, false, paths, &pathCount, &paramNames);
 
 
-	outSize = 0;
 	result = getXPathExpressionForStorage(expr, paths, pathCount, &paramNames,
-										  offset, &outSize);
-
+										  true, NULL);
 	xmlnodeContainerFree(&paramNames);
-
-	SET_VARSIZE(result, outSize);
 	PG_RETURN_POINTER(result);
 }
 
@@ -140,8 +134,8 @@ xpath_debug_print(PG_FUNCTION_ARGS)
 
 
 /*
- * 'offset' says where the we start to save the data. (Space for varlena
- * header must be left sometimes.)
+ * 'varlena' - if true, then leave space for varlena header and start writing
+ * at the first aligned position. Otherwise start writing at the first address.
  *
  * 'expr', 'locPaths' and all the paths contained in 'locPaths' are all pfree'd.
  * On the other hand, 'paramNames' and the strings it points to are preserved.
@@ -151,13 +145,15 @@ xpath_debug_print(PG_FUNCTION_ARGS)
 char *
 getXPathExpressionForStorage(XPathExpression expr, XPath *locPaths,
 					unsigned short locPathCount, XMLNodeContainer paramNames,
-							 unsigned short offset, unsigned short *size)
+							 bool varlena, unsigned short *sizeOut)
 {
-	unsigned short paramCount = 0;
+	unsigned short size,
+				paramCount = 0;
 	char	  **parNamesArray = NULL;
 	char	   *result,
 			   *out;
 	XPathHeader xpathHdr;
+	unsigned int offset = varlena ? VARHDRSZ : 0;
 	unsigned int resSize = offset + MAX_PADDING(XPATH_ALIGNOF_PATH_HDR) +
 	sizeof(XPathHeaderData) + MAX_PADDING(XPATH_ALIGNOF_EXPR) +
 	expr->common.size;
@@ -265,7 +261,13 @@ getXPathExpressionForStorage(XPathExpression expr, XPath *locPaths,
 		xpathHdr->paramCount = paramCount;
 	}
 
-	*size = out - result;
+	size = out - result;
+
+	if (varlena)
+		SET_VARSIZE(result, size);
+
+	if (sizeOut != NULL)
+		*sizeOut = size;
 	return result;
 }
 
