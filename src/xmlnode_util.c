@@ -21,6 +21,30 @@ xmlnodeContainerInit(XMLNodeContainer cont)
 	cont->position = 0;
 }
 
+/*
+ * Caller is responsible for knowing whether the contained pointers
+ * may be freed or not.
+ */
+void
+xmlnodeContainerFreeItems(XMLNodeContainer cont)
+{
+	unsigned int i;
+	XNodeListItem *item;
+
+	if (cont->content == NULL)
+		return;
+
+	item = cont->content;
+
+	for (i = 0; i < cont->position; i++)
+	{
+		Assert(item->kind == XNODE_LIST_ITEM_SINGLE_PTR);
+
+		pfree(item->value.singlePtr);
+		item++;
+	}
+}
+
 void
 xmlnodeContainerFree(XMLNodeContainer cont)
 {

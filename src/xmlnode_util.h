@@ -13,6 +13,7 @@
 #include "xpath.h"
 
 extern void xmlnodeContainerInit(XMLNodeContainer cont);
+extern void xmlnodeContainerFreeItems(XMLNodeContainer cont);
 extern void xmlnodeContainerFree(XMLNodeContainer cont);
 
 extern void xmlnodePushBoolean(XMLNodeContainer cont, bool boolean);

@@ -409,6 +409,9 @@ finalizeXMLParserState(XMLParserState state)
 
 	if (state->nmspSpecialURI != NULL)
 	{
+		/* Copy of each parameter has been created, which must be freed now. */
+		xmlnodeContainerFreeItems(&state->paramNames);
+
 		xmlnodeContainerFree(&state->paramNames);
 		xmlnodeContainerFree(&state->substNodes);
 	}

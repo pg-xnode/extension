@@ -1395,9 +1395,8 @@ getParameterId(XMLNodeContainer params, char *parNameNew)
 	{
 		if (i < XPATH_PARAM_MAX_COUNT)
 		{
-			char	   *copy = (char *) palloc(strlen(parNameNew) + 1);
+			char	   *copy = pstrdup(parNameNew);
 
-			strcpy(copy, parNameNew);
 			xmlnodePushSinglePtr(params, copy);
 		}
 		else
