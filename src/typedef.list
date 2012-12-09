@@ -22,6 +22,7 @@ XMLNodeIteratorData
 XMLNodeKind
 XMLNodeOffset
 XMLNodeToken
+XMLNodeToTransform
 xmlnodetype
 XMLParamNameSorted
 XMLParserNodeInfo
@@ -90,3 +91,5 @@ xpathvaltype
 XPathValue
 XPathValueData
 XPathValueType
+xsl
+xsltype

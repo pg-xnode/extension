@@ -651,7 +651,7 @@ getElementNodeStr(XMLCompNodeHdr element)
 	XMLNodeHdr	textNode;
 	StringInfoData si;
 
-	initScanForTextNodes(&textScan, element);
+	initScanForSingleXMLNodeKind(&textScan, element, XMLNODE_TEXT);
 	xnodeInitStringInfo(&si, 32);
 
 	while ((textNode = getNextXMLNode(&textScan)) != NULL)
@@ -660,7 +660,7 @@ getElementNodeStr(XMLCompNodeHdr element)
 
 		appendStringInfoString(&si, cntPart);
 	}
-	finalizeScanForTextNodes(&textScan);
+	finalizeScanForSingleXMLNodeKind(&textScan);
 	return si.data;
 }
 
@@ -966,6 +966,8 @@ initXMLNodeIteratorSpecial(XMLNodeIterator iterator, XMLCompNodeHdr node,
 
 		for (i = 0; i < attrsToSkip; i++)
 			readXMLNodeOffset(&iterator->childOffPtr, iterator->bwidth, true);
+
+		iterator->childrenLeft -= attrsToSkip;
 	}
 }
 

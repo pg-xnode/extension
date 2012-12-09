@@ -9,7 +9,6 @@
 #include "mb/pg_wchar.h"
 
 #include "xmlnode.h"
-#include "xnt.h"
 #include "xpath.h"
 
 extern void xmlnodeContainerInit(XMLNodeContainer cont);

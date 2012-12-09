@@ -724,8 +724,9 @@ extern void initXMLScan(XMLScan xscan, XMLScan parent, XPath xpath, XPathHeader 
 			xmldoc document, bool checkUniqueness);
 extern void finalizeXMLScan(XMLScan xscan);
 
-extern void initScanForTextNodes(XMLScan xscan, XMLCompNodeHdr root);
-extern void finalizeScanForTextNodes(XMLScan xscan);
+extern void initScanForSingleXMLNodeKind(XMLScan xscan, XMLCompNodeHdr root,
+							 XMLNodeKind kind);
+extern void finalizeScanForSingleXMLNodeKind(XMLScan xscan);
 
 /*
  * Expression evaluation state.

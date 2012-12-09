@@ -33,7 +33,6 @@ static void buildNewNodeTree(XMLNodeHdr node, XNodeInternal parent, unsigned int
 				 XPathExprOperandValue paramValues, unsigned short *paramMap, XPathExprState exprState,
 				 bool preserveSpace);
 static XNodeInternal getInternalNode(XMLNodeHdr node, bool copy);
-static void freeTemplateTree(XNodeInternal root);
 
 static XNodeInternal xntProcessCopyOf(XMLNodeHdr node, XNodeInternal parent,
 				 bool preserveSpace, XPathExprOperandValue paramValues,
@@ -97,7 +96,7 @@ xnode_from_template(PG_FUNCTION_ARGS)
 	xnt			template;
 	XMLCompNodeHdr templDocRoot,
 				templNode;
-	char	   *templHdrData;
+	char	   *cursor;
 	char	  **templParNames = NULL;
 	XMLTemplateHeader templHdr;
 	ArrayType  *parNameArr;
@@ -116,23 +115,11 @@ xnode_from_template(PG_FUNCTION_ARGS)
 	/* Retrieve parameter names out of the template. */
 	template = (xnt) PG_GETARG_VARLENA_P(0);
 	templDocRoot = (XMLCompNodeHdr) XNODE_ROOT(template);
-	Assert(templDocRoot->common.kind == XMLTEMPLATE_ROOT);
+	templHdr = getXMLTemplateHeader(templDocRoot);
 
-	templHdrData = XNODE_ELEMENT_NAME(templDocRoot);
-
-	/* XML declaration: currently just the structure size, no padding. */
-	if (templDocRoot->common.flags & XNODE_DOC_XMLDECL)
-	{
-		templHdrData += sizeof(XMLDeclData);
-	}
-
-	templHdrData = (char *) TYPEALIGN(XNODE_ALIGNOF_TEMPL_HDR, templHdrData);
-	templHdr = (XMLTemplateHeader) templHdrData;
-
+	cursor = (char *) templHdr;
 	if (templHdr->paramCount > 0 || templHdr->substNodesCount > 0)
-	{
-		templHdrData += sizeof(XMLTemplateHeaderData);
-	}
+		cursor += sizeof(XMLTemplateHeaderData);
 
 	if (templHdr->paramCount > 0)
 	{
@@ -142,8 +129,8 @@ xnode_from_template(PG_FUNCTION_ARGS)
 
 		for (i = 0; i < templHdr->paramCount; i++)
 		{
-			templParNames[i] = templHdrData;
-			templHdrData += strlen(templHdrData) + 1;
+			templParNames[i] = cursor;
+			cursor += strlen(cursor) + 1;
 		}
 	}
 
@@ -223,7 +210,7 @@ xnode_from_template(PG_FUNCTION_ARGS)
 		SET_VARSIZE(result, resultSize);
 	}
 
-	freeTemplateTree(newTreeRoot);
+	freeXMLNodeInternal(newTreeRoot);
 	freeExpressionState(exprState);
 
 	if (paramMap != NULL)
@@ -337,7 +324,7 @@ validateXNTTree(XMLNodeHdr root)
 	walkThroughXMLTree(root, validateXNTNode, false, (void *) &hasRootTemplate);
 	if (!hasRootTemplate)
 	{
-		elog(ERROR, "valid stylesheet (bound to the correct namespace) must be the root element");
+		elog(ERROR, "valid template (bound to the correct namespace) must be the root element");
 	}
 }
 
@@ -589,34 +576,6 @@ getInternalNode(XMLNodeHdr node, bool copy)
 	result->node = node;
 	result->copy = copy;
 	return result;
-}
-
-static void
-freeTemplateTree(XNodeInternal root)
-{
-	if (root->node->kind == XMLNODE_ELEMENT || root->node->kind == XNTNODE_TEMPLATE)
-	{
-		unsigned short i;
-		XMLNodeContainer children;
-		XNodeListItem *child;
-
-		children = &root->children;
-		child = children->content;
-
-		for (i = 0; i < children->position; i++)
-		{
-			freeTemplateTree(child->value.singlePtr);
-			child++;
-		}
-
-		xmlnodeContainerFree(&root->children);
-	}
-
-	if (root->copy)
-	{
-		pfree(root->node);
-	}
-	pfree(root);
 }
 
 static XNodeInternal

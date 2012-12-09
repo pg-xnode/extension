@@ -8,6 +8,7 @@
 #include "xml_parser.h"
 #include "xmlnode_util.h"
 #include "xnt.h"
+#include "xslt.h"
 
 static void xmlnodeDumpNode(char *input, char *nmspPrefix, char *nmspURI,
 				XMLNodeOffset nodeOff, StringInfo output, char **paramNames,
@@ -184,6 +185,9 @@ xmlnodeDumpNode(char *input, char *nmspPrefix, char *nmspURI, XMLNodeOffset node
 		case XNTNODE_COPY_OF:
 		case XNTNODE_ELEMENT:
 		case XNTNODE_ATTRIBUTE:
+
+		case XSLNODE_SHEET:
+		case XSLNODE_TEMPLATE:
 			if (node->kind == XMLNODE_ELEMENT || (node->flags & XNODE_EL_SPECIAL))
 			{
 				XMLCompNodeHdr element = (XMLCompNodeHdr) node;
@@ -459,7 +463,11 @@ dumpAttributes(XMLCompNodeHdr element,
 
 			if (attrNode->flags & XNODE_ATTR_VALUE_BINARY)
 			{
-				if (element->common.kind == XNTNODE_COPY_OF && i == XNT_COPY_OF_EXPR)
+				XMLNodeKind kind = element->common.kind;
+
+				if ((kind == XNTNODE_COPY_OF && i == XNT_COPY_OF_EXPR) ||
+					(kind == XSLNODE_TEMPLATE && i == XSL_TEMPLATE_MATCH)
+					)
 				{
 					XPathHeader xpHdr;
 					XPathExpression xpExpr;

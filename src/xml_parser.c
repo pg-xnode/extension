@@ -1302,6 +1302,7 @@ processToken(XMLParserState state, XMLParserNodeInfo nodeInfo, XMLNodeToken allo
 		unsigned int children,
 					attrCount;
 		unsigned int attrCountNew = 0;
+		XMLNodeOffset dstPosOrig = state->dstPos;
 
 		/* Namespace declarations added by the current element. */
 		unsigned int nmspDecls = 0;
@@ -1360,6 +1361,16 @@ processToken(XMLParserState state, XMLParserNodeInfo nodeInfo, XMLNodeToken allo
 		{
 			XNodeListItem *attrOffsets = state->stack.content + stackPosOrig;
 
+			if (attrCount == 0)
+			{
+				/*
+				 * No attributes have been saved. Ensure that the replacement
+				 * starts at valid position.
+				 */
+				attrOffsets->value.singleOff = dstPosOrig;
+				attrOffsets->valid = true;
+			}
+
 			/*
 			 * Because of (possibly empty) positions for special attributes,
 			 * this function must be called even if 'attrCount == 0'
@@ -1367,7 +1378,7 @@ processToken(XMLParserState state, XMLParserNodeInfo nodeInfo, XMLNodeToken allo
 			parseTemplateNode(state, nodeInfo, specialNodeKind, attrCount,
 							  attrOffsets, nmspDecls, &attrCountNew,
 							  &specAttrsValid, &specAttrCount,
-							  false);
+					   strcmp(state->nmspSpecialURI, XNTNODE_NAMESPACE_URI));
 
 			/*
 			 * Empty slots for reserved attributes might have been added.
@@ -2631,6 +2642,11 @@ replaceAttributes(XMLParserState state, bool specialNode, XNodeListItem *attrOff
 		}
 		else
 		{
+			/*
+			 * Even if it's invalid, e.g. missing optional attribute of a
+			 * special node. In such a case boolean array is used to determine
+			 * the validity.
+			 */
 			xmlnodePushSingleNode(&state->stack, attrOffNew);
 		}
 
@@ -2665,7 +2681,8 @@ replaceAttributes(XMLParserState state, bool specialNode, XNodeListItem *attrOff
 		attrDataNew = state->tree + offNew;
 	}
 
-	memcpy(attrDataOrig + padding, attrsNew, *newSize - padding);
+	if (*newSize - padding > 0)
+		memcpy(attrDataOrig + padding, attrsNew, *newSize - padding);
 
 	if (*newSize != attrDataOrigSize)
 	{
@@ -2859,7 +2876,8 @@ finalizeElement(XMLParserState state, XMLParserNodeInfo nodeInfo,
 		 */
 		if (element->common.kind != XMLTEMPLATE_ROOT &&
 		/* Some specific kinds never deal with substitution. */
-			element->common.kind != XNTNODE_TEMPLATE)
+			element->common.kind != XNTNODE_TEMPLATE &&
+			element->common.kind != XSLNODE_SHEET)
 			xmlnodePushSingleNode(&state->substNodes, elementOff);
 	}
 

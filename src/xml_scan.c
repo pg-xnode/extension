@@ -1216,7 +1216,7 @@ evaluateBinaryOperator(XPathExprState exprState, XPathExprOperandValue valueLeft
 }
 
 void
-initScanForTextNodes(XMLScan xscan, XMLCompNodeHdr root)
+initScanForSingleXMLNodeKind(XMLScan xscan, XMLCompNodeHdr root, XMLNodeKind kind)
 {
 	XPath		xp = (XPath) palloc(sizeof(XPathData) + sizeof(XPathElementData));
 	XPathElement xpEl = (XPathElement) ((char *) xp + sizeof(XPathData));
@@ -1224,7 +1224,7 @@ initScanForTextNodes(XMLScan xscan, XMLCompNodeHdr root)
 	xpEl->descendant = true;
 	xpEl->hasPredicate = false;
 	xp->depth = 1;
-	xp->targNdKind = XMLNODE_TEXT;
+	xp->targNdKind = kind;
 	xp->allAttributes = false;
 	xp->elements[0] = sizeof(XPathData);
 
@@ -1232,7 +1232,7 @@ initScanForTextNodes(XMLScan xscan, XMLCompNodeHdr root)
 }
 
 void
-finalizeScanForTextNodes(XMLScan xscan)
+finalizeScanForSingleXMLNodeKind(XMLScan xscan)
 {
 	pfree(xscan->xpath);
 	finalizeXMLScan(xscan);
@@ -1323,6 +1323,7 @@ substituteAttributes(XPathExprState exprState, XMLCompNodeHdr element)
 					XPathNodeSet nodeSet = &opnd->value.v.nodeSet;
 					unsigned int nodeNr = exprState->count[XPATH_VAR_NODE_SINGLE] + attrNr;
 					char	   *opndValue = XPATH_STRING_LITERAL(&opnd->value);
+
 
 					if (*opndValue == XNODE_CHAR_ASTERISK)
 					{
@@ -1818,8 +1819,8 @@ compareElements(XMLCompNodeHdr elLeft, XMLCompNodeHdr elRight)
 	bool		done = false;
 	bool		match = false;
 
-	initScanForTextNodes(&scanLeft, elLeft);
-	initScanForTextNodes(&scanRight, elRight);
+	initScanForSingleXMLNodeKind(&scanLeft, elLeft, XMLNODE_TEXT);
+	initScanForSingleXMLNodeKind(&scanRight, elRight, XMLNODE_TEXT);
 
 	nodeLeft = getNextXMLNode(&scanLeft);
 	nodeRight = getNextXMLNode(&scanRight);
@@ -1837,8 +1838,8 @@ compareElements(XMLCompNodeHdr elLeft, XMLCompNodeHdr elRight)
 	}
 	if (done)
 	{
-		finalizeScanForTextNodes(&scanLeft);
-		finalizeScanForTextNodes(&scanRight);
+		finalizeScanForSingleXMLNodeKind(&scanLeft);
+		finalizeScanForSingleXMLNodeKind(&scanRight);
 		return match;
 	}
 
@@ -1899,8 +1900,8 @@ compareElements(XMLCompNodeHdr elLeft, XMLCompNodeHdr elRight)
 		charsToCompare = (lengthLeft < lengthRight) ? lengthLeft : lengthRight;
 	}
 
-	finalizeScanForTextNodes(&scanLeft);
-	finalizeScanForTextNodes(&scanRight);
+	finalizeScanForSingleXMLNodeKind(&scanLeft);
+	finalizeScanForSingleXMLNodeKind(&scanRight);
 	return match;
 }
 
@@ -1932,7 +1933,8 @@ compareValueToNode(XPathExprState exprState, XPathExprOperandValue value, XMLNod
 			XMLScanData textScan;
 
 			strLen = strlen(cStr);
-			initScanForTextNodes(&textScan, (XMLCompNodeHdr) node);
+			initScanForSingleXMLNodeKind(&textScan, (XMLCompNodeHdr) node,
+										 XMLNODE_TEXT);
 
 			while ((textNode = getNextXMLNode(&textScan)) != NULL)
 			{
@@ -1959,7 +1961,7 @@ compareValueToNode(XPathExprState exprState, XPathExprOperandValue value, XMLNod
 					break;
 				}
 			}
-			finalizeScanForTextNodes(&textScan);
+			finalizeScanForSingleXMLNodeKind(&textScan);
 		}
 		else
 		{

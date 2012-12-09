@@ -95,6 +95,10 @@ typedef enum XMLNodeKind
 	XNTNODE_COPY_OF,
 	XNTNODE_ELEMENT,
 	XNTNODE_ATTRIBUTE,
+
+	/* XSL */
+	XSLNODE_SHEET,
+	XSLNODE_TEMPLATE
 } XMLNodeKind;
 
 typedef XMLNodeKind (*GetSpecialXNodeKindFunc) (char *name);
@@ -415,7 +419,7 @@ typedef struct XNodeInternalData
 typedef struct XNodeInternalData *XNodeInternal;
 
 extern void writeXMLNodeInternal(XNodeInternal node, bool checkElementChildren, char **output, XMLNodeOffset *root);
-
+extern void freeXMLNodeInternal(XNodeInternal root);
 
 /*
  * Information on special attributes.

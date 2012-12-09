@@ -16,6 +16,8 @@
 #include "xmlnode.h"
 #include "xmlnode_util.h"
 #include "xml_parser.h"
+#include "xnt.h"
+#include "xslt.h"
 
 /*
  * TODO error handling: use 'ereport()' and define numeric error codes.
@@ -368,7 +370,8 @@ writeXMLNodeInternal(XNodeInternal node, bool checkElementChildren, char **outpu
 	XMLNodeKind nodeKind = node->node->kind;
 	bool		hasNonAttribute = false;
 
-	if ((nodeKind == XMLNODE_DOC || nodeKind == XMLNODE_ELEMENT || nodeKind == XNTNODE_TEMPLATE) &&
+	if ((nodeKind == XMLNODE_DOC || nodeKind == XMLNODE_ELEMENT ||
+		 nodeKind == XNTNODE_TEMPLATE || nodeKind == XMLNODE_DOC_FRAGMENT) &&
 		node->children.content != NULL)
 	{
 		childCount = node->children.position;
@@ -471,7 +474,7 @@ writeXMLNodeInternal(XNodeInternal node, bool checkElementChildren, char **outpu
 	 * (possibly missing) children, instead of copying the original subtree.
 	 */
 	if ((nodeKind == XMLNODE_ELEMENT && node->children.content != NULL) || nodeKind == XNTNODE_TEMPLATE ||
-		nodeKind == XMLNODE_DOC)
+		nodeKind == XMLNODE_DOC || nodeKind == XMLNODE_DOC_FRAGMENT)
 	{
 		XMLCompNodeHdr compNode;
 		char	   *name;
@@ -559,6 +562,37 @@ writeXMLNodeInternal(XNodeInternal node, bool checkElementChildren, char **outpu
 	}
 }
 
+void
+freeXMLNodeInternal(XNodeInternal root)
+{
+	XMLNodeKind kind = root->node->kind;
+
+	if (kind == XMLNODE_ELEMENT || kind == XNTNODE_TEMPLATE ||
+		kind == XMLNODE_DOC_FRAGMENT)
+	{
+		unsigned short i;
+		XMLNodeContainer children;
+		XNodeListItem *child;
+
+		children = &root->children;
+		child = children->content;
+
+		for (i = 0; i < children->position; i++)
+		{
+			freeXMLNodeInternal(child->value.singlePtr);
+			child++;
+		}
+
+		xmlnodeContainerFree(&root->children);
+	}
+
+	if (root->copy)
+	{
+		pfree(root->node);
+	}
+	pfree(root);
+}
+
 XNodeSpecAttributes *
 getXNodeAttrInfo(XMLNodeKind kind)
 {
@@ -569,7 +603,9 @@ getXNodeAttrInfo(XMLNodeKind kind)
 	 * respective tests should be added at the top here, letting particular
 	 * test fall through to the correct range.
 	 */
-	if (kind >= XNTNODE_TEMPLATE)
+	if (kind >= XSLNODE_SHEET)
+		result = &xslAttributeInfo[kind - XSLNODE_SHEET];
+	else if (kind >= XNTNODE_TEMPLATE)
 		result = &xntAttributeInfo[kind - XNTNODE_TEMPLATE];
 
 	return result;
