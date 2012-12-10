@@ -459,7 +459,9 @@ dumpAttributes(XMLCompNodeHdr element,
 
 			if (attrNode->flags & XNODE_ATTR_VALUE_BINARY)
 			{
-				if (element->common.kind == XNTNODE_COPY_OF && i == XNT_COPY_OF_EXPR)
+				XMLNodeKind kind = element->common.kind;
+
+				if (kind == XNTNODE_COPY_OF && i == XNT_COPY_OF_EXPR)
 				{
 					XPathHeader xpHdr;
 					XPathExpression xpExpr;

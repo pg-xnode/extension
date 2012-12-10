@@ -13,6 +13,25 @@
 static int	paramNameComparator(const void *left, const void *right);
 static Datum castParameterValue(Datum value, Oid sourceType, Oid targetType);
 
+/*
+ * Get template header out of template document root.
+ */
+XMLTemplateHeader
+getXMLTemplateHeader(XMLCompNodeHdr docRoot)
+{
+	char	   *resData;
+
+	Assert(docRoot->common.kind == XMLTEMPLATE_ROOT);
+
+	resData = XNODE_ELEMENT_NAME(docRoot);
+
+	/* XML declaration: currently just the structure size, no padding. */
+	if (docRoot->common.flags & XNODE_DOC_XMLDECL)
+		resData += sizeof(XMLDeclData);
+
+	resData = (char *) TYPEALIGN(XNODE_ALIGNOF_TEMPL_HDR, resData);
+	return (XMLTemplateHeader) resData;
+}
 
 /*
  * Get parameter values out of the input row.
@@ -31,7 +50,7 @@ static Datum castParameterValue(Datum value, Oid sourceType, Oid targetType);
  *	Returns array of parameter names passed by user for substitution.
  */
 XMLParamNameSorted *
-getXMLTemplateParamNames(ArrayType *parNameArray, unsigned int templateParamCount,
+getXMLTemplateParamNames(ArrayType * parNameArray, unsigned int templateParamCount,
 						 char **templParNames, unsigned short *paramMap)
 {
 	XMLParamNameSorted *parNames = NULL;

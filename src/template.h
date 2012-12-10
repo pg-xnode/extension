@@ -5,8 +5,22 @@
 #ifndef TEMPLATE_H_
 #define TEMPLATE_H_
 
+#include "postgres.h"
+
+#include "access/htup.h"
+#include "catalog/pg_cast.h"
+#include "catalog/pg_proc.h"
+#include "catalog/pg_type.h"
+#include "utils/array.h"
+#include "utils/builtins.h"
+#include "utils/syscache.h"
+#include "utils/lsyscache.h"
+#include "utils/typcache.h"
+#if (PG_VERSION_NUM >= 90300)
+#include "access/htup_details.h"
+#endif
+
 #include "xml_parser.h"
-#include "xnt.h"
 
 typedef struct XMLTemplateHeaderData
 {
@@ -39,13 +53,8 @@ typedef struct XMLParamNameSorted
  */
 #define XMLTEMPL_ATTR_VALUE_MAX_TOKENS		16
 
-
-extern void parseXMLTemplateNode(XMLParserState state,
-	 XMLParserNodeInfo nodeInfo, int specialNodeKind, unsigned int attrCount,
-					 XNodeListItem *attrOffsets, unsigned int nmspDecls,
-					 unsigned int *attrCountNew, bool **specAttrsValid,
-					 unsigned int *specAttrCount);
-extern XMLParamNameSorted *getXMLTemplateParamNames(ArrayType *parNameArray,
+extern XMLTemplateHeader getXMLTemplateHeader(XMLCompNodeHdr docRoot);
+extern XMLParamNameSorted *getXMLTemplateParamNames(ArrayType * parNameArray,
 					   unsigned int templateParamCount, char **templParNames,
 						 unsigned short *paramMap);
 extern XPathExprOperandValue getXMLTemplateParamValues(Datum row,

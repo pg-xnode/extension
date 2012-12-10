@@ -57,7 +57,7 @@ static void processToken(XMLParserState state, XMLParserNodeInfo nodeInfo, XMLNo
 static void forgetNamespaceDeclarations(unsigned int count, XMLNodeContainer stack);
 static void checkNamespaces(XMLParserState state, XMLParserNodeInfo nodeInfo,
 				unsigned int attrsPrefixedCount,
-				bool *elNmspIsSpecial);
+				bool * elNmspIsSpecial);
 static XMLNodeToken processTag(XMLParserState state, XMLParserNodeInfo nodeInfo, XMLNodeToken allowed,
 		   XMLNodeHdr *declAttrs, unsigned short *declAttrNum, unsigned int *nmspDecls, unsigned int *attrsPrefixed);
 static void checkXMLDeclaration(XMLNodeHdr *declAttrs, unsigned int attCount, XMLDecl decl);
@@ -69,7 +69,7 @@ static void ensureSpace(unsigned int size, XMLParserState state);
 static unsigned int saveNodeHeader(XMLParserState state, XMLParserNodeInfo nodeInfo, char flags);
 static void saveContent(XMLParserState state, XMLParserNodeInfo nodeInfo);
 static void saveReferences(XMLParserState state, XMLParserNodeInfo nodeInfo, XMLCompNodeHdr compNode,
-  unsigned short children, bool *specAttrsValid, unsigned int specAttrCount);
+ unsigned short children, bool * specAttrsValid, unsigned int specAttrCount);
 static char *getContentToLog(char *input, unsigned int offset, unsigned int length, unsigned int maxLen);
 static void saveRootNodeHeader(XMLParserState state, XMLNodeKind kind);
 static void adjustNamespaceDeclarations(XMLParserState state, unsigned int nmspDecls,
@@ -79,10 +79,10 @@ static void replaceAttributes(XMLParserState state, bool specialNode, XNodeListI
 				  unsigned int attrCountNew, unsigned int *newSize);
 static void parseTemplateNode(XMLParserState state, XMLParserNodeInfo nodeInfo,
 	 int specialNodeKind, unsigned int attrCount, XNodeListItem *attrOffsets,
-   unsigned int nmspDecls, unsigned int *attrCountNew, bool **specAttrsValid,
+  unsigned int nmspDecls, unsigned int *attrCountNew, bool ** specAttrsValid,
 				  unsigned int *specAttrCount, bool acceptLocPaths);
 static void finalizeElement(XMLParserState state, XMLParserNodeInfo nodeInfo,
-		   unsigned int children, int specialNodeKind, bool *specAttrsValid);
+		  unsigned int children, int specialNodeKind, bool * specAttrsValid);
 
 PredefinedEntity predefEntities[XNODE_PREDEFINED_ENTITIES] = {
 	{XNODE_CHAR_CDATA_LT, XNODE_CHAR_LARROW},
@@ -518,7 +518,7 @@ isValidXMLName(char *str)
  * returns attribute value (NULL-terminated)
  */
 char *
-readXMLAttValue(XMLParserState state, bool output, bool *refs)
+readXMLAttValue(XMLParserState state, bool output, bool * refs)
 {
 	char		term;
 	char		delimFirst = '\0';
@@ -890,7 +890,7 @@ readXMLComment(XMLParserState state)
  * At return time 'state' points to terminating semicolon.
  */
 bool
-readXMLReference(XMLParserState state, pg_wchar *value)
+readXMLReference(XMLParserState state, pg_wchar * value)
 {
 	bool		charRef = false;
 
@@ -1302,6 +1302,7 @@ processToken(XMLParserState state, XMLParserNodeInfo nodeInfo, XMLNodeToken allo
 		unsigned int children,
 					attrCount;
 		unsigned int attrCountNew = 0;
+		XMLNodeOffset dstPosOrig = state->dstPos;
 
 		/* Namespace declarations added by the current element. */
 		unsigned int nmspDecls = 0;
@@ -1360,6 +1361,16 @@ processToken(XMLParserState state, XMLParserNodeInfo nodeInfo, XMLNodeToken allo
 		{
 			XNodeListItem *attrOffsets = state->stack.content + stackPosOrig;
 
+			if (attrCount == 0)
+			{
+				/*
+				 * No attributes have been saved. Ensure that the replacement
+				 * starts at valid position.
+				 */
+				attrOffsets->value.singleOff = dstPosOrig;
+				attrOffsets->valid = true;
+			}
+
 			/*
 			 * Because of (possibly empty) positions for special attributes,
 			 * this function must be called even if 'attrCount == 0'
@@ -1367,7 +1378,7 @@ processToken(XMLParserState state, XMLParserNodeInfo nodeInfo, XMLNodeToken allo
 			parseTemplateNode(state, nodeInfo, specialNodeKind, attrCount,
 							  attrOffsets, nmspDecls, &attrCountNew,
 							  &specAttrsValid, &specAttrCount,
-							  false);
+					   strcmp(state->nmspSpecialURI, XNTNODE_NAMESPACE_URI));
 
 			/*
 			 * Empty slots for reserved attributes might have been added.
@@ -1545,7 +1556,7 @@ forgetNamespaceDeclarations(unsigned int count, XMLNodeContainer stack)
  */
 static void
 checkNamespaces(XMLParserState state, XMLParserNodeInfo nodeInfo,
-				unsigned int attrsPrefixedCount, bool *elNmspIsSpecial)
+				unsigned int attrsPrefixedCount, bool * elNmspIsSpecial)
 {
 	/*
 	 * The element name must be taken from the source text because the element
@@ -2312,7 +2323,7 @@ saveContent(XMLParserState state, XMLParserNodeInfo nodeInfo)
 
 static void
 saveReferences(XMLParserState state, XMLParserNodeInfo nodeInfo, XMLCompNodeHdr compNode,
-   unsigned short children, bool *specAttrsValid, unsigned int specAttrCount)
+  unsigned short children, bool * specAttrsValid, unsigned int specAttrCount)
 {
 	/*
 	 * Find out the range of reference values and the corresponding storage.
@@ -2631,6 +2642,11 @@ replaceAttributes(XMLParserState state, bool specialNode, XNodeListItem *attrOff
 		}
 		else
 		{
+			/*
+			 * Even if it's invalid, e.g. missing optional attribute of a
+			 * special node. In such a case boolean array is used to determine
+			 * the validity.
+			 */
 			xmlnodePushSingleNode(&state->stack, attrOffNew);
 		}
 
@@ -2665,7 +2681,8 @@ replaceAttributes(XMLParserState state, bool specialNode, XNodeListItem *attrOff
 		attrDataNew = state->tree + offNew;
 	}
 
-	memcpy(attrDataOrig + padding, attrsNew, *newSize - padding);
+	if (*newSize - padding > 0)
+		memcpy(attrDataOrig + padding, attrsNew, *newSize - padding);
 
 	if (*newSize != attrDataOrigSize)
 	{
@@ -2749,7 +2766,7 @@ static void
 parseTemplateNode(XMLParserState state, XMLParserNodeInfo nodeInfo,
 				  int specialNodeKind, unsigned int attrCount,
 				  XNodeListItem *attrOffsets, unsigned int nmspDecls,
-				  unsigned int *attrCountNew, bool **specAttrsValid,
+				  unsigned int *attrCountNew, bool ** specAttrsValid,
 				  unsigned int *specAttrCount, bool acceptLocPaths)
 {
 	unsigned int attrsNewMaxCount;
@@ -2838,7 +2855,7 @@ parseTemplateNode(XMLParserState state, XMLParserNodeInfo nodeInfo,
 
 static void
 finalizeElement(XMLParserState state, XMLParserNodeInfo nodeInfo,
-			unsigned int children, int specialNodeKind, bool *specAttrsValid)
+		   unsigned int children, int specialNodeKind, bool * specAttrsValid)
 {
 	XMLNodeOffset elementOff = nodeInfo->nodeOut;
 	XMLCompNodeHdr element = (XMLCompNodeHdr) (state->tree + elementOff);

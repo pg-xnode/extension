@@ -7,8 +7,8 @@
 #include "postgres.h"
 
 #include "template.h"
-#include "xnt.h"
 #include "xpath.h"
+#include "xnt.h"
 
 static char *getAttributeLocalName(char *prefix, char *attrNamePrefixed,
 					  XMLNodeContainer nmspDecls, char *parserOutput);
@@ -43,7 +43,7 @@ static char *getAttributeLocalName(char *prefix, char *attrNamePrefixed,
 char *
 preprocessSpecialXMLAttributes(char *prefix, XMLNodeContainer nmspDecls,
 	XNodeListItem *attrOffsets, unsigned short attrCount, char *parserOutput,
- XMLNodeKind specNodeKind, XNodeSpecAttributes *attrInfo, bool *offsetsValid,
+XMLNodeKind specNodeKind, XNodeSpecAttributes *attrInfo, bool * offsetsValid,
   unsigned int *specAttrCount, unsigned int *outSize, unsigned int *outCount,
 			XMLNodeContainer paramNames, GetSpecialXNodNameFunc specNodeName,
 							   bool acceptLocPaths)
