@@ -54,7 +54,7 @@ typedef struct XMLParamNameSorted
 #define XMLTEMPL_ATTR_VALUE_MAX_TOKENS		16
 
 extern XMLTemplateHeader getXMLTemplateHeader(XMLCompNodeHdr docRoot);
-extern XMLParamNameSorted *getXMLTemplateParamNames(ArrayType * parNameArray,
+extern XMLParamNameSorted *getXMLTemplateParamNames(ArrayType *parNameArray,
 					   unsigned int templateParamCount, char **templParNames,
 						 unsigned short *paramMap);
 extern XPathExprOperandValue getXMLTemplateParamValues(Datum row,

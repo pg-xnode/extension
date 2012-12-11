@@ -50,7 +50,7 @@ getXMLTemplateHeader(XMLCompNodeHdr docRoot)
  *	Returns array of parameter names passed by user for substitution.
  */
 XMLParamNameSorted *
-getXMLTemplateParamNames(ArrayType * parNameArray, unsigned int templateParamCount,
+getXMLTemplateParamNames(ArrayType *parNameArray, unsigned int templateParamCount,
 						 char **templParNames, unsigned short *paramMap)
 {
 	XMLParamNameSorted *parNames = NULL;

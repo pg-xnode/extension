@@ -444,8 +444,8 @@ extern XNodeSpecAttributes *getXNodeAttrInfo(XMLNodeKind kind);
  */
 extern char **getUnresolvedXMLNamespaces(char *tree, XMLNodeHdr node, unsigned int *count);
 extern void resolveXMLNamespaces(char *tree, XMLNodeContainer declarations, unsigned int declsActive, char *elNmspName,
-					 bool * elNmspNameResolved, XMLNodeHdr *attrsPrefixed, unsigned int attrsPrefixedCount, bool * attrFlags,
- unsigned short *attrsUnresolved, char *specNmspURI, bool * elNmspIsSpecial);
+					 bool *elNmspNameResolved, XMLNodeHdr *attrsPrefixed, unsigned int attrsPrefixedCount, bool *attrFlags,
+  unsigned short *attrsUnresolved, char *specNmspURI, bool *elNmspIsSpecial);
 extern void collectXMLNamespaceDeclarations(char *tree, XMLCompNodeHdr currentNode, unsigned int *attrCount,
 								unsigned int *nmspDeclCount, XMLNodeContainer declarations, bool declsOnly, XMLNodeHdr **attrsPrefixed,
 								unsigned int *attrsPrefixedCount);
@@ -465,7 +465,7 @@ extern Datum xmlfragment(PG_FUNCTION_ARGS);
  */
 extern char *preprocessSpecialXMLAttributes(char *prefix, XMLNodeContainer nmspDecls,
 	XNodeListItem *attrOffsets, unsigned short attrCount, char *parserOutput,
-XMLNodeKind specNodeKind, XNodeSpecAttributes *attrInfo, bool * offsetsValid,
+ XMLNodeKind specNodeKind, XNodeSpecAttributes *attrInfo, bool *offsetsValid,
   unsigned int *specAttrCount, unsigned int *outSize, unsigned int *outCount,
 			XMLNodeContainer paramNames, GetSpecialXNodNameFunc specNodeName,
 							   bool acceptLocPaths);

@@ -606,7 +606,7 @@ utf8cmp(char *c1, char *c2)
 }
 
 double
-xnodeGetNumValue(char *str, bool raiseError, bool * isNumber)
+xnodeGetNumValue(char *str, bool raiseError, bool *isNumber)
 {
 	double		result;
 	char	   *c;
