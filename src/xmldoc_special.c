@@ -312,6 +312,23 @@ preprocessSpecialXMLAttributes(char *prefix, XMLNodeContainer nmspDecls,
 }
 
 /*
+ * Attribute of a special node has fixed position. Constant should
+ * be defined for each special attribute and passed here as 'attNr'.
+ */
+XMLNodeHdr
+getSpecialXMLNodeAttribute(XMLCompNodeHdr node, char attNr)
+{
+	char		bwidth;
+	char	   *refPtr;
+	XMLNodeOffset offRel;
+
+	bwidth = XNODE_GET_REF_BWIDTH(node);
+	refPtr = XNODE_FIRST_REF(node) + bwidth * attNr;
+	offRel = readXMLNodeOffset(&refPtr, bwidth, false);
+	return (XMLNodeHdr) ((char *) node - offRel);
+}
+
+/*
  * If the attribute has the correct prefix, let's ignore the prefix for
  * simplicity. If the prefix is not correct (e.g. bound to wrong URI), return
  * the original (prefixed) name, so it fails to match to any attribute

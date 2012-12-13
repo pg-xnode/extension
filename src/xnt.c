@@ -589,20 +589,13 @@ xntProcessCopyOf(XMLNodeHdr node, XNodeInternal parent,
 	XPathExpression expr,
 				exprCopy;
 	XPathExprOperandValueData exprResult;
-	char	   *refPtr;
-	char		bwidth;
-	XMLNodeOffset offRel;
 	XMLNodeHdr	attrNode,
 				resultNode;
 	unsigned int resultNodeSize;
 	XNodeInternal resultInternal = NULL;
 
-	/* Expression must be the first attribute. */
 	xntNode = (XMLCompNodeHdr) node;
-	refPtr = XNODE_FIRST_REF(xntNode);
-	bwidth = XNODE_GET_REF_BWIDTH(xntNode);
-	offRel = readXMLNodeOffset(&refPtr, bwidth, false);
-	attrNode = (XMLNodeHdr) ((char *) xntNode - offRel);
+	attrNode = getSpecialXMLNodeAttribute(xntNode, XNT_COPY_OF_EXPR);
 
 	Assert(attrNode->kind == XMLNODE_ATTRIBUTE);
 	Assert(attrNode->flags & XNODE_ATTR_VALUE_BINARY);
@@ -698,25 +691,18 @@ xntProcessElement(XMLNodeHdr node, bool preserveSpace,
 				  XPathExprState exprState, unsigned int *storageSize)
 {
 	XMLCompNodeHdr xntNode;
-	char	   *refPtr;
-	char		bwidth;
 	XMLNodeHdr	attrNode,
 				childNode,
 				resultNode;
-	XMLNodeOffset offRel;
 	unsigned int resultNodeSize;
 	char	   *elName;
 	bool		elNameCopy = false;
-	unsigned short i,
-				elNodeAttrs = 0;
+	unsigned short elNodeAttrs = 0;
+	XMLNodeIteratorData iterator;
 	XNodeInternal resultInternal = NULL;
 
-	/* Element name is the first attribute. */
 	xntNode = (XMLCompNodeHdr) node;
-	refPtr = XNODE_FIRST_REF(xntNode);
-	bwidth = XNODE_GET_REF_BWIDTH(xntNode);
-	offRel = readXMLNodeOffset(&refPtr, bwidth, true);
-	attrNode = (XMLNodeHdr) ((char *) xntNode - offRel);
+	attrNode = getSpecialXMLNodeAttribute(xntNode, XNT_ELEMENT_NAME);
 
 	Assert(attrNode->kind == XMLNODE_ATTRIBUTE);
 
@@ -771,32 +757,16 @@ xntProcessElement(XMLNodeHdr node, bool preserveSpace,
 	 * declarations) are currently skipped. Such namespaces may need to be
 	 * applied to the the nested nodes.
 	 */
-	for (i = 1; i < xntNode->children; i++)
-	{
-		/*
-		 * 'step=false' so that we stay at the node if it's the first
-		 * non-attribute.
-		 */
-		offRel = readXMLNodeOffset(&refPtr, bwidth, false);
-		childNode = (XMLNodeHdr) ((char *) xntNode - offRel);
-		if (childNode->kind != XMLNODE_ATTRIBUTE)
-		{
-			break;
-		}
-		refPtr += bwidth;
-	}
+
 
 	/*
 	 * Add non-attribute children to the new node. This refers to
 	 * non-attribute child nodes of the 'xnt:element' node, which may include
 	 * 'xnt:attribute' tags (i.e. attrbutes of the node being constructed)
 	 */
-
-	for (; i < xntNode->children; i++)
+	initXMLNodeIteratorSpecial(&iterator, (XMLCompNodeHdr) node, false);
+	while ((childNode = getNextXMLNodeChild(&iterator)) != NULL)
 	{
-		offRel = readXMLNodeOffset(&refPtr, bwidth, true);
-		childNode = (XMLNodeHdr) ((char *) xntNode - offRel);
-
 		if ((childNode->kind == XMLNODE_TEXT && xmlStringWhitespaceOnly(XNODE_CONTENT(childNode))) ||
 			childNode->kind == XMLNODE_COMMENT)
 		{
@@ -824,9 +794,6 @@ xntProcessAttribute(XMLNodeHdr node,
 					XPathExprState exprState, unsigned int *storageSize)
 {
 	XMLCompNodeHdr xntNode;
-	char	   *refPtr;
-	char		bwidth;
-	XMLNodeOffset offRel;
 	unsigned int resultNodeSize;
 	XMLNodeHdr	attrNode,
 				resultNode;
@@ -837,13 +804,8 @@ xntProcessAttribute(XMLNodeHdr node,
 	char	   *cnt;
 	XNodeInternal resultInternal = NULL;
 
-	xntNode = (XMLCompNodeHdr) node;
-	refPtr = XNODE_FIRST_REF(xntNode);
-	bwidth = XNODE_GET_REF_BWIDTH(xntNode);
-
-	offRel = readXMLNodeOffset(&refPtr, bwidth, true);
-	attrNode = (XMLNodeHdr) ((char *) xntNode - offRel);
-
+	xntNode = (XMLCompNodeHdr) node;;
+	attrNode = getSpecialXMLNodeAttribute(xntNode, XNT_ATTRIBUTE_NAME);
 	attrName = XNODE_CONTENT(attrNode);
 	if (attrNode->flags & XNODE_ATTR_VALUE_BINARY)
 	{
@@ -855,9 +817,7 @@ xntProcessAttribute(XMLNodeHdr node,
 		elog(ERROR, "'%s' is not a valid attribute name", attrName);
 	}
 
-	offRel = readXMLNodeOffset(&refPtr, bwidth, true);
-	attrNode = (XMLNodeHdr) ((char *) xntNode - offRel);
-
+	attrNode = getSpecialXMLNodeAttribute(xntNode, XNT_ATTRIBUTE_VALUE);
 	attrValue = XNODE_CONTENT(attrNode);
 	if (attrNode->flags & XNODE_ATTR_VALUE_BINARY)
 	{

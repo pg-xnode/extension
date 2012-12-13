@@ -473,5 +473,6 @@ extern char *preprocessSpecialXMLAttributes(char *prefix, XMLNodeContainer nmspD
   unsigned int *specAttrCount, unsigned int *outSize, unsigned int *outCount,
 			XMLNodeContainer paramNames, GetSpecialXNodNameFunc specNodeName,
 							   bool acceptLocPaths);
+extern XMLNodeHdr getSpecialXMLNodeAttribute(XMLCompNodeHdr node, char attNr);
 
 #endif   /* XMLNODE_H */
