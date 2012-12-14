@@ -428,9 +428,6 @@ getNodesForTransformation(xmldoc doc,
 		{
 			XMLCompNodeHdr templateNode,
 						docRoot;
-			char	   *refPtr;
-			char		bwidth;
-			XMLNodeOffset offRel;
 			XMLNodeHdr	matchNode,
 						sourceNode;
 			XPathHeader xpHdr;
@@ -445,11 +442,7 @@ getNodesForTransformation(xmldoc doc,
 			templateNode = (XMLCompNodeHdr) sheetChild;
 			docRoot = (XMLCompNodeHdr) XNODE_ROOT(doc);
 
-			/* '@match' is the first attribute of the template. */
-			refPtr = XNODE_FIRST_REF(templateNode);
-			bwidth = XNODE_GET_REF_BWIDTH(templateNode);
-			offRel = readXMLNodeOffset(&refPtr, bwidth, false);
-			matchNode = (XMLNodeHdr) ((char *) templateNode - offRel);
+			matchNode = getSpecialXMLNodeAttribute(templateNode, XSL_TEMPLATE_MATCH);
 			Assert(matchNode->kind == XMLNODE_ATTRIBUTE);
 			Assert(matchNode->flags & XNODE_ATTR_VALUE_BINARY);
 
