@@ -39,6 +39,12 @@ typedef struct XMLNodeToTransform
 	XMLCompNodeHdr template;
 } XMLNodeToTransform;
 
+typedef struct XSLTValidationState
+{
+	bool		hasSheet;
+	unsigned int templates;
+} XSLTValidationState;
+
 static XMLNodeKind getXSLNodeKind(char *name);
 static char *getXSLNodeName(XMLNodeKind kind, char *nmspPrefix);
 static void validateXSLTree(XMLNodeHdr root);
@@ -330,10 +336,12 @@ getXSLNodeName(XMLNodeKind kind, char *nmspPrefix)
 static void
 validateXSLTree(XMLNodeHdr root)
 {
-	bool		hasSheet = false;
+	XSLTValidationState state;
 
-	walkThroughXMLTree(root, validateXSLNode, false, (void *) &hasSheet);
-	if (!hasSheet)
+	state.hasSheet = false;
+	state.templates = 0;
+	walkThroughXMLTree(root, validateXSLNode, false, (void *) &state);
+	if (!state.hasSheet)
 		elog(ERROR, "valid stylesheet (bound to the correct namespace) must be the root element");
 }
 
@@ -367,10 +375,9 @@ validateXSLNode(XMLNodeHdr *stack, unsigned int depth, void *userData)
 				XMLNodeIteratorData iterator;
 				XMLNodeHdr	attrNode;
 				char	   *version;
-				bool	   *hasSheet = (bool *) userData;
+				XSLTValidationState *state = (XSLTValidationState *) userData;
 
-				*hasSheet = true;
-
+				state->hasSheet = true;
 				initXMLNodeIteratorSpecial(&iterator, (XMLCompNodeHdr) node, true);
 				attrNode = getNextXMLNodeChild(&iterator);
 				version = XNODE_CONTENT(attrNode);
@@ -386,6 +393,16 @@ validateXSLNode(XMLNodeHdr *stack, unsigned int depth, void *userData)
 		case XSLNODE_TEMPLATE:
 			if (parent != NULL && parent->kind != XSLNODE_SHEET)
 				elog(ERROR, "XSL template may only be child of stylesheet");
+
+			{
+				XSLTValidationState *state = (XSLTValidationState *) userData;
+
+				if (state->templates >= XSLT_MAX_TEMPLATES_PER_SHEET)
+					elog(ERROR, "maximum number of templates per sheet is %u",
+						 XSLT_MAX_TEMPLATES_PER_SHEET);
+				state->templates++;
+			}
+
 			break;
 
 		default:
@@ -436,6 +453,13 @@ getNodesForTransformation(xmldoc doc,
 			XMLScanData xscan;
 
 			if (templateCount > XSLT_MAX_TEMPLATES_PER_SHEET)
+
+				/*
+				 * This should not happen as long as the sheet passed
+				 * validation. Cross-check does not hurt anyway (the
+				 * XSLT_MAX_TEMPLATES_PER_SHEET constant might have changed
+				 * across versions.)
+				 */
 				elog(ERROR, "maximum number of templates per sheet is %u",
 					 XSLT_MAX_TEMPLATES_PER_SHEET);
 

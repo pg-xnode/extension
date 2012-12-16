@@ -92,4 +92,5 @@ XPathValue
 XPathValueData
 XPathValueType
 xsl
+XSLTValidationState
 xsltype
