@@ -1218,15 +1218,22 @@ evaluateBinaryOperator(XPathExprState exprState, XPathExprOperandValue valueLeft
 void
 initScanForSingleXMLNodeKind(XMLScan xscan, XMLCompNodeHdr root, XMLNodeKind kind)
 {
-	XPath		xp = (XPath) palloc(sizeof(XPathData) + sizeof(XPathElementData));
-	XPathElement xpEl = (XPathElement) ((char *) xp + sizeof(XPathData));
+	XPath		xp;
+	char	   *cursor;
+	XPathElement xpEl;
 
+	xp = (XPath) palloc(sizeof(XPathData) + XPATH_ALIGNOF_LOC_STEP +
+						sizeof(XPathElementData));
+	cursor = (char *) xp + sizeof(XPathData);
+	cursor = (char *) TYPEALIGN(XPATH_ALIGNOF_LOC_STEP, cursor);
+
+	xpEl = (XPathElement) cursor;
 	xpEl->descendant = true;
 	xpEl->hasPredicate = false;
 	xp->depth = 1;
 	xp->targNdKind = kind;
 	xp->allAttributes = false;
-	xp->elements[0] = sizeof(XPathData);
+	xp->elements[0] = cursor - (char *) xp;;
 
 	initXMLScan(xscan, NULL, xp, NULL, root, xscan->document, false);
 }
