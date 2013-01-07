@@ -9,6 +9,9 @@
 #include "xpath.h"
 #include "xmlnode_util.h"
 
+static XPathElement parseLocationStep(XPathParserState state, XPath *paths,
+				  unsigned short *pathCount, XMLNodeContainer paramNames,
+				  XPath locPathOut);
 static void insertSubexpression(XPathExprOperand operand, XPathExprOperatorStorage *operatorStorage,
 		XPathExpression exprTop, unsigned short blockSize, bool varsShiftAll,
 					char *output, unsigned short *outPos);
@@ -28,7 +31,6 @@ static int parseFunctionArgList(XPathParserState state, XPathFunction, char *out
 static void checkFunctionArgTypes(XPathExpression argList, XPathFunction function);
 static void nextChar(XPathParserState state, bool endAllowed);
 static void skipWhiteSpace(XPathParserState state, bool endAllowed);
-static char *ensureSpace(unsigned int sizeNeeded, unsigned char alignment, LocationPathOutput *output);
 static void checkExpressionBuffer(unsigned short maxPos);
 
 static void dumpXPathExpressionInternal(char **input, XPathHeader xpathHdr, StringInfo output, unsigned short level,
@@ -62,9 +64,9 @@ XPathExprOperatorTextData xpathOperators[XPATH_EXPR_OPERATOR_KINDS] = {
 
 /* Order of values must follow that of XPathNodeType enumeration */
 static char nodeTypes[][XPATH_NODE_TYPE_MAX_LEN + 1] = {
-	"comment()",
-	"text()",
-	"node()",
+	"comment",
+	"text",
+	"node",
 	"processing-instruction"
 };
 
@@ -450,12 +452,10 @@ parseXPathExpression(XPathExpression exprCurrent, XPathParserState state, unsign
  * If the location path has predicates containing other paths, these are stored too.
  * NULL value can be used to indicate that location path is not expected.
  *
- * 'isSubPath' - if true, a sub-path is to be parsed. Otherwise a top-level XPath.
- *
  * 'pathCount' - number of sub-paths of the top-level XPath that have been processed so far.
  *
  * 'xpathSrc' - pointer to the source text where parsing should continue when path has been
- * processe.
+ * processed.
  *
  * 'pos' - position in the source text where the parsing should continue.
  * Unlike 'xpathSrc', this is increased by one for each character, whether it's single-byte or MB.
@@ -463,466 +463,364 @@ parseXPathExpression(XPathExpression exprCurrent, XPathParserState state, unsign
  * 'paramNames' - container to collect (unique) parameter names.
  */
 void
-parseLocationPath(XPath *paths, bool isSubPath, unsigned short *pathCount, char **xpathSrc,
+parseLocationPath(XPath *paths, unsigned short *pathCount, char **xpathSrc,
 				  unsigned short *pos, XMLNodeContainer paramNames)
 {
 	XPath		locPath;
 	XPathParserStateData state;
 	char	   *xpathStr = *xpathSrc;
-	bool		slashAllowed = true;
-	bool		nonEmpty;
-	LocationPathOutput output;
+	bool		relative;
+	bool		done = false;
+	XMLNodeContainerData steps;
+	unsigned int stepCount;
+	unsigned int outSize = sizeof(XPathData);
+	char	   *dest;
+	XPathData	locPathTmp;
+	uint8		descendants = 0;
 
-	if (*pathCount == XPATH_SET_MAX_PATHS)
-	{
-		elog(ERROR, "too many paths in an XPath expression");
-	}
+	if (*pathCount >= XPATH_SET_MAX_PATHS)
+		elog(ERROR, "too many location paths in XPath expression");
+
+	state.pos = *pos;
+	state.c = xpathStr;
+	state.cWidth = pg_utf_mblen((unsigned char *) state.c);
+	state.depth = 0;
+
+	relative = (*xpathStr != XNODE_CHAR_SLASH);
+	if (!relative)
+		nextChar(&state, true);
 
 	/*
-	 * Separate instance of the state is used here because we need a separate
-	 * block of memory for each location path (pointer to which will be added
-	 * to 'paths' output array).
+	 * Parse the location path, one step after another.
 	 */
-	output.size = XPATH_PARSER_OUTPUT_CHUNK;
-	output.chunks = 1;
-	output.cursor = output.data = (char *) palloc(output.size);
-	/* No specific alignment required now, the block is MAXALIGNed. */
-	locPath = (XPath) ensureSpace(sizeof(XPathData), 0, &output);
-	locPath->targNdKind = XMLNODE_NODE;
-	locPath->depth = 0;
-	locPath->descendants = 0;
-	locPath->relative = (*xpathStr != XNODE_CHAR_SLASH);
-
-	if (isSubPath)
+	xmlnodeContainerInit(&steps);
+	while (!done)
 	{
-		state.pos = locPath->relative ? *pos : *pos + 1;
-	}
-	else
-	{
-		state.pos = locPath->relative ? 1 : 2;
-	}
-	state.c = locPath->relative ? xpathStr : xpathStr + 1;
+		XPathElement step;
 
-	if (isSubPath)
-	{
-		nonEmpty = (*state.c != '\0' && (*state.c == XNODE_CHAR_AT || *state.c == XNODE_CHAR_SLASH ||
-										 XNODE_VALID_NAME_START(state.c)));
-	}
-	else
-	{
-		nonEmpty = (!locPath->relative && strlen(xpathStr) > 1) || (locPath->relative && strlen(xpathStr) > 0);
-	}
-
-	if (nonEmpty)
-	{
-		bool		finished = false;
-
-		/*
-		 * Ensure space for 'XPathData.elements' array. The first element is
-		 * inside the XPathData structure, that's why (XPATH_MAX_DEPTH - 1).
-		 * For the same reason we don't require any alignment here: the other
-		 * offsets immediately follow the XPathData structure.
-		 */
-		ensureSpace((XPATH_MAX_DEPTH - 1) * sizeof(XPathOffset), 0, &output);
-
-		state.cWidth = pg_utf_mblen((unsigned char *) state.c);
-
-		/*
-		 * Each iteration processes a single path element (i.e. the part
-		 * between 2 slashes).
-		 */
-		while (!finished)
+		if (state.depth >= XPATH_MAX_DEPTH)
 		{
-			unsigned short nameSrcPos = state.c - xpathStr;
-			unsigned short nameLen = 0;
-			char	   *exprOutput = NULL;
-			XPathExpression expr = NULL;
-			XPathElement xpel;
-			XPathOffset xpelOff;
+			elog(ERROR, "the maximum depth of location path is %u", XPATH_MAX_DEPTH);
+		}
 
-			xpel = (XPathElement) ensureSpace(sizeof(XPathElementData), XPATH_ALIGNOF_LOC_STEP, &output);
-			xpel->descendant = false;
+		step = parseLocationStep(&state, paths, pathCount, paramNames, &locPathTmp);
+		if (step == NULL && state.depth == 0)
+			/* The path is '/'. */
+			break;
 
-			/*
-			 * The 'xpath' pointer should be re-initialized each time, unless
-			 * it's clear that no reallocation of the output array happened
-			 * since the last use of the output.
-			 */
-			locPath = (XPath) output.data;
+		outSize += MAX_PADDING(XPATH_ALIGNOF_LOC_STEP) + sizeof(XPathElementData)
+			+ strlen(step->name);
 
-			xpelOff = (char *) xpel - output.data;
+		if (step->hasPredicate)
+		{
+			XPathExpression predicate = XPATH_PREDICATE_FROM_LOC_STEP(step);
 
-			if (locPath->depth >= XPATH_MAX_DEPTH)
-			{
-				elog(ERROR, "maximum xpath depth (%u elements) exceeded.", XPATH_MAX_DEPTH);
-			}
-			xpel->hasPredicate = false;
-			state.elementPos = 0;
+			outSize += MAX_PADDING(XPATH_ALIGNOF_EXPR) + predicate->common.size;
+		}
 
-			while (*state.c != XNODE_CHAR_SLASH && *state.c != '\0')
-			{
-				if (state.elementPos == 0)
-				{
-					if (*state.c == XNODE_CHAR_AT)
-					{
-						locPath = (XPath) output.data;
-						locPath->targNdKind = XMLNODE_ATTRIBUTE;
-						locPath->allAttributes = false;
+		if (step->descendant)
+			descendants++;
 
-						nextChar(&state, false);
-						nameSrcPos++;
-					}
-					else
-					{
-						unsigned char nr;
-						unsigned char nodeType = 0;
-						bool		ndTypeFound = false;
+		xmlnodePushSinglePtr(&steps, step);
 
-						for (nr = 0; nr < XPATH_NODE_TYPES_COUNT; nr++)
-						{
-							char	   *nodeTypeStr = nodeTypes[nr];
-							unsigned short ntStrLen = strlen(nodeTypeStr);
-
-							if (strncmp(state.c, nodeTypeStr, ntStrLen) == 0)
-							{
-								if (nr == XPATH_NODE_TYPE_PI && *(state.c + ntStrLen) != XNODE_CHAR_LBRKT_RND)
-								{
-									continue;
-								}
-								nodeType = nr;
-								ndTypeFound = true;
-								break;
-							}
-						}
-
-						if (ndTypeFound)
-						{
-							unsigned short i;
-							unsigned short ndTestLen = strlen(nodeTypes[nodeType]);
-
-							if (nr == XPATH_NODE_TYPE_PI)
-							{
-								/*
-								 * Skip the left bracket.
-								 */
-								ndTestLen++;
-							}
-							locPath = (XPath) output.data;
-
-							switch (nodeType)
-							{
-								case XPATH_NODE_TYPE_COMMENT:
-									locPath->targNdKind = XMLNODE_COMMENT;
-
-									break;
-
-								case XPATH_NODE_TYPE_TEXT:
-									locPath->targNdKind = XMLNODE_TEXT;
-
-									break;
-
-								case XPATH_NODE_TYPE_NODE:
-									locPath->targNdKind = XMLNODE_NODE;
-
-									break;
-
-								case XPATH_NODE_TYPE_PI:
-									locPath->targNdKind = XMLNODE_PI;
-
-									break;
-
-								default:
-									elog(ERROR, "unknown node type %u", nodeType);
-									break;
-							}
-
-							for (i = 0; i < ndTestLen; i++)
-							{
-								nextChar(&state, true);
-							}
-							if (nodeType == XPATH_NODE_TYPE_PI)
-							{
-								char		qmark;
-								char	   *piTarget = NULL;
-
-								skipWhiteSpace(&state, false);
-								if (*state.c == XNODE_CHAR_APOSTR || *state.c == XNODE_CHAR_QUOTMARK)
-								{
-									qmark = *state.c;
-									nextChar(&state, false);
-									nameSrcPos = state.c - xpathStr;
-									piTarget = state.c;
-									while (*state.c != qmark)
-									{
-										nextChar(&state, false);
-									}
-									nameLen = state.c - piTarget;
-									nextChar(&state, false);
-									skipWhiteSpace(&state, false);
-									locPath->piTestValue = true;
-								}
-								else
-								{
-									locPath->piTestValue = false;
-								}
-								if (*state.c != XNODE_CHAR_RBRKT_RND)
-								{
-									elog(ERROR, "')' or string literal expected at position %u of xpath expression.", state.pos);
-								}
-								else
-								{
-									nextChar(&state, true);
-								}
-							}
-							break;
-						}
-						else
-						{
-							if (XNODE_VALID_NAME_START(state.c))
-							{
-								locPath = (XPath) output.data;
-								locPath->targNdKind = XMLNODE_ELEMENT;
-
-								nameLen += state.cWidth;
-								nextChar(&state, true);
-							}
-							else
-							{
-								if (XNODE_WHITESPACE(state.c))
-								{
-									elog(ERROR, "xpath must not end with '/'");
-								}
-								else
-								{
-									elog(ERROR, "unexpected character '%c' in element name, see xpath position %u",
-										 *state.c, state.pos);
-								}
-							}
-						}
-					}
-				}
-				else
-				{
-					/* state.elementPos > 0 */
-					locPath = (XPath) output.data;
-
-					if (locPath->targNdKind == XMLNODE_ELEMENT)
-					{
-						/* Predicate expression? */
-						if (*state.c == XNODE_CHAR_LBRACKET)
-						{
-							unsigned short outPos;
-
-							xpel = (XPathElement) ((char *) locPath + xpelOff);
-							xpel->hasPredicate = true;
-							exprOutput = (char *) palloc(XPATH_EXPR_BUFFER_SIZE);
-							expr = (XPathExpression) exprOutput;
-							expr->needsContext = false;
-
-							/*
-							 * 'isSubExpr=false' will be passed in which case
-							 * the initial value of 'outPos' will be set by
-							 * the parser itself.
-							 */
-							outPos = 0;
-							checkExpressionBuffer(outPos);
-							parseXPathExpression(expr, &state, XPATH_TERM_RBRKT, NULL, exprOutput, &outPos,
-								 false, false, paths, pathCount, paramNames);
-
-							nextChar(&state, true);
-
-							/*
-							 * Now we're right after ']'
-							 */
-							break;
-						}
-						else if (XNODE_VALID_NAME_CHAR(state.c))
-						{
-							nameLen += state.cWidth;
-							nextChar(&state, true);
-						}
-						else
-						{
-							break;
-						}
-					}
-					else if (locPath->targNdKind == XMLNODE_ATTRIBUTE)
-					{
-						if (*state.c == XNODE_CHAR_ASTERISK)
-						{
-							if (state.elementPos == 1)
-							{
-								locPath->allAttributes = true;
-								nextChar(&state, true);
-							}
-
-							/*
-							 * If (state.elementPos > 1) then we're reading
-							 * multiply operator: don't move on.
-							 */
-							break;
-
-						}
-						if (nameLen == 0)
-						{
-							/*
-							 * Starting to read attribute name after '@'
-							 */
-							if (!XNODE_VALID_NAME_START(state.c))
-							{
-								if (XNODE_WHITESPACE(state.c))
-								{
-									elog(ERROR, "xpath must not end with '@'");
-								}
-								else
-								{
-									elog(ERROR, "unexpected character '%c' in attribute name, see position %u of xpath expression.",
-										 *state.c, state.pos);
-								}
-							}
-						}
-						else
-						{
-							if (!XNODE_VALID_NAME_CHAR(state.c))
-							{
-								break;
-							}
-						}
-						nameLen += state.cWidth;
-						if (nameLen >= XPATH_ELEMENT_MAX_LEN)
-						{
-							elog(ERROR, "XPath element too long");
-						}
-						nextChar(&state, true);
-					}
-				}
-			}
-
-			if (*state.c == XNODE_CHAR_SLASH && locPath->targNdKind == XMLNODE_ATTRIBUTE)
-			{
-				elog(ERROR, "if location path contains attribute test, it must be the last location step");
-			}
+		if (locPathTmp.targNdKind == XMLNODE_ATTRIBUTE)
 
 			/*
-			 * We're at the first character after the xpath element. That can
-			 * be '/', white space, operator, right bracket...
+			 * If the attribute test has just been parsed, we're done. Slash
+			 * means error at this moment and will be reported when parser
+			 * tries to continue after the location path.
 			 */
-			if (state.elementPos == 0)
-			{
-				if (!slashAllowed)
-				{
-					elog(ERROR, "invalid xpath expression");
-				}
-				slashAllowed = false;
-				output.cursor -= sizeof(XPathElementData);
-				nextChar(&state, false);
-				continue;
-			}
-			else
-			{
-				/* xpath element after '//' ? */
-				if (!slashAllowed)
-				{
-					xpel->descendant = true;
-				}
-			}
+			done = true;
+		else if (*state.c == XNODE_CHAR_SLASH)
+			nextChar(&state, false);
+		else
+			done = true;
+	}
+	stepCount = steps.position;
 
-			if (!isSubPath)
+	/*
+	 * Ensure space for 'XPathData.elements' array. The first element is
+	 * inside the XPathData structure, that's why (stepCount - 1). For the
+	 * same reason we don't require any alignment here: the other offsets
+	 * immediately follow the XPathData structure.
+	 */
+	if (stepCount > 1)
+		outSize += (stepCount - 1) * sizeof(XPathOffset);
+
+	locPath = (XPath) palloc(outSize);
+
+	if (stepCount > 0)
+	{
+		unsigned int i;
+		XNodeListItem *item;
+
+		dest = (char *) (locPath->elements + stepCount);
+		item = steps.content;
+		for (i = 0; i < stepCount; i++)
+		{
+			XPathElement step;
+			char	   *after;
+			unsigned int stepSize;
+
+			step = (XPathElement) item->value.singlePtr;
+			after = step->name + strlen(step->name) + 1;
+
+			if (step->hasPredicate)
 			{
-				if (*state.c == XNODE_CHAR_SLASH)
-				{
-					if (*(state.c + 1) == '\0')
-					{
-						elog(ERROR, "xpath must not end with '/'");
-					}
-					else
-					{
-						nextChar(&state, true);
-					}
-				}
-				else if (*state.c == '\0')
-				{
-					finished = true;
-				}
-				else
-				{
-					elog(ERROR, "unexpected character '%c' at position %u of xpath expression",
-						 *state.c, state.pos);
-				}
-			}
-			else
-			{
-				if (*state.c != XNODE_CHAR_SLASH)
-				{
-					finished = true;
-				}
-				else
-				{
-					/*
-					 * At '/' now, so move to the next element.
-					 */
-					nextChar(&state, false);
-				}
+				XPathExpression predicate;
+
+				predicate = (XPathExpression) TYPEALIGN(XPATH_ALIGNOF_EXPR,
+														after);
+				after = (char *) predicate + predicate->common.size;
 			}
 
-			locPath = (XPath) output.data;
+			dest = (char *) TYPEALIGN(XPATH_ALIGNOF_LOC_STEP, dest);
 
-			/*
-			 * Save the xpath element
-			 */
-			locPath->elements[locPath->depth] = xpelOff;
+			stepSize = after - (char *) step;
+			memcpy(dest, step, stepSize);
+			locPath->elements[i] = dest - (char *) locPath;
+			dest += stepSize;
 
-
-			if (locPath->targNdKind == XMLNODE_ELEMENT || locPath->targNdKind == XMLNODE_PI ||
-				(locPath->targNdKind == XMLNODE_ATTRIBUTE && !locPath->allAttributes))
-			{
-				ensureSpace(nameLen, 0, &output);
-
-				/*
-				 * Potential reallocation of the output array has to be taken
-				 * into account:
-				 */
-				xpel = (XPathElement) ((char *) locPath + xpelOff);
-				memcpy(xpel->name, xpathStr + nameSrcPos, nameLen);
-				*(output.cursor - 1) = '\0';
-			}
-			else
-			{
-				xpel = (XPathElement) ((char *) locPath + xpelOff);
-				xpel->name[0] = '\0';
-			}
-
-			if (xpel->hasPredicate)
-			{
-				char	   *target = ensureSpace(expr->common.size, XPATH_ALIGNOF_EXPR, &output);
-
-				memcpy(target, exprOutput, expr->common.size);
-				pfree(exprOutput);
-			}
-			if (xpel->descendant)
-			{
-				locPath->descendants++;
-			}
-			slashAllowed = true;
-			locPath = (XPath) output.data;
-			locPath->depth++;
+			pfree(step);
+			item++;
 		}
 	}
 	else
-	{
-		if (locPath->relative)
-		{
-			elog(ERROR, "empty xpath expression");
-		}
-		locPath->depth = 0;
-		locPath->targNdKind = XMLNODE_DOC;
-	}
-	locPath = (XPath) output.data;
-	locPath->size = output.cursor - output.data;
+		dest = (char *) locPath + sizeof(XPathData);
 
+	xmlnodeContainerFree(&steps);
+
+	locPath->targNdKind = locPathTmp.targNdKind;
+	locPath->allAttributes = locPathTmp.allAttributes;
+	locPath->piTestValue = locPathTmp.piTestValue;
+
+	locPath->relative = relative;
+	locPath->depth = stepCount;
+	locPath->descendants = descendants;
+
+	locPath->size = dest - (char *) locPath;
+	paths[*pathCount] = locPath;
 	*xpathSrc = state.c;
 	*pos = state.pos;
-	paths[*pathCount] = locPath;
+}
+
+/*
+ * Parse a single location step.
+ *
+ * Before the function is called, make sure that the initial slash has
+ * been processed.
+ *
+ * 'locPathOut' is used as output for path-level information. We could reserve
+ * one item of the 'paths' array but that would make the recursion trickier.
+ */
+static XPathElement
+parseLocationStep(XPathParserState state, XPath *paths,
+				  unsigned short *pathCount, XMLNodeContainer paramNames,
+				  XPath locPathOut)
+{
+	char	   *name = NULL;
+	unsigned short nameLen = 0;
+	XPathElement locStep;
+	bool		descendant = false;
+	XPathExpression predicate = NULL;
+	unsigned int stepSizeMax;
+	bool		attrTest = false;
+	bool		attrsAll = false;
+	bool		isSpecTest = false;
+
+	locPathOut->targNdKind = XMLNODE_ELEMENT;
+	locPathOut->allAttributes = false;
+	locPathOut->piTestValue = false;
+
+	if (*state->c == XNODE_CHAR_SLASH)
+	{
+		nextChar(state, true);
+		descendant = true;
+	}
+
+	if (*state->c == XNODE_CHAR_AT)
+	{
+		attrTest = true;
+		nextChar(state, false);
+		locPathOut->targNdKind = XMLNODE_ATTRIBUTE;
+	}
+	if (attrTest && *state->c == XNODE_CHAR_ASTERISK)
+	{
+		attrsAll = true;
+		nextChar(state, true);
+	}
+
+	if ((!attrTest || (attrTest && !attrsAll)) && XNODE_VALID_NAME_START(state->c))
+	{
+		/* Process QName */
+		name = state->c;
+		nameLen = 0;
+		while (XNODE_VALID_NAME_CHAR(state->c) && *state->c != XNODE_CHAR_SLASH
+			   && nameLen < XPATH_ELEMENT_MAX_LEN)
+		{
+			nameLen += state->cWidth;
+			nextChar(state, true);
+		}
+
+		if (nameLen > XPATH_ELEMENT_MAX_LEN)
+			elog(ERROR, "XPath location step too long");
+
+		if (*state->c == XNODE_CHAR_LBRKT_RND && !attrTest)
+		{
+			/* Special node test? */
+			unsigned int i;
+			unsigned char nodeType = 0;
+
+			for (i = 0; i < XPATH_NODE_TYPES_COUNT; i++)
+			{
+				char	   *nodeTypeStr = nodeTypes[i];
+				unsigned short ntStrLen = strlen(nodeTypeStr);
+
+				if (ntStrLen == nameLen &&
+					strncmp(name, nodeTypeStr, ntStrLen) == 0)
+				{
+					nodeType = i;
+					isSpecTest = true;
+					break;
+				}
+			}
+			if (!isSpecTest)
+				elog(ERROR, "unrecognized node test '%s()'", pnstrdup(name, nameLen));
+
+			switch (nodeType)
+			{
+				case XPATH_NODE_TYPE_COMMENT:
+					locPathOut->targNdKind = XMLNODE_COMMENT;
+					break;
+
+				case XPATH_NODE_TYPE_TEXT:
+					locPathOut->targNdKind = XMLNODE_TEXT;
+					break;
+
+				case XPATH_NODE_TYPE_NODE:
+					locPathOut->targNdKind = XMLNODE_NODE;
+					break;
+
+				case XPATH_NODE_TYPE_PI:
+					locPathOut->targNdKind = XMLNODE_PI;
+					break;
+
+				default:
+					elog(ERROR, "unknown node type %u", nodeType);
+					break;
+			}
+
+			/*
+			 * The meaning of name is different for special node test: if
+			 * non-empty, it must be PI target.
+			 */
+			name = NULL;
+			nameLen = 0;
+
+			/* Get past the '(' character and skip (possible) whitespace. */
+			nextChar(state, false);
+			skipWhiteSpace(state, false);
+
+			if (*state->c != XNODE_CHAR_RBRKT_RND && nodeType == XPATH_NODE_TYPE_PI)
+			{
+				char		qmark;
+
+				if (*state->c != XNODE_CHAR_APOSTR &&
+					*state->c != XNODE_CHAR_QUOTMARK)
+					elog(ERROR, "string literal (PI target) expected at position %u of the xpath expression",
+						 state->pos);
+
+				qmark = *state->c;
+				nextChar(state, false);
+				name = state->c;
+				while (*state->c != qmark && nameLen < XPATH_ELEMENT_MAX_LEN)
+				{
+					nameLen += state->cWidth;
+					nextChar(state, false);
+				}
+
+				if (nameLen > XPATH_ELEMENT_MAX_LEN)
+					elog(ERROR, "PI target name too long");
+
+				nextChar(state, false);
+				skipWhiteSpace(state, false);
+				locPathOut->piTestValue = true;
+			}
+
+			if (*state->c != XNODE_CHAR_RBRKT_RND)
+				elog(ERROR, "')' expected at position %u of xpath expression", state->pos);
+
+			/* Move past the ')' */
+			nextChar(state, true);
+		}
+		else if (*state->c == XNODE_CHAR_LBRACKET)
+		{
+			/* Predicate expression. */
+			char	   *exprOutput;
+			unsigned short outPos = 0;
+
+			exprOutput = (char *) palloc(XPATH_EXPR_BUFFER_SIZE);
+			predicate = (XPathExpression) exprOutput;
+
+			/*
+			 * Predicate expression should always be treated in certain
+			 * context so this attribute will not be used. Let's set it just
+			 * so it looks sensible.
+			 */
+			predicate->needsContext = true;
+			checkExpressionBuffer(outPos);
+			parseXPathExpression(predicate, state, XPATH_TERM_RBRKT, NULL,
+			exprOutput, &outPos, false, false, paths, pathCount, paramNames);
+
+			/* Move behind the ']' */
+			nextChar(state, true);
+		}
+	}
+
+	if (nameLen == 0 && state->depth == 0 && !attrTest && !isSpecTest)
+	{
+		if (descendant)
+			elog(ERROR, "unrecognized location path '//'");
+		/* The path is just '/'. */
+		locPathOut->targNdKind = XMLNODE_DOC;
+		return NULL;
+	}
+
+	if (nameLen == 0 && !attrsAll && !isSpecTest)
+	{
+		elog(ERROR, "QName expected at position %u of XPath expression",
+			 state->pos);
+	}
+
+	stepSizeMax = sizeof(XPathElementData) + nameLen;
+	if (predicate != NULL)
+	{
+		stepSizeMax += MAX_PADDING(XPATH_ALIGNOF_EXPR) + predicate->common.size;
+	}
+
+	locStep = (XPathElement) palloc(stepSizeMax);
+	locStep->descendant = descendant;
+
+	if (nameLen > 0)
+	{
+		memcpy(locStep->name, name, nameLen);
+	}
+	locStep->name[nameLen] = '\0';
+
+	if (predicate != NULL)
+	{
+		char	   *dest;
+
+		dest = (char *) XPATH_PREDICATE_FROM_LOC_STEP(locStep);
+		memcpy(dest, predicate, predicate->common.size);
+		locStep->hasPredicate = true;
+	}
+	else
+		locStep->hasPredicate = false;
+
+	locPathOut->allAttributes = attrsAll;
+	state->depth++;
+	return locStep;
 }
 
 /*
@@ -1305,7 +1203,7 @@ readExpressionOperand(XPathExpression exprTop, XPathParserState state, unsigned 
 		}
 		else if (op->common.type == XPATH_OPERAND_PATH)
 		{
-			parseLocationPath(paths, true, pathCnt, &(state->c), &(state->pos), paramNames);
+			parseLocationPath(paths, pathCnt, &(state->c), &(state->pos), paramNames);
 			op->value.v.path = *pathCnt;
 			(*pathCnt)++;
 		}
@@ -1757,7 +1655,6 @@ nextChar(XPathParserState state, bool endAllowed)
 {
 	state->pos++;
 	state->c += state->cWidth;
-	state->elementPos++;
 	if (*state->c == '\0' && !endAllowed)
 	{
 		elog(ERROR, "unexpected end of xpath expression");
@@ -1772,55 +1669,6 @@ skipWhiteSpace(XPathParserState state, bool endAllowed)
 	{
 		nextChar(state, endAllowed);
 	}
-}
-
-/*
- * Ensures that 'sizeNeeded' bytes can be written to the output, starting at
- * 'state->output'. The function returns (aligned) target pointer for the new
- * byte(s), regardless reallocation took place or not.
- */
-static char *
-ensureSpace(unsigned int sizeNeeded, unsigned char alignment, LocationPathOutput *output)
-{
-	unsigned short chunksNew = 0;
-	unsigned short currentSize = output->cursor - output->data;
-	char	   *target;
-	unsigned char padding;
-
-	if (alignment > 0)
-	{
-		target = (char *) TYPEALIGN(alignment, output->cursor);
-	}
-	else
-	{
-		target = output->cursor;
-	}
-	padding = target - output->cursor;
-
-	sizeNeeded += padding;
-
-	while (currentSize + sizeNeeded > output->size)
-	{
-		output->size += XPATH_PARSER_OUTPUT_CHUNK;
-		chunksNew++;
-	}
-	if (chunksNew > 0)
-	{
-		output->chunks += chunksNew;
-		if (output->chunks > XPATH_PARSER_OUTPUT_CHUNKS)
-		{
-			elog(ERROR, "XPath parser: maximum size of output exceeded");
-		}
-		output->data = (char *) repalloc(output->data, output->size);
-
-		/* Make sure the pointers point to the same data in the new block. */
-		output->cursor = output->data + currentSize;
-		target = output->cursor + padding;
-
-		elog(DEBUG1, "XPath output buffer reallocated");
-	}
-	output->cursor += sizeNeeded;
-	return target;
 }
 
 /*
@@ -1939,12 +1787,9 @@ dumpLocationPath(XPathHeader xpathHdr, unsigned short pathNr, StringInfo output,
 
 	for (i = 1; i <= last; i++)
 	{
-		unsigned short nameLen;
-
 		o = locPath->elements[i - 1];
 
 		el = (XPathElement) ((char *) locPath + o);
-		nameLen = strlen(el->name);
 
 		if (debug)
 		{
@@ -1961,11 +1806,8 @@ dumpLocationPath(XPathHeader xpathHdr, unsigned short pathNr, StringInfo output,
 		}
 		if (el->hasPredicate)
 		{
-			char	   *pExprUnaligned;
-			XPathExpression pexpr;
+			XPathExpression pexpr = (XPathExpression) XPATH_PREDICATE_FROM_LOC_STEP(el);
 
-			pExprUnaligned = (char *) el + sizeof(XPathElementData) + nameLen;
-			pexpr = (XPathExpression) TYPEALIGN(XPATH_ALIGNOF_EXPR, pExprUnaligned);
 			dumpXPathExpression(pexpr, xpathHdr, output, false, paramNames, debug);
 		}
 		if (!debug && ((i < last) || (locPath->targNdKind != XMLNODE_ELEMENT)))
@@ -2000,15 +1842,15 @@ dumpLocationPath(XPathHeader xpathHdr, unsigned short pathNr, StringInfo output,
 		switch (locPath->targNdKind)
 		{
 			case XMLNODE_COMMENT:
-				appendStringInfoString(output, nodeTypes[XPATH_NODE_TYPE_COMMENT]);
+				appendStringInfo(output, "%s()", nodeTypes[XPATH_NODE_TYPE_COMMENT]);
 				break;
 
 			case XMLNODE_TEXT:
-				appendStringInfoString(output, nodeTypes[XPATH_NODE_TYPE_TEXT]);
+				appendStringInfo(output, "%s()", nodeTypes[XPATH_NODE_TYPE_TEXT]);
 				break;
 
 			case XMLNODE_NODE:
-				appendStringInfoString(output, nodeTypes[XPATH_NODE_TYPE_NODE]);
+				appendStringInfo(output, "%s()", nodeTypes[XPATH_NODE_TYPE_NODE]);
 				break;
 
 			case XMLNODE_PI:

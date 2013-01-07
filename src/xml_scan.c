@@ -265,13 +265,10 @@ getNextXMLNode(XMLScan xscan)
 					if (xpEl->hasPredicate)
 					{
 						XPathExprOperandValueData result;
-						char	   *exprUnaligned;
 						XPathExpression exprOrig;
 						XPathExprState exprState;
 
-						exprUnaligned = (char *) xpEl + sizeof(XPathElementData) +
-							strlen(nameTest);
-						exprOrig = (XPathExpression) TYPEALIGN(XPATH_ALIGNOF_EXPR, exprUnaligned);
+						exprOrig = XPATH_PREDICATE_FROM_LOC_STEP(xpEl);
 						exprState = prepareXPathExpression(exprOrig, currentElement,
 								 xscan->document, xscan->xpathHeader, xscan);
 						evaluateXPathExpression(exprState, exprState->expr, 0, &result);

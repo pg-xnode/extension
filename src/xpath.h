@@ -1,3 +1,4 @@
+
 /*
  * Copyright (C) 2012, Antonin Houska
  */
@@ -11,12 +12,15 @@
 #include "xmlnode.h"
 
 typedef struct varlena xpathtype;
+
 typedef xpathtype *xpath;
 
 #define XPATH_MAX_DEPTH					16
 
 extern Datum xpath_in(PG_FUNCTION_ARGS);
+
 extern Datum xpath_out(PG_FUNCTION_ARGS);
+
 extern Datum xpath_debug_print(PG_FUNCTION_ARGS);
 
 extern Datum xpath_single(PG_FUNCTION_ARGS);
@@ -24,18 +28,6 @@ extern Datum xpath_single(PG_FUNCTION_ARGS);
 #define XMLNODE_SET_MAX_COLS	16
 
 extern Datum xpath_array(PG_FUNCTION_ARGS);
-
-/*
- * The first is minimum amount of memory allocated for binary XPath and also
- * increment size. The second is maximum number of chunks.
- *
- * The maximum size of a single XPath (or a sub-path) in the binary form is
- * therefore (XPATH_PARSER_OUTPUT_CHUNK * XPATH_PARSER_OUTPUT_CHUNKS)
- *
- * This value *must not* exceed range of XPathOffset type.
- */
-#define XPATH_PARSER_OUTPUT_CHUNK			1024
-#define XPATH_PARSER_OUTPUT_CHUNKS			64
 
 #define XPATH_EXPR_BUFFER_SIZE				512
 #define XPATH_ELEMENT_MAX_LEN				0xFF
@@ -121,12 +113,16 @@ typedef struct XPathHeaderData *XPathHeader;
 
 typedef enum XPathExprOperandType
 {
-	/* The following are all stored as XPathExprOperand */
+	/*
+	 * The following are all stored as XPathExprOperand
+	 */
 	XPATH_OPERAND_LITERAL = 0,
 	XPATH_OPERAND_ATTRIBUTE,
 	XPATH_OPERAND_PATH,
 
-	/* The following are both XPathExpression */
+	/*
+	 * The following are both XPathExpression
+	 */
 	XPATH_OPERAND_EXPR_TOP,
 	XPATH_OPERAND_EXPR_SUB,
 
@@ -179,14 +175,21 @@ typedef struct XPathValueData
 typedef struct XPathValueData *XPathValue;
 
 typedef struct varlena xpathvaltype;
+
 typedef xpathvaltype *xpathval;
 
 extern Datum xpathval_in(PG_FUNCTION_ARGS);
+
 extern Datum xpathval_out(PG_FUNCTION_ARGS);
+
 extern Datum xpathval_to_bool(PG_FUNCTION_ARGS);
+
 extern Datum xpathval_to_float8(PG_FUNCTION_ARGS);
+
 extern Datum xpathval_to_numeric(PG_FUNCTION_ARGS);
+
 extern Datum xpathval_to_int4(PG_FUNCTION_ARGS);
+
 extern Datum xpathval_to_xmlnode(PG_FUNCTION_ARGS);
 
 
@@ -231,8 +234,10 @@ typedef struct XPathNodeSetData *XPathNodeSet;
 
 
 #define XPATH_FUNC_NAME_MAX_LEN		16
+
 /* Maximum number of regular arguments */
 #define XPATH_FUNC_MAX_ARGS_REG		4
+
 /* Total number of function arguments */
 #define XPATH_FUNC_MAX_ARGS			32
 
@@ -367,7 +372,9 @@ typedef struct XPathExprOperandData
 	 */
 	bool		substituted;
 
-	/* Value must be the last attribute of this structure */
+	/*
+	 * Value must be the last attribute of this structure
+	 */
 	XPathExprOperandValueData value;
 } XPathExprOperandData;
 
@@ -400,7 +407,9 @@ typedef enum XPathExprOperatorId
 
 typedef struct XPathExprOperatorStorageData
 {
-	/* XPathExprOperatorId is stored in a single byte. */
+	/*
+	 * XPathExprOperatorId is stored in a single byte.
+	 */
 	uint8		id;
 } XPathExprOperatorStorageData;
 
@@ -463,10 +472,12 @@ typedef struct XPathExpressionData
 
 	/*
 	 * 'true' if the expression or any subexpression contains one of the
-	 * following: relative location path, attribute reference or an XPath
+	 * following: relative location path, attribute reference or XPath
 	 * function having 'needsContext' set to 'true'.
 	 *
-	 * Parser does not set this attribute on subexpressions.
+	 * Parser does not set this attribute on subexpressions: important is
+	 * whether the whole expression is context-dependent or not.
+	 *
 	 */
 	bool		needsContext;
 
@@ -485,15 +496,19 @@ typedef struct XPathExpressionData *XPathExpression;
 #define XPATH_SUBEXPRESSION_EXPLICIT		(1 << 0)
 
 
-extern char *getXPathExpressionForStorage(XPathExpression expr, XPath *locPaths,
-					unsigned short locPathCount, XMLNodeContainer paramNames,
-							 bool varlena, unsigned short *sizeOut);
+extern char *getXPathExpressionForStorage(XPathExpression expr,
+							 XPath *locPaths,
+							 unsigned short locPathCount,
+							 XMLNodeContainer paramNames,
+							 bool varlena,
+							 unsigned short *sizeOut);
 extern XPath getSingleXPath(XPathExpression expr, XPathHeader xpHdr);
 
-extern void dumpXPathExpression(XPathExpression expr, XPathHeader xpathHdr, StringInfo output, bool main,
+extern void dumpXPathExpression(XPathExpression expr, XPathHeader xpathHdr,
+					StringInfo output, bool main,
 					char **paramNames, bool debug);
-extern void dumpLocationPath(XPathHeader xpathHdr, unsigned short pathNr, StringInfo output, char **paramNames,
-				 bool debug);
+extern void dumpLocationPath(XPathHeader xpathHdr, unsigned short pathNr,
+				 StringInfo output, char **paramNames, bool debug);
 
 /*
  * Element of location path, i.e. location step.
@@ -506,10 +521,21 @@ typedef struct XPathElementData
 	 */
 	bool		hasPredicate;
 	bool		descendant;
+	bool		attrsAll;
 	char		name[1];
 } XPathElementData;
 
 typedef struct XPathElementData *XPathElement;
+
+/*
+ * Get predicate expression from location path step (don't use this macro if
+ * the step has no predicate expression).
+ *
+ * Location step ends with node test name and the predicate expression is
+ * located at the first aligned position behind that.
+ */
+#define XPATH_PREDICATE_FROM_LOC_STEP(s) ((XPathExpression)\
+	TYPEALIGN(XPATH_ALIGNOF_EXPR, (s)->name + strlen((s)->name) + 1))
 
 typedef struct XPathParserStateData
 {
@@ -518,27 +544,12 @@ typedef struct XPathParserStateData
 	 * if multi-byte character has been processed.
 	 */
 	unsigned short pos;
-	unsigned int elementPos;
 	char	   *c;
 	unsigned short cWidth;
-
+	unsigned short depth;
 } XPathParserStateData;
 
 typedef struct XPathParserStateData *XPathParserState;
-
-typedef struct LocationPathOutput
-{
-	char	   *data,
-			   *cursor;
-	unsigned short chunks;
-
-	/*
-	 * Strictly, this attribute is redundant. The purpose is to eliminate need
-	 * for evaluating (chunks * XPATH_PARSER_OUTPUT_CHUNK) each time the free
-	 * space in 'data' is being checked.
-	 */
-	unsigned int size;
-} LocationPathOutput;
 
 
 #define XPATH_NODE_TYPE_MAX_LEN 22		/* 'processing-instruction' */
@@ -616,13 +627,26 @@ typedef enum XPathNodeType
 #define XNODE_ALIGNOF_XPATHVAL	ALIGNOF_DOUBLE
 
 
-extern XPathExprOperatorStorage parseXPathExpression(XPathExpression exprCurrent, XPathParserState state,
-					 unsigned char termFlags, XPathExprOperatorStorage firstOperatorStorage, char *output,
-		  unsigned short *outPos, bool isSubExpr, bool argList, XPath *paths,
-					 unsigned short *subpathCnt, XMLNodeContainer paramNames);
+extern XPathExprOperatorStorage
+parseXPathExpression(XPathExpression
+					 exprCurrent,
+					 XPathParserState state,
+					 unsigned char termFlags,
+					 XPathExprOperatorStorage
+					 firstOperatorStorage,
+					 char *output,
+					 unsigned short *outPos,
+					 bool isSubExpr,
+					 bool argList,
+					 XPath *paths,
+					 unsigned short
+					 *subpathCnt,
+					 XMLNodeContainer
+					 paramNames);
 
-extern void parseLocationPath(XPath *paths, bool isSubPath, unsigned short *pathCount, char **xpathSrc,
-				  unsigned short *pos, XMLNodeContainer paramNames);
+extern void parseLocationPath(XPath *paths, unsigned short *pathCount,
+				  char **xpathSrc, unsigned short *pos,
+				  XMLNodeContainer paramNames);
 
 /*
  * Status of XML tree scan at given level of the tree.
@@ -631,7 +655,9 @@ typedef struct XMLScanOneLevelData
 {
 	XMLCompNodeHdr parent;
 
-	/* Where the next (multi-byte) reference will be read from. */
+	/*
+	 * Where the next (multi-byte) reference will be read from.
+	 */
 	char	   *nodeRefPtr;
 
 	unsigned short int siblingsLeft;
@@ -657,7 +683,10 @@ typedef struct XMLScanData
 	XPathHeader xpathHeader;
 	unsigned short xpathRoot;
 	XMLScanOneLevel state;
-	/* Current depth */
+
+	/*
+	 * Current depth
+	 */
 	unsigned short int depth;
 
 	/*
@@ -671,7 +700,9 @@ typedef struct XMLScanData
 	bool		skip;
 	bool		done;
 
-	/* The document is needed for absolute sub-paths. */
+	/*
+	 * The document is needed for absolute sub-paths.
+	 */
 	xmldoc		document;
 
 	/*
@@ -686,10 +717,14 @@ typedef struct XMLScanData
 	 */
 	XMLNodeContainer ignoreList;
 
-	/* Direct child in the scan hierarchy. */
+	/*
+	 * Direct child in the scan hierarchy.
+	 */
 	struct XMLScanData *subScan;
 
-	/* Direct parent in the scan hierarchy. */
+	/*
+	 * Direct parent in the scan hierarchy.
+	 */
 	struct XMLScanData *parent;
 } XMLScanData;
 
@@ -720,7 +755,8 @@ typedef struct XMLScanContextData
 
 typedef struct XMLScanContextData *XMLScanContext;
 
-extern void initXMLScan(XMLScan xscan, XMLScan parent, XPath xpath, XPathHeader xpHdr, XMLCompNodeHdr scanRoot,
+extern void initXMLScan(XMLScan xscan, XMLScan parent, XPath xpath,
+			XPathHeader xpHdr, XMLCompNodeHdr scanRoot,
 			xmldoc document, bool checkUniqueness);
 extern void finalizeXMLScan(XMLScan xscan);
 
@@ -747,43 +783,65 @@ typedef struct XPathExprStateData *XPathExprState;
 
 #define XPATH_VAR_CACHE_DEF_SIZE	16
 
-extern XPathExprState prepareXPathExpression(XPathExpression exprOrig, XMLCompNodeHdr ctxElem,
-					   xmldoc document, XPathHeader xpHdr, XMLScan xscan);
+extern XPathExprState prepareXPathExpression(XPathExpression exprOrig,
+					   XMLCompNodeHdr ctxElem,
+					   xmldoc document,
+					   XPathHeader xpHdr, XMLScan xscan);
 extern XPathExprState createXPathVarCache(unsigned int size);
-extern void allocXPathExpressionVarCache(XPathExprState state, XPathExprVar varKind, unsigned int increment, bool init);
-extern void evaluateXPathExpression(XPathExprState exprState, XPathExpression expr,
-				unsigned short recursionLevel, XPathExprOperandValue result);
+
+extern void allocXPathExpressionVarCache(XPathExprState state,
+							 XPathExprVar varKind,
+							 unsigned int increment, bool init);
+extern void evaluateXPathExpression(XPathExprState exprState,
+						XPathExpression expr,
+						unsigned short recursionLevel,
+						XPathExprOperandValue result);
 
 extern void freeExpressionState(XPathExprState state);
 
-extern void castXPathExprOperandToBool(XPathExprState exprState, XPathExprOperandValue valueSrc,
+extern void castXPathExprOperandToBool(XPathExprState exprState,
+						   XPathExprOperandValue valueSrc,
 						   XPathExprOperandValue valueDst);
-extern void castXPathExprOperandToNum(XPathExprState exprState, XPathExprOperandValue valueSrc,
-						  XPathExprOperandValue valueDst, bool raiseError);
-extern void castXPathExprOperandToStr(XPathExprState exprState, XPathExprOperandValue valueSrc,
+extern void castXPathExprOperandToNum(XPathExprState exprState,
+						  XPathExprOperandValue valueSrc,
+						  XPathExprOperandValue valueDst,
+						  bool raiseError);
+extern void castXPathExprOperandToStr(XPathExprState exprState,
+						  XPathExprOperandValue valueSrc,
 						  XPathExprOperandValue valueDst);
 
 extern bool castXPathValToBool(XPathValue src);
+
 extern float8 castXPathValToNum(XPathValue src);
+
 extern char *castXPathValToStr(XPathValue src);
 
-extern unsigned short getXPathOperandId(XPathExprState exprState, void *value, XPathExprVar varKind);
-extern void *getXPathOperandValue(XPathExprState exprState, unsigned short id, XPathExprVar varKind);
-extern XMLNodeHdr *getArrayFromNodeSet(XPathExprState exprState, XPathNodeSet ns);
+extern unsigned short getXPathOperandId(XPathExprState exprState, void *value,
+				  XPathExprVar varKind);
+extern void *getXPathOperandValue(XPathExprState exprState, unsigned short id,
+					 XPathExprVar varKind);
+extern XMLNodeHdr *getArrayFromNodeSet(XPathExprState exprState,
+					XPathNodeSet ns);
 extern XPathHeader getXPathHeader(xpath xpathValue);
+
 extern XPathExpression getXPathExpressionFromStorage(XPathHeader xpathHeader);
+
 extern char **getXPathParameterArray(XPathHeader xpathHeader);
 
-typedef void (*XPathFuncImpl) (XPathExprState exprState, unsigned short nargs, XPathExprOperandValue args,
+typedef void (*XPathFuncImpl) (XPathExprState exprState, unsigned short nargs,
+										   XPathExprOperandValue args,
 										   XPathExprOperandValue result);
-typedef void (*XPathFuncImplNoArgs) (XMLScan scan, XPathExprState exprState, XPathExprOperandValue result);
+typedef void (*XPathFuncImplNoArgs) (XMLScan scan, XPathExprState exprState,
+											   XPathExprOperandValue result);
 
 typedef struct XPathFunctionData
 {
 	XPathFunctionId id;
 	char		name[XPATH_FUNC_NAME_MAX_LEN];
 
-	/* Regular arguments */
+	/*
+	 * Regular arguments
+	 */
 	unsigned short nargs;
 	XPathValueType argTypes[XPATH_FUNC_MAX_ARGS_REG];
 
@@ -801,7 +859,9 @@ typedef struct XPathFunctionData
 
 	XPathValueType resType;
 
-	/* The function may only appear in predicate expression or in column path. */
+	/*
+	 * The function may only appear in predicate expression or in column path.
+	 */
 	bool		needsContext;
 } XPathFunctionData;
 
@@ -815,36 +875,51 @@ XPathFunctionData xpathFunctions[XPATH_FUNCTIONS];
 /*
  * First, functions with no arguments.
  */
-extern void xpathTrue(XMLScan xscan, XPathExprState exprState, XPathExprOperandValue result);
-extern void xpathFalse(XMLScan xscan, XPathExprState exprState, XPathExprOperandValue result);
-extern void xpathPosition(XMLScan xscan, XPathExprState exprState, XPathExprOperandValue result);
-extern void xpathLast(XMLScan xscan, XPathExprState exprState, XPathExprOperandValue result);
-extern void xpathNameNoArgs(XMLScan xscan, XPathExprState exprState, XPathExprOperandValue result);
-extern void xpathLocalNameNoArgs(XMLScan xscan, XPathExprState exprState, XPathExprOperandValue result);
+extern void xpathTrue(XMLScan xscan, XPathExprState exprState,
+		  XPathExprOperandValue result);
+extern void xpathFalse(XMLScan xscan, XPathExprState exprState,
+		   XPathExprOperandValue result);
+extern void xpathPosition(XMLScan xscan, XPathExprState exprState,
+			  XPathExprOperandValue result);
+extern void xpathLast(XMLScan xscan, XPathExprState exprState,
+		  XPathExprOperandValue result);
+extern void xpathNameNoArgs(XMLScan xscan, XPathExprState exprState,
+				XPathExprOperandValue result);
+extern void xpathLocalNameNoArgs(XMLScan xscan, XPathExprState exprState,
+					 XPathExprOperandValue result);
 
 /*
  * And then those with non-empty argument list.
  */
-extern void xpathBoolean(XPathExprState exprState, unsigned short nargs, XPathExprOperandValue args,
+extern void xpathBoolean(XPathExprState exprState, unsigned short nargs,
+			 XPathExprOperandValue args,
 			 XPathExprOperandValue result);
-extern void xpathNumber(XPathExprState exprState, unsigned short nargs, XPathExprOperandValue args,
+extern void xpathNumber(XPathExprState exprState, unsigned short nargs,
+			XPathExprOperandValue args,
 			XPathExprOperandValue result);
-extern void xpathString(XPathExprState exprState, unsigned short nargs, XPathExprOperandValue args,
+extern void xpathString(XPathExprState exprState, unsigned short nargs,
+			XPathExprOperandValue args,
 			XPathExprOperandValue result);
-extern void xpathName(XPathExprState exprState, unsigned short nargs, XPathExprOperandValue args,
+extern void xpathName(XPathExprState exprState, unsigned short nargs,
+		  XPathExprOperandValue args,
 		  XPathExprOperandValue result);
-extern void xpathLocalName(XPathExprState exprState, unsigned short nargs, XPathExprOperandValue args,
+extern void xpathLocalName(XPathExprState exprState, unsigned short nargs,
+			   XPathExprOperandValue args,
 			   XPathExprOperandValue result);
-extern void xpathStartsWith(XPathExprState exprState, unsigned short nargs, XPathExprOperandValue args,
+extern void xpathStartsWith(XPathExprState exprState, unsigned short nargs,
+				XPathExprOperandValue args,
 				XPathExprOperandValue result);
 
-extern void xpathCount(XPathExprState exprState, unsigned short nargs, XPathExprOperandValue args,
+extern void xpathCount(XPathExprState exprState, unsigned short nargs,
+		   XPathExprOperandValue args,
 		   XPathExprOperandValue result);
-extern void xpathContains(XPathExprState exprState, unsigned short nargs, XPathExprOperandValue args,
+extern void xpathContains(XPathExprState exprState, unsigned short nargs,
+			  XPathExprOperandValue args,
 			  XPathExprOperandValue result);
-extern void xpathConcat(XPathExprState exprState, unsigned short nargs, XPathExprOperandValue args,
+extern void xpathConcat(XPathExprState exprState, unsigned short nargs,
+			XPathExprOperandValue args,
 			XPathExprOperandValue result);
-extern void xpathSum(XPathExprState exprState, unsigned short nargs, XPathExprOperandValue args,
-		 XPathExprOperandValue result);
+extern void xpathSum(XPathExprState exprState, unsigned short nargs,
+		 XPathExprOperandValue args, XPathExprOperandValue result);
 
 #endif   /* XPATH_H_ */
