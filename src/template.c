@@ -519,7 +519,7 @@ preprocessXMLTemplateAttrValues(XNodeListItem *attrOffsets, unsigned short attrC
 		if (toReplace[i])
 		{
 			/*
-			 * 'ptr' will no point to address immediately after attribute
+			 * 'ptr' will now point to address immediately after attribute
 			 * (node) header, i.e. where the attribute value would start w/o
 			 * alignment.
 			 */
@@ -650,7 +650,7 @@ dumpXMLAttrBinaryValue(char *binValue, char **paramNames, XPathExprOperandValue 
 			}
 
 			/*
-			 * If there are not location paths, the next expression is at the
+			 * If there are no location paths, the next expression is at the
 			 * first (aligned) addres behind 'expr'. Otherwise we must skip
 			 * the location paths too.
 			 */
@@ -662,7 +662,6 @@ dumpXMLAttrBinaryValue(char *binValue, char **paramNames, XPathExprOperandValue 
 
 				cursor = (char *) pathLast + pathLast->size;
 			}
-
 		}
 		else
 		{
@@ -812,7 +811,11 @@ getXPathExpressionForXMLTemplate(char *src, unsigned int termFlags, XMLNodeConta
 	if (endPos != NULL)
 		*endPos = state.pos;
 
-	result = (XPathHeader) getXPathExpressionForStorage(expr, locPaths, locPathCount, paramNames,
+	/*
+	 * NULL is passed for 'paramNames' because template stores them all
+	 * together elsewhere (to ensure uniqueness), not with each expression.
+	 */
+	result = (XPathHeader) getXPathExpressionForStorage(expr, locPaths, locPathCount, NULL,
 														false, outSize);
 	return result;
 }
