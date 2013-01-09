@@ -472,7 +472,7 @@ getNodesForTransformation(xmldoc doc,
 
 			xpHdr = (XPathHeader) XNODE_CONTENT(matchNode);
 			expr = getXPathExpressionFromStorage(xpHdr);
-			locPath = getAbsoluteLocationXPath(expr, xpHdr);
+			locPath = getLocationXPath(expr, xpHdr, false);
 
 			/* Find all nodes matching the current template. */
 			initXMLScan(&xscan, NULL, locPath, xpHdr, docRoot, doc, locPath->descendants > 0);
