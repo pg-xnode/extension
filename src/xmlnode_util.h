@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2012, Antonin Houska
+ * Copyright (C) 2012-2013, Antonin Houska
  */
 
 #ifndef XMLNODE_UTIL_H_

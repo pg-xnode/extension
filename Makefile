@@ -1,3 +1,8 @@
+#
+## Copyright (C) 2012-2013, Antonin Houska
+#
+#
+
 build:
 	$(MAKE) -C src xnode.so
 

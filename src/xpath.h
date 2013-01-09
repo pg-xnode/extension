@@ -1,6 +1,6 @@
 
 /*
- * Copyright (C) 2012, Antonin Houska
+ * Copyright (C) 2012-2013, Antonin Houska
  */
 
 #ifndef XPATH_H_

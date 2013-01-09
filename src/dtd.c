@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2012, Antonin Houska
+ * Copyright (C) 2012-2013, Antonin Houska
  */
 
 #include "xml_parser.h"

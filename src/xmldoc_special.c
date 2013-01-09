@@ -1,7 +1,7 @@
 /*
  * Support for special XML documents, such as XSD, XSLT, etc.
  *
- * Copyright (C) 2012, Antonin Houska
+ * Copyright (C) 2012-2013, Antonin Houska
  */
 
 #include "postgres.h"

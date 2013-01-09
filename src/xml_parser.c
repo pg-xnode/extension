@@ -9,7 +9,7 @@
  * This 'child first' order prevents us from having to copy nodes during
  * parsing. Some functions, such as getFirstLeaf() do rely on such ordering.
  *
- * Copyright (C) 2012, Antonin Houska
+ * Copyright (C) 2012-2013, Antonin Houska
  */
 
 /*
