@@ -2876,7 +2876,8 @@ finalizeElement(XMLParserState state, XMLParserNodeInfo nodeInfo,
 		 */
 		if (element->common.kind != XMLTEMPLATE_ROOT &&
 		/* Some specific kinds never deal with substitution. */
-			element->common.kind != XNTNODE_TEMPLATE)
+			element->common.kind != XNTNODE_TEMPLATE &&
+			element->common.kind != XSLNODE_SHEET)
 			xmlnodePushSingleNode(&state->substNodes, elementOff);
 	}
 

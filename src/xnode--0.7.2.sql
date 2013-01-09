@@ -287,3 +287,31 @@ CREATE FUNCTION node(xnt, text[], record)
 	STRICT;
 
 
+
+CREATE FUNCTION xsl_in(cstring) RETURNS xsl
+	as 'MODULE_PATHNAME', 'xnode_xsl_in'
+	LANGUAGE C
+	IMMUTABLE
+	STRICT;
+
+CREATE FUNCTION xsl_out(xsl) RETURNS cstring
+	as 'MODULE_PATHNAME', 'xnode_xsl_out'
+	LANGUAGE C
+	IMMUTABLE
+	STRICT;
+
+CREATE TYPE xsl (
+	internallength = variable,
+	input = xsl_in,
+	output = xsl_out,
+	-- 8-aligned because it may contain XPath expressions
+	alignment = double,
+	storage = extended
+);
+
+CREATE FUNCTION transform(xsl, doc) 
+	RETURNS node
+	as 'MODULE_PATHNAME', 'xsl_transform'
+	LANGUAGE C
+	STABLE	
+	STRICT;

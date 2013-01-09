@@ -9,6 +9,7 @@
 #include "template.h"
 #include "xpath.h"
 #include "xnt.h"
+#include "xslt.h"
 
 static char *getAttributeLocalName(char *prefix, char *attrNamePrefixed,
 					  XMLNodeContainer nmspDecls, char *parserOutput);
@@ -123,8 +124,11 @@ preprocessSpecialXMLAttributes(char *prefix, XMLNodeContainer nmspDecls,
 				XPathHeader expr = NULL;
 				char	   *attrValueTokenized = NULL;
 
-				if (specNodeKind == XNTNODE_COPY_OF &&
-					strcmp(attrName, attrInfo->names[XNT_COPY_OF_EXPR]) == 0)
+				if ((specNodeKind == XNTNODE_COPY_OF &&
+				 strcmp(attrName, attrInfo->names[XNT_COPY_OF_EXPR]) == 0) ||
+					(specNodeKind == XSLNODE_TEMPLATE &&
+				  strcmp(attrName, attrInfo->names[XSL_TEMPLATE_MATCH]) == 0)
+					)
 				{
 					valueSize = 0;
 					expr = getXPathExpressionForXMLTemplate(attrValue,

@@ -94,7 +94,11 @@ typedef enum XMLNodeKind
 	XNTNODE_TEMPLATE,
 	XNTNODE_COPY_OF,
 	XNTNODE_ELEMENT,
-	XNTNODE_ATTRIBUTE
+	XNTNODE_ATTRIBUTE,
+
+	/* XSL */
+	XSLNODE_SHEET,
+	XSLNODE_TEMPLATE
 } XMLNodeKind;
 
 typedef XMLNodeKind (*GetSpecialXNodeKindFunc) (char *name);

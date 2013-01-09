@@ -17,6 +17,7 @@
 #include "xmlnode_util.h"
 #include "xml_parser.h"
 #include "xnt.h"
+#include "xslt.h"
 
 /*
  * TODO error handling: use 'ereport()' and define numeric error codes.
@@ -602,7 +603,9 @@ getXNodeAttrInfo(XMLNodeKind kind)
 	 * respective tests should be added at the top here, letting particular
 	 * test fall through to the correct range.
 	 */
-	if (kind >= XNTNODE_TEMPLATE)
+	if (kind >= XSLNODE_SHEET)
+		result = &xslAttributeInfo[kind - XSLNODE_SHEET];
+	else if (kind >= XNTNODE_TEMPLATE)
 		result = &xntAttributeInfo[kind - XNTNODE_TEMPLATE];
 
 	return result;
