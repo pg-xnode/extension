@@ -272,16 +272,14 @@ getXPathExpressionForStorage(XPathExpression expr, XPath *locPaths,
 }
 
 XPath
-getSingleXPath(XPathExpression expr, XPathHeader xpHdr)
+getAbsoluteLocationXPath(XPathExpression expr, XPathHeader xpHdr)
 {
 	char	   *opPtr;
 	XPathExprOperand operand;
 	XPath		path;
 
 	if (expr->members != 1 || expr->npaths == 0)
-	{
-		elog(ERROR, "base XPath expression must be a single location path");
-	}
+		elog(ERROR, "a single (absolute) location path expected");
 
 	opPtr = (char *) expr + sizeof(XPathExpressionData) + XPATH_EXPR_VAR_MAX *
 		sizeof(XPathOffset);
@@ -300,15 +298,12 @@ getSingleXPath(XPathExpression expr, XPathHeader xpHdr)
 	}
 
 	if (operand->common.type != XPATH_OPERAND_PATH || expr->members != 1)
-	{
 		elog(ERROR, "xpath expression can't be used as a base path");
-	}
+
 	path = XPATH_HDR_GET_PATH(xpHdr, operand->value.v.path);
 
 	if (path->relative)
-	{
 		elog(ERROR, "base location path must be absolute");
-	}
 	return path;
 }
 
@@ -388,7 +383,7 @@ xpath_array(PG_FUNCTION_ARGS)
 			elog(ERROR, "this function does not accept parameterized xpath expression");
 		}
 		exprBase = getXPathExpressionFromStorage(xpHdrBase);
-		xpathBase = getSingleXPath(exprBase, xpHdrBase);
+		xpathBase = getAbsoluteLocationXPath(exprBase, xpHdrBase);
 
 		fctx = SRF_FIRSTCALL_INIT();
 		if (get_call_result_type(fcinfo, &resultType, NULL) != TYPEFUNC_SCALAR)

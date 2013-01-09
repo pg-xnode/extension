@@ -502,7 +502,7 @@ extern char *getXPathExpressionForStorage(XPathExpression expr,
 							 XMLNodeContainer paramNames,
 							 bool varlena,
 							 unsigned short *sizeOut);
-extern XPath getSingleXPath(XPathExpression expr, XPathHeader xpHdr);
+extern XPath getAbsoluteLocationXPath(XPathExpression expr, XPathHeader xpHdr);
 
 extern void dumpXPathExpression(XPathExpression expr, XPathHeader xpathHdr,
 					StringInfo output, bool main,

@@ -45,7 +45,7 @@ xmlnode_add(PG_FUNCTION_ARGS)
 	}
 
 	expr = getXPathExpressionFromStorage(xpHdr);
-	xpath = getSingleXPath(expr, xpHdr);
+	xpath = getAbsoluteLocationXPath(expr, xpHdr);
 
 	if (xpath->relative)
 	{
@@ -94,7 +94,7 @@ xmlnode_remove(PG_FUNCTION_ARGS)
 	}
 
 	exprBase = getXPathExpressionFromStorage(xpHdr);
-	xpath = getSingleXPath(exprBase, xpHdr);
+	xpath = getAbsoluteLocationXPath(exprBase, xpHdr);
 
 	if (xpath->relative)
 	{
