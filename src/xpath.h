@@ -93,7 +93,11 @@ typedef struct XPathData
 
 typedef struct XPathData *XPath;
 
-#define XPATH_MAX_SUBPATHS	16
+/*
+ * Maximum number of location paths in an XPath expression, including all
+ * its sub-expressions.
+ */
+#define XPATH_EXPR_MAX_PATHS		16
 
 
 typedef struct XPathHeaderData
@@ -106,8 +110,6 @@ typedef struct XPathHeaderData
 
 typedef struct XPathHeaderData *XPathHeader;
 
-
-#define XPATH_SET_MAX_PATHS		0xFF
 
 #define XPATH_HDR_GET_PATH(header, i) ((XPath) (((char *)(header)) + (header)->paths[(i)]))
 

@@ -794,7 +794,7 @@ getXPathExpressionForXMLTemplate(char *src, unsigned int termFlags, XMLNodeConta
 
 	expr = (XPathExpression) palloc(XPATH_EXPR_BUFFER_SIZE);
 	expr->needsContext = false;
-	locPaths = (XPath *) palloc(XPATH_MAX_SUBPATHS * sizeof(XPath));
+	locPaths = (XPath *) palloc(XPATH_EXPR_MAX_PATHS * sizeof(XPath));
 
 	parseXPathExpression(expr, &state, termFlags, NULL, (char *) expr,
 				 &outPos, false, false, locPaths, &locPathCount, paramNames);
