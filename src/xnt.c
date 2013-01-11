@@ -96,7 +96,6 @@ xnode_from_template(PG_FUNCTION_ARGS)
 	xnt			template;
 	XMLCompNodeHdr templDocRoot,
 				templNode;
-	char	   *cursor;
 	char	  **templParNames = NULL;
 	XMLTemplateHeader templHdr;
 	ArrayType  *parNameArr;
@@ -116,23 +115,7 @@ xnode_from_template(PG_FUNCTION_ARGS)
 	template = (xnt) PG_GETARG_VARLENA_P(0);
 	templDocRoot = (XMLCompNodeHdr) XNODE_ROOT(template);
 	templHdr = getXMLTemplateHeader(templDocRoot);
-
-	cursor = (char *) templHdr;
-	if (templHdr->paramCount > 0 || templHdr->substNodesCount > 0)
-		cursor += sizeof(XMLTemplateHeaderData);
-
-	if (templHdr->paramCount > 0)
-	{
-		unsigned short i;
-
-		templParNames = (char **) palloc(templHdr->paramCount * sizeof(char *));
-
-		for (i = 0; i < templHdr->paramCount; i++)
-		{
-			templParNames[i] = cursor;
-			cursor += strlen(cursor) + 1;
-		}
-	}
+	templParNames = getXMLTemplateParamNamesFromStorage(templDocRoot);
 
 	/* Retrieve names of the attributes that the function caller provides. */
 	parNameArr = PG_GETARG_ARRAYTYPE_P(1);

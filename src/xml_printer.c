@@ -34,7 +34,6 @@ dumpXMLNode(char *data, XMLNodeOffset rootNdOff, unsigned int binarySize,
 	XMLNodeHdr	root = (XMLNodeHdr) (data + rootNdOff);
 	char	   *declStr = NULL;
 	unsigned short declSize = 0;
-	char	   *srcCursor = NULL;
 	char	  **paramNames = NULL;
 	StringInfo	output;
 	unsigned int outSizeEst;
@@ -55,30 +54,10 @@ dumpXMLNode(char *data, XMLNodeOffset rootNdOff, unsigned int binarySize,
 
 		declStr = dumpXMLDecl(decl);
 		declSize = strlen(declStr);
-		srcCursor = (char *) decl + sizeof(XMLDeclData);
 	}
 	else if (root->kind == XMLTEMPLATE_ROOT)
-	{
-		XMLTemplateHeader templHdr;
-		XMLCompNodeHdr template = (XMLCompNodeHdr) root;
+		paramNames = getXMLTemplateParamNamesFromStorage((XMLCompNodeHdr) root);
 
-		srcCursor = XNODE_ELEMENT_NAME(template);
-		srcCursor = (char *) TYPEALIGN(XNODE_ALIGNOF_TEMPL_HDR, srcCursor);
-		templHdr = (XMLTemplateHeader) srcCursor;
-
-		if (templHdr->paramCount > 0)
-		{
-			unsigned short i;
-
-			srcCursor += sizeof(XMLTemplateHeaderData);
-			paramNames = (char **) palloc(templHdr->paramCount * sizeof(char *));
-			for (i = 0; i < templHdr->paramCount; i++)
-			{
-				paramNames[i] = srcCursor;
-				srcCursor += strlen(srcCursor) + 1;
-			}
-		}
-	}
 
 	/* This estimate may need improvement to avoid too frequent reallocations. */
 	outSizeEst = (binarySize <= 1024) ? 1024 : binarySize;

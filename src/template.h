@@ -57,6 +57,7 @@ extern XMLTemplateHeader getXMLTemplateHeader(XMLCompNodeHdr docRoot);
 extern XMLParamNameSorted *getXMLTemplateParamNames(ArrayType *parNameArray,
 					   unsigned int templateParamCount, char **templParNames,
 						 unsigned short *paramMap);
+extern char **getXMLTemplateParamNamesFromStorage(XMLCompNodeHdr templateNode);
 extern XPathExprOperandValue getXMLTemplateParamValues(Datum row,
 	   unsigned int templateParamCount, XPathExprState exprState, Oid fnOid);
 extern XPathExpression substituteXMLTemplateParams(XPathExprState exprState,
