@@ -66,7 +66,7 @@ xpath_in(PG_FUNCTION_ARGS)
 	 * set the 'exprOutPos'.
 	 */
 	exprOutPos = 0;
-	paths = (XPath *) palloc(XPATH_MAX_SUBPATHS * sizeof(XPath));
+	paths = (XPath *) palloc(XPATH_EXPR_MAX_PATHS * sizeof(XPath));
 	parseXPathExpression(expr, &state, XPATH_TERM_NULL, NULL, (char *) expr,
 				  &exprOutPos, false, false, paths, &pathCount, &paramNames);
 

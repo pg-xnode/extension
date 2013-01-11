@@ -478,7 +478,7 @@ parseLocationPath(XPath *paths, unsigned short *pathCount, char **xpathSrc,
 	XPathData	locPathTmp;
 	uint8		descendants = 0;
 
-	if (*pathCount >= XPATH_SET_MAX_PATHS)
+	if (*pathCount >= XPATH_EXPR_MAX_PATHS)
 		elog(ERROR, "too many location paths in XPath expression");
 
 	state.pos = *pos;

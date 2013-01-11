@@ -182,6 +182,29 @@ getXMLTemplateParamNames(ArrayType *parNameArray, unsigned int templateParamCoun
 	return parNames;
 }
 
+char	  **
+getXMLTemplateParamNamesFromStorage(XMLCompNodeHdr templateNode)
+{
+	XMLTemplateHeader templateHdr;
+	char	  **result = NULL;
+
+	templateHdr = getXMLTemplateHeader(templateNode);
+	if (templateHdr->paramCount > 0)
+	{
+		unsigned short i;
+		char	   *srcCursor;
+
+		srcCursor = (char *) templateHdr + sizeof(XMLTemplateHeaderData);
+		result = (char **) palloc(templateHdr->paramCount * sizeof(char *));
+		for (i = 0; i < templateHdr->paramCount; i++)
+		{
+			result[i] = srcCursor;
+			srcCursor += strlen(srcCursor) + 1;
+		}
+	}
+	return result;
+}
+
 /*
  * Get parameter values out of the input row.
  *
@@ -794,7 +817,7 @@ getXPathExpressionForXMLTemplate(char *src, unsigned int termFlags, XMLNodeConta
 
 	expr = (XPathExpression) palloc(XPATH_EXPR_BUFFER_SIZE);
 	expr->needsContext = false;
-	locPaths = (XPath *) palloc(XPATH_MAX_SUBPATHS * sizeof(XPath));
+	locPaths = (XPath *) palloc(XPATH_EXPR_MAX_PATHS * sizeof(XPath));
 
 	parseXPathExpression(expr, &state, termFlags, NULL, (char *) expr,
 				 &outPos, false, false, locPaths, &locPathCount, paramNames);
