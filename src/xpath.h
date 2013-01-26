@@ -212,7 +212,6 @@ typedef enum XPathExprVar
 typedef struct XPathNodeSetData
 {
 	uint32		count;
-	bool		isDocument;
 	union
 	{
 		/*
@@ -813,10 +812,9 @@ extern void castXPathExprOperandToStr(XPathExprState exprState,
 						  XPathExprOperandValue valueDst);
 
 extern bool castXPathValToBool(XPathValue src);
-
 extern float8 castXPathValToNum(XPathValue src);
-
 extern char *castXPathValToStr(XPathValue src);
+extern bool xpathNodesetIsADocument(XPathNodeSet ns, XPathExprState exprState);
 
 extern unsigned short getXPathOperandId(XPathExprState exprState, void *value,
 				  XPathExprVar varKind);

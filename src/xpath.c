@@ -19,7 +19,7 @@
 
 static void retrieveColumnPaths(XMLScanContext xScanCtx, ArrayType *pathsColArr, int columns);
 static ArrayType *getResultArray(XMLScanContext ctx, XMLNodeOffset baseNodeOff);
-static xpathval getXPathExprValue(XPathExprState exprState, xmldoc document, bool *notNull,
+static xpathval getXPathExprValue(XPathExprState exprState, bool *notNull,
 				  XPathExprOperandValue res);
 static XPathValue getXPathValue(xpathval raw);
 static char *getBoolValueString(bool value);
@@ -341,7 +341,7 @@ xpath_single(PG_FUNCTION_ARGS)
 	}
 	exprState = prepareXPathExpression(expr, (XMLCompNodeHdr) XNODE_ROOT(doc), doc, xpathHdr, NULL);
 	evaluateXPathExpression(exprState, exprState->expr, 0, &resData);
-	result = getXPathExprValue(exprState, doc, &notNull, &resData);
+	result = getXPathExprValue(exprState, &notNull, &resData);
 	freeExpressionState(exprState);
 
 	if (notNull)
@@ -536,15 +536,7 @@ castXPathExprOperandToBool(XPathExprState exprState, XPathExprOperandValue value
 			break;
 
 		case XPATH_VAL_NODESET:
-			if (valueSrc->v.nodeSet.isDocument)
-			{
-				/* Document is always a non-empty node set. */
-				valueDst->v.boolean = true;
-			}
-			else
-			{
-				valueDst->v.boolean = (valueSrc->v.nodeSet.count > 0);
-			}
+			valueDst->v.boolean = (valueSrc->v.nodeSet.count > 0);
 			break;
 
 		default:
@@ -773,6 +765,22 @@ castXPathValToStr(XPathValue src)
 	}
 }
 
+/*
+ * Find out whether the nodeset contains a document node.
+ */
+bool
+xpathNodesetIsADocument(XPathNodeSet ns, XPathExprState exprState)
+{
+	if (ns->count == 1)
+	{
+		XMLNodeHdr	node = exprState->nodes[ns->nodes.nodeId];
+
+		return node->kind == XMLNODE_DOC;
+	}
+	else
+		return false;
+}
+
 unsigned short
 getXPathOperandId(XPathExprState exprState, void *value, XPathExprVar varKind)
 {
@@ -977,7 +985,7 @@ getResultArray(XMLScanContext ctx, XMLNodeOffset baseNodeOff)
 		XPathExprOperandValueData resData;
 
 		evaluateXPathExpression(exprState, exprState->expr, 0, &resData);
-		colValue = getXPathExprValue(exprState, doc, &colNotNull, &resData);
+		colValue = getXPathExprValue(exprState, &colNotNull, &resData);
 		freeExpressionState(exprState);
 
 		ctx->colResults[i] = PointerGetDatum(colValue);
@@ -1005,7 +1013,7 @@ getResultArray(XMLScanContext ctx, XMLNodeOffset baseNodeOff)
 }
 
 static xpathval
-getXPathExprValue(XPathExprState exprState, xmldoc document, bool *notNull, XPathExprOperandValue res)
+getXPathExprValue(XPathExprState exprState, bool *notNull, XPathExprOperandValue res)
 {
 	xpathval	retValue = NULL;
 	XPathValue	xpval = NULL;
@@ -1021,7 +1029,19 @@ getXPathExprValue(XPathExprState exprState, xmldoc document, bool *notNull, XPat
 
 	if (res->type == XPATH_VAL_NODESET)
 	{
-		if (res->v.nodeSet.isDocument)
+		uint32		nodeCount = res->v.nodeSet.count;
+		XMLNodeHdr	docNode = NULL;
+
+		if (nodeCount == 1)
+		{
+			XMLNodeHdr	node = getXPathOperandValue(exprState,
+						 res->v.nodeSet.nodes.nodeId, XPATH_VAR_NODE_SINGLE);
+
+			if (node->kind == XMLNODE_DOC)
+				docNode = node;
+		}
+
+		if (docNode != NULL)
 		{
 			/*
 			 * Convert document to a node fragment. Make sure that XML
@@ -1029,23 +1049,28 @@ getXPathExprValue(XPathExprState exprState, xmldoc document, bool *notNull, XPat
 			 */
 			XMLNodeHdr	node;
 			XMLNodeOffset rootOffNew;
-			XMLNodeHdr	rootOrig;
-			unsigned int sizeOrig,
-						sizeNewEst;
+			unsigned int sizeNewEst;
 			char	   *output,
 					   *outTmp,
 					   *after;
 
-			rootOrig = XNODE_ROOT(document);
-			sizeOrig = VARSIZE(document);
-			sizeNewEst = (rootOrig->flags & XNODE_DOC_XMLDECL) ? sizeOrig - sizeof(XMLDeclData) : sizeOrig;
+			sizeNewEst = getXMLNodeSize((XMLNodeHdr) docNode, true);
+
+			/*
+			 * XML Declaration will be removed as mentioned above. Extra space
+			 * might seem to be advantage, but it could hide other mistakes in
+			 * the estimation.
+			 */
+			if (docNode->flags & XNODE_DOC_XMLDECL)
+				sizeNewEst -= sizeof(XMLDeclData);
 
 			/* The new root node may need padding. */
 			sizeNewEst += MAX_PADDING(XNODE_ALIGNOF_XPATHVAL) + sizeof(XPathValueData) +
-				MAX_PADDING(XNODE_ALIGNOF_COMPNODE);
+				MAX_PADDING(XNODE_ALIGNOF_COMPNODE) +
+				MAX_PADDING(XNODE_ALIGNOF_NODE_OFFSET) + sizeof(XMLNodeOffset);
 
 			output = getStorageForXPathValue(sizeNewEst, &xpval, &outTmp);
-			copyXMLNode(rootOrig, outTmp, false, &rootOffNew);
+			copyXMLNode(docNode, outTmp, false, &rootOffNew);
 			node = (XMLNodeHdr) (outTmp + rootOffNew);
 			node->kind = XMLNODE_DOC_FRAGMENT;
 			node->flags = 0;

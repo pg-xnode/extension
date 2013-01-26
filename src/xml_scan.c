@@ -957,11 +957,11 @@ evaluateBinaryOperator(XPathExprState exprState, XPathExprOperandValue valueLeft
 		XPathExprOperandValueData valueTmp;
 
 		result->isNull = false;
-		if (valueLeft->type == XPATH_VAL_NODESET && valueRight->type == XPATH_VAL_NODESET &&
-		 valueLeft->v.nodeSet.isDocument && valueRight->v.nodeSet.isDocument)
-		{
+		if (valueLeft->type == XPATH_VAL_NODESET &&
+			valueRight->type == XPATH_VAL_NODESET &&
+			xpathNodesetIsADocument(&valueLeft->v.nodeSet, exprState) &&
+			xpathNodesetIsADocument(&valueRight->v.nodeSet, exprState))
 			elog(ERROR, "invalid xpath expression");
-		}
 
 		/*
 		 * Subexpression is currently the only type of operand of boolean type
@@ -1015,20 +1015,22 @@ evaluateBinaryOperator(XPathExprState exprState, XPathExprOperandValue valueLeft
 			{
 				XPathNodeSet nsLeft = &valueLeft->v.nodeSet;
 				XPathNodeSet nsRight = &valueRight->v.nodeSet;
+				bool		leftIsDoc = xpathNodesetIsADocument(nsLeft, exprState);
+				bool		rightIsDoc = xpathNodesetIsADocument(nsRight, exprState);
 
 				/*
 				 * Document is not a typical node-set, let's exclude it first.
 				 */
-				if (nsLeft->isDocument && nsRight->isDocument)
+				if (leftIsDoc && rightIsDoc)
 				{
 					result->v.boolean = operator->id == XPATH_EXPR_OPERATOR_EQ;
 					return;
 				}
-				else if (nsLeft->isDocument || nsRight->isDocument)
+				else if (leftIsDoc || rightIsDoc)
 				{
 					XPathNodeSet setNonDoc;
 
-					if (nsLeft->isDocument)
+					if (leftIsDoc)
 						setNonDoc = nsRight;
 					else
 						setNonDoc = nsLeft;
@@ -1071,7 +1073,7 @@ evaluateBinaryOperator(XPathExprState exprState, XPathExprOperandValue valueLeft
 					nonSetValue = valueLeft;
 				}
 
-				if (setValue->v.nodeSet.isDocument)
+				if (xpathNodesetIsADocument(&setValue->v.nodeSet, exprState))
 				{
 					result->v.boolean = (operator->id == XPATH_EXPR_OPERATOR_NEQ);
 					return;
@@ -1378,7 +1380,6 @@ substituteAttributes(XPathExprState exprState, XMLCompNodeHdr element)
 							nodeSet->nodes.arrayId = attrsArrayId;
 						}
 						nodeSet->count = attrCount;
-						nodeSet->isDocument = false;
 						opnd->value.isNull = false;
 						opnd->substituted = true;
 						opnd->value.type = XPATH_VAL_NODESET;
@@ -1415,7 +1416,6 @@ substituteAttributes(XPathExprState exprState, XMLCompNodeHdr element)
 
 						nodeSet->nodes.nodeId = nodeNr;
 						nodeSet->count = 1;
-						nodeSet->isDocument = false;
 
 						opnd->value.isNull = false;
 						opnd->substituted = true;
@@ -1479,7 +1479,6 @@ substitutePaths(XPathExpression expression, XPathExprState exprState, XMLCompNod
 			if (!subPath->relative && subPath->depth == 0)
 			{
 				opnd->value.isNull = false;
-				opnd->value.v.nodeSet.isDocument = true;
 				opnd->value.v.nodeSet.nodes.nodeId =
 					getXPathOperandId(exprState, XNODE_ROOT(document),
 									  XPATH_VAR_NODE_SINGLE);
@@ -1494,7 +1493,6 @@ substitutePaths(XPathExpression expression, XPathExprState exprState, XMLCompNod
 				 */
 				opnd->value.isNull = true;
 				opnd->value.v.nodeSet.count = 0;
-				opnd->value.v.nodeSet.isDocument = false;
 			}
 			else
 			{
@@ -1546,7 +1544,6 @@ substitutePaths(XPathExpression expression, XPathExprState exprState, XMLCompNod
 				}
 				opnd->value.isNull = (count == 0);
 				opnd->value.v.nodeSet.count = count;
-				opnd->value.v.nodeSet.isDocument = false;
 				finalizeXMLScan(&xscanSub);
 			}
 			opnd->substituted = true;
@@ -2208,7 +2205,6 @@ getUnion(XPathExprState exprState, XPathNodeSet setLeft, XPathNodeSet setRight, 
 		}
 	}
 	setResult->count = j;
-	setResult->isDocument = false;
 
 	/*
 	 * Don't add anything to variable cache if the union is empty. The caller

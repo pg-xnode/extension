@@ -302,10 +302,7 @@ xpathCount(XPathExprState exprState, unsigned short nargs, XPathExprOperandValue
 {
 	XPathNodeSet nodeSet = &args->v.nodeSet;
 
-	if (nodeSet->isDocument)
-		XFUNC_SET_RESULT_NUMBER(result, 1);
-	else
-		XFUNC_SET_RESULT_NUMBER(result, args->isNull ? 0 : nodeSet->count);
+	XFUNC_SET_RESULT_NUMBER(result, args->isNull ? 0 : nodeSet->count);
 }
 
 void
@@ -417,22 +414,22 @@ nameNoArgs(XMLScan xscan, XPathExprState exprState, bool local, XPathExprOperand
 static void
 name(XPathExprState exprState, XPathNodeSet nodeSet, bool local, XPathExprOperandValue result)
 {
-	XMLNodeHdr	node;
+	XMLNodeHdr	node = NULL;
 	char	   *nameStr,
 			   *colon;
 
+	if (nodeSet->count == 1)
+		node = getXPathOperandValue(exprState, nodeSet->nodes.nodeId, XPATH_VAR_NODE_SINGLE);
 
-	if (nodeSet->isDocument || nodeSet->count == 0)
-	{
+	if (nodeSet->count == 0 || (node != NULL && node->kind == XMLNODE_DOC))
 		nameStr = NULL;
-	}
 	else
 	{
-		if (nodeSet->count == 1)
-		{
-			node = getXPathOperandValue(exprState, nodeSet->nodes.nodeId, XPATH_VAR_NODE_SINGLE);
-		}
-		else
+		/*
+		 * If nodeSet->count == 1, the 'node' must have been initialized
+		 * above.
+		 */
+		if (nodeSet->count > 1)
 		{
 			XMLNodeHdr *nodes = getXPathOperandValue(exprState, nodeSet->nodes.arrayId, XPATH_VAR_NODE_ARRAY);
 

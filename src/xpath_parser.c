@@ -996,7 +996,6 @@ readExpressionOperand(XPathExpression exprTop, XPathParserState state, unsigned 
 				 */
 				op->value.type = XPATH_VAL_NODESET;
 				op->value.v.nodeSet.count = 0;
-				op->value.v.nodeSet.isDocument = false;
 			}
 			else
 			{

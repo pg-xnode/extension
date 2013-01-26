@@ -289,7 +289,6 @@ getXMLTemplateParamValues(Datum row,
 			XMLNodeHdr	root = XNODE_ROOT(node);
 
 			parValue->v.nodeSet.count = 1;
-			parValue->v.nodeSet.isDocument = false;
 			parValue->v.nodeSet.nodes.nodeId = getXPathOperandId(exprState,
 									   (void *) root, XPATH_VAR_NODE_SINGLE);
 			parValue->type = XPATH_VAL_NODESET;
@@ -413,7 +412,6 @@ substituteXMLTemplateParams(XPathExprState exprState, XPathExpression expression
 				Assert(fragment->children > 1);
 
 				children = (XMLNodeHdr *) palloc(fragment->children * sizeof(XMLNodeHdr));
-				ns->isDocument = false;
 				ns->count = fragment->children;
 
 				initXMLNodeIterator(&iterator, fragment, true);
