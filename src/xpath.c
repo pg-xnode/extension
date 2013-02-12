@@ -20,7 +20,7 @@
 static void retrieveColumnPaths(XMLScanContext xScanCtx, ArrayType *pathsColArr, int columns);
 static ArrayType *getResultArray(XMLScanContext ctx, XMLNodeOffset baseNodeOff);
 static xpathval getXPathExprValue(XPathExprState exprState, bool *notNull,
-				  XPathExprOperandValue res);
+				  XPathExprOperandValue val);
 static XPathValue getXPathValue(xpathval raw);
 static char *getBoolValueString(bool value);
 static char *getStorageForXPathValue(unsigned int totalSize, XPathValue *xpv, char **cursor);
@@ -1012,8 +1012,12 @@ getResultArray(XMLScanContext ctx, XMLNodeOffset baseNodeOff)
 	return result;
 }
 
+/*
+ * Convert xpath 'val' (in-memory format) to such that can be stored.
+ * If 'notNull' receives FALSE, then caller should ignore the value returned.
+ */
 static xpathval
-getXPathExprValue(XPathExprState exprState, bool *notNull, XPathExprOperandValue res)
+getXPathExprValue(XPathExprState exprState, bool *notNull, XPathExprOperandValue val)
 {
 	xpathval	retValue = NULL;
 	XPathValue	xpval = NULL;
@@ -1022,26 +1026,72 @@ getXPathExprValue(XPathExprState exprState, bool *notNull, XPathExprOperandValue
 
 	*notNull = false;
 
-	if (res->isNull)
-	{
+	if (val->isNull)
 		return retValue;
-	}
 
-	if (res->type == XPATH_VAL_NODESET)
+	if (val->type == XPATH_VAL_NODESET)
 	{
-		uint32		nodeCount = res->v.nodeSet.count;
-		XMLNodeHdr	docNode = NULL;
+		uint32		nodeCount = val->v.nodeSet.count;
+		XMLNodeHdr	singleNode = NULL;
+		XMLNodeHdr *nodeArray = NULL;
+
+		if (nodeCount == 0)
+			return retValue;
 
 		if (nodeCount == 1)
 		{
 			XMLNodeHdr	node = getXPathOperandValue(exprState,
-						 res->v.nodeSet.nodes.nodeId, XPATH_VAR_NODE_SINGLE);
+						 val->v.nodeSet.nodes.nodeId, XPATH_VAR_NODE_SINGLE);
+
+			/*
+			 * Only children of potential fragment could have been added to
+			 * the nodeset. Not the fragment itself.
+			 */
+			Assert(node->kind != XMLNODE_DOC_FRAGMENT);
 
 			if (node->kind == XMLNODE_DOC)
-				docNode = node;
+			{
+				XMLCompNodeHdr docNode = (XMLCompNodeHdr) node;
+
+				/*
+				 * If document only contains one node, that node should go to
+				 * output, instead of the document node.
+				 *
+				 * If the document contains 2 or more nodes, put them to array
+				 * and let become a document fragment.
+				 */
+				if (docNode->children == 1)
+					singleNode = (XMLNodeHdr) getXMLDocRootElement(docNode, XMLNODE_ELEMENT);
+				else
+				{
+					XMLNodeIteratorData iterator;
+					XMLNodeHdr	child;
+					unsigned int i = 0;
+
+					initXMLNodeIterator(&iterator, docNode, false);
+					nodeArray = (XMLNodeHdr *) palloc(nodeCount * sizeof(XMLNodeHdr));
+					while ((child = getNextXMLNodeChild(&iterator)) != NULL)
+						nodeArray[i++] = child;
+				}
+			}
+			else
+				singleNode = node;
+		}
+		else
+		{
+			unsigned int nodeArraySize;
+			XMLNodeHdr *nodeArrayOrig;
+
+			Assert(nodeCount > 1);
+
+			nodeArrayOrig = (XMLNodeHdr *) getXPathOperandValue(exprState,
+						 val->v.nodeSet.nodes.arrayId, XPATH_VAR_NODE_ARRAY);
+			nodeArraySize = nodeCount * sizeof(XMLNodeHdr);
+			nodeArray = (XMLNodeHdr *) palloc(nodeArraySize);
+			memcpy(nodeArray, nodeArrayOrig, nodeArraySize);
 		}
 
-		if (docNode != NULL)
+		if (singleNode != NULL)
 		{
 			/*
 			 * Convert document to a node fragment. Make sure that XML
@@ -1054,29 +1104,18 @@ getXPathExprValue(XPathExprState exprState, bool *notNull, XPathExprOperandValue
 					   *outTmp,
 					   *after;
 
-			sizeNewEst = getXMLNodeSize((XMLNodeHdr) docNode, true);
+			sizeNewEst = getXMLNodeSize((XMLNodeHdr) singleNode, true);
 
-			/*
-			 * XML Declaration will be removed as mentioned above. Extra space
-			 * might seem to be advantage, but it could hide other mistakes in
-			 * the estimation.
-			 */
-			if (docNode->flags & XNODE_DOC_XMLDECL)
-				sizeNewEst -= sizeof(XMLDeclData);
-
-			/* The new root node may need padding. */
 			sizeNewEst += MAX_PADDING(XNODE_ALIGNOF_XPATHVAL) + sizeof(XPathValueData) +
 				MAX_PADDING(XNODE_ALIGNOF_COMPNODE) +
 				MAX_PADDING(XNODE_ALIGNOF_NODE_OFFSET) + sizeof(XMLNodeOffset);
 
 			output = getStorageForXPathValue(sizeNewEst, &xpval, &outTmp);
-			copyXMLNode(docNode, outTmp, false, &rootOffNew);
+			copyXMLNode(singleNode, outTmp, false, &rootOffNew);
 			node = (XMLNodeHdr) (outTmp + rootOffNew);
-			node->kind = XMLNODE_DOC_FRAGMENT;
-			node->flags = 0;
+			node->kind = singleNode->kind;
 			xpval->type = XPATH_VAL_NODESET;
 			xpval->v.nodeSetRoot = (char *) node - (char *) xpval;
-
 			after = (char *) node + getXMLNodeSize(node, false);
 			SET_VARSIZE(output, after - output);
 			retValue = (xpathval) output;
@@ -1084,156 +1123,115 @@ getXPathExprValue(XPathExprState exprState, bool *notNull, XPathExprOperandValue
 		}
 		else
 		{
-			unsigned int j = res->v.nodeSet.count;
-			XMLNodeHdr	firstNode = NULL;
+			char	   *outTmp,
+					   *after;
+			unsigned int i,
+						nodeSizeTotal = 0;
+			char		bwidth;
+			char	   *refTarget;
+			XMLCompNodeHdr fragmentHdr;
+			XMLNodeOffset *offsAbs,
+						offAbsFrag;
+
+			Assert(nodeArray != NULL && nodeCount > 1);
+			/* Construct a document fragment out of the nodeset. */
+			for (i = 0; i < nodeCount; i++)
+			{
+				XMLNodeHdr	node;
+
+				if (i == XMLNODE_MAX_CHILDREN)
+				{
+					elog(ERROR, "Maximum number of %u children exceeded for node document fragment.",
+						 XMLNODE_MAX_CHILDREN);
+				}
+				node = nodeArray[i];
+				nodeSizeTotal += getXMLNodeSize(node, true) +
+					MAX_PADDING(XNODE_ALIGNOF_COMPNODE);
+			}
 
 			/*
-			 * Only create the output value for non-empty set. Otherwise
-			 * '*notNull' will remain 'false' and the caller won't expect any
-			 * output.
+			 * 'nodeSizeTotal' now equals to the maximum possible distance
+			 * between parent (doc fragment) and its child.
 			 */
-			if (j > 0)
+			bwidth = getXMLNodeOffsetByteWidth(nodeSizeTotal);
+			resSize = VARHDRSZ + MAX_PADDING(XNODE_ALIGNOF_XPATHVAL) +
+				sizeof(XPathValueData) + nodeSizeTotal +
+				MAX_PADDING(XNODE_ALIGNOF_COMPNODE) +
+			/* The fragment node and child references */
+				sizeof(XMLCompNodeHdrData) + bwidth * nodeCount;
+			output = getStorageForXPathValue(resSize, &xpval, &outTmp);
+			offsAbs = (XMLNodeOffset *) palloc(nodeCount * sizeof(XMLNodeOffset));
+
+			/*
+			 * Copy the nodes and remember how far each is from the beginning.
+			 */
+			for (i = 0; i < nodeCount; i++)
 			{
-				char	   *outTmp,
-						   *after;
+				XMLNodeHdr	node;
+				char	   *nodeCopyPtr;
+				XMLNodeOffset root;
 
-				*notNull = true;
-
-				if (j == 1)
-				{
-					unsigned int nodeSize;
-					XMLNodeOffset root;
-					char	   *nodeCopyPtr;
-
-					firstNode = (XMLNodeHdr) getXPathOperandValue(exprState,
-						 res->v.nodeSet.nodes.nodeId, XPATH_VAR_NODE_SINGLE);
-					nodeSize = getXMLNodeSize(firstNode, true);
-					resSize = VARHDRSZ + 1 + MAX_PADDING(XNODE_ALIGNOF_XPATHVAL) +
-						sizeof(XPathValueData) + MAX_PADDING(XNODE_ALIGNOF_COMPNODE) +
-						nodeSize;
-					output = getStorageForXPathValue(resSize, &xpval, &outTmp);
-					copyXMLNode(firstNode, outTmp, false, &root);
-					nodeCopyPtr = outTmp + root;
-					xpval->type = XPATH_VAL_NODESET;
-					xpval->v.nodeSetRoot = nodeCopyPtr - (char *) xpval;
-					after = nodeCopyPtr + getXMLNodeSize((XMLNodeHdr) nodeCopyPtr, false);
-				}
-				else
-				{
-					/*
-					 * Construct a document fragment from the list of nodes
-					 */
-					unsigned int k;
-					unsigned int nodeSizeTotal = 0;
-					char		bwidth;
-					char	   *refTarget;
-					XMLCompNodeHdr fragmentHdr;
-					XMLNodeHdr *nodeArray;
-					XMLNodeOffset *offsAbs,
-								offAbsFrag;
-
-
-					nodeArray = (XMLNodeHdr *) getXPathOperandValue(exprState,
-						 res->v.nodeSet.nodes.arrayId, XPATH_VAR_NODE_ARRAY);
-
-					for (k = 0; k < j; k++)
-					{
-						XMLNodeHdr	node;
-
-						if (k == XMLNODE_MAX_CHILDREN)
-						{
-							elog(ERROR, "Maximum number of %u children exceeded for node document fragment.",
-								 XMLNODE_MAX_CHILDREN);
-						}
-						node = nodeArray[k];
-						nodeSizeTotal += getXMLNodeSize(node, true) +
-							MAX_PADDING(XNODE_ALIGNOF_COMPNODE);
-					}
-
-					/*
-					 * 'nodeSizeTotal' now equals to the maximum possible
-					 * distance between parent (doc fragment) and its child.
-					 */
-					bwidth = getXMLNodeOffsetByteWidth(nodeSizeTotal);
-					resSize = VARHDRSZ + 1 + MAX_PADDING(XNODE_ALIGNOF_XPATHVAL) +
-						sizeof(XPathValueData) + nodeSizeTotal +
-						MAX_PADDING(XNODE_ALIGNOF_COMPNODE) +
-						sizeof(XMLCompNodeHdrData) + bwidth * j;
-					output = getStorageForXPathValue(resSize, &xpval, &outTmp);
-					offsAbs = (XMLNodeOffset *) palloc(j * sizeof(XMLNodeOffset));
-					nodeArray = (XMLNodeHdr *) getXPathOperandValue(exprState,
-						 res->v.nodeSet.nodes.arrayId, XPATH_VAR_NODE_ARRAY);
-
-					/*
-					 * Copy the nodes and remember how far each is from the
-					 * beginning.
-					 */
-					for (k = 0; k < j; k++)
-					{
-						XMLNodeHdr	node;
-						char	   *nodeCopyPtr;
-						XMLNodeOffset root;
-
-						node = nodeArray[k];
-						copyXMLNode(node, outTmp, false, &root);
-						nodeCopyPtr = outTmp + root;
-						offsAbs[k] = nodeCopyPtr - output;
-						outTmp = nodeCopyPtr + getXMLNodeSize((XMLNodeHdr) nodeCopyPtr, false);
-					}
-
-					fragmentHdr = (XMLCompNodeHdr) (TYPEALIGN(XNODE_ALIGNOF_COMPNODE, outTmp));
-					fragmentHdr->common.kind = XMLNODE_DOC_FRAGMENT;
-					fragmentHdr->common.flags = 0;
-					XNODE_SET_REF_BWIDTH(fragmentHdr, bwidth);
-					fragmentHdr->children = j;
-					refTarget = XNODE_FIRST_REF(fragmentHdr);
-					offAbsFrag = (char *) fragmentHdr - output;
-
-					for (k = 0; k < j; k++)
-					{
-						XMLNodeOffset offRel;
-
-						offRel = offAbsFrag - offsAbs[k];
-						writeXMLNodeOffset(offRel, &refTarget, bwidth, true);
-					}
-					pfree(offsAbs);
-					after = refTarget;
-
-					xpval->type = XPATH_VAL_NODESET;
-					xpval->v.nodeSetRoot = (char *) fragmentHdr - (char *) xpval;
-				}
-				SET_VARSIZE(output, after - output);
-				retValue = (xpathval) output;
+				node = nodeArray[i];
+				copyXMLNode(node, outTmp, false, &root);
+				nodeCopyPtr = outTmp + root;
+				offsAbs[i] = nodeCopyPtr - output;
+				outTmp = nodeCopyPtr + getXMLNodeSize((XMLNodeHdr) nodeCopyPtr, false);
 			}
+
+			fragmentHdr = (XMLCompNodeHdr) (TYPEALIGN(XNODE_ALIGNOF_COMPNODE, outTmp));
+			fragmentHdr->common.kind = XMLNODE_DOC_FRAGMENT;
+			fragmentHdr->common.flags = 0;
+			XNODE_SET_REF_BWIDTH(fragmentHdr, bwidth);
+			fragmentHdr->children = nodeCount;
+
+			/* Write the children offsets. */
+			refTarget = XNODE_FIRST_REF(fragmentHdr);
+			offAbsFrag = (char *) fragmentHdr - output;
+			for (i = 0; i < nodeCount; i++)
+			{
+				XMLNodeOffset offRel;
+
+				offRel = offAbsFrag - offsAbs[i];
+				writeXMLNodeOffset(offRel, &refTarget, bwidth, true);
+			}
+			pfree(offsAbs);
+			after = refTarget;
+
+			xpval->type = XPATH_VAL_NODESET;
+			xpval->v.nodeSetRoot = (char *) fragmentHdr - (char *) xpval;
+			SET_VARSIZE(output, after - output);
+			retValue = (xpathval) output;
+			*notNull = true;
+			pfree(nodeArray);
 		}
 	}
 	else
 	{
-		if (res->type == XPATH_VAL_NUMBER || res->type == XPATH_VAL_BOOLEAN)
+		if (val->type == XPATH_VAL_NUMBER || val->type == XPATH_VAL_BOOLEAN)
 		{
 			resSize = VARHDRSZ + 1 + MAX_PADDING(XNODE_ALIGNOF_XPATHVAL) +
 				sizeof(XPathValueData);
 			output = getStorageForXPathValue(resSize, &xpval, NULL);
 
-			xpval->type = res->type;
+			xpval->type = val->type;
 
-			if (res->type == XPATH_VAL_NUMBER)
+			if (val->type == XPATH_VAL_NUMBER)
 			{
-				xpval->v.numVal = res->v.num;
-				if (res->negative)
+				xpval->v.numVal = val->v.num;
+				if (val->negative)
 				{
 					xpval->v.numVal *= -1.0f;
 				}
 			}
 			else
 			{
-				xpval->v.booVal = res->v.boolean;
+				xpval->v.booVal = val->v.boolean;
 			}
 			*notNull = true;
 		}
-		else if (res->type == XPATH_VAL_STRING)
+		else if (val->type == XPATH_VAL_STRING)
 		{
-			char	   *resStr = (char *) getXPathOperandValue(exprState, res->v.stringId, XPATH_VAR_STRING);
+			char	   *resStr = (char *) getXPathOperandValue(exprState, val->v.stringId, XPATH_VAR_STRING);
 			unsigned int len = strlen(resStr);
 
 			resSize = VARHDRSZ + 1 + MAX_PADDING(XNODE_ALIGNOF_XPATHVAL) +
@@ -1241,12 +1239,12 @@ getXPathExprValue(XPathExprState exprState, bool *notNull, XPathExprOperandValue
 			output = getStorageForXPathValue(resSize, &xpval, NULL);
 
 			strcpy(xpval->v.strVal, resStr);
-			xpval->type = res->type;
+			xpval->type = val->type;
 			*notNull = true;
 		}
 		else
 		{
-			elog(ERROR, "unknown value type: %u", res->type);
+			elog(ERROR, "unknown value type: %u", val->type);
 		}
 		SET_VARSIZE(output, resSize);
 		retValue = (xpathval) output;
