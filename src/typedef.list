@@ -2,6 +2,10 @@ PredefinedEntity
 TypeInfo
 UTF8Interval
 XMLAddMode
+xmlbranch
+XMLBranch
+XMLBranchData
+xmlbranchtype
 XMLCompNodeHdr
 XMLCompNodeHdrData
 XMLDecl

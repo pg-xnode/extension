@@ -287,3 +287,119 @@ CREATE FUNCTION node(xnt, text[], record)
 	STRICT;
 
 
+
+CREATE FUNCTION branch_in(cstring) RETURNS branch 
+	as 'MODULE_PATHNAME', 'xmlbranch_in'
+	LANGUAGE C
+	IMMUTABLE
+	STRICT;
+
+CREATE FUNCTION branch_out(branch) RETURNS cstring
+	as 'MODULE_PATHNAME', 'xmlbranch_out'
+	LANGUAGE C
+	IMMUTABLE
+	STRICT;
+
+CREATE TYPE branch (
+	internallength = variable,
+	input = branch_in,
+	output = branch_out,
+	alignment = int,
+	storage = extended 
+);
+
+
+CREATE FUNCTION branch_eq(branch, branch) RETURNS bool 
+	as 'MODULE_PATHNAME', 'xmlbranch_eq'
+	LANGUAGE C
+	IMMUTABLE
+	STRICT;
+
+CREATE FUNCTION branch_lt(branch, branch) RETURNS bool 
+	as 'MODULE_PATHNAME', 'xmlbranch_lt'
+	LANGUAGE C
+	IMMUTABLE
+	STRICT;
+
+CREATE FUNCTION branch_lte(branch, branch) RETURNS bool 
+	as 'MODULE_PATHNAME', 'xmlbranch_lte'
+	LANGUAGE C
+	IMMUTABLE
+	STRICT;
+
+CREATE FUNCTION branch_gt(branch, branch) RETURNS bool 
+	as 'MODULE_PATHNAME', 'xmlbranch_gt'
+	LANGUAGE C
+	IMMUTABLE;
+
+CREATE FUNCTION branch_gte(branch, branch) RETURNS bool 
+	as 'MODULE_PATHNAME', 'xmlbranch_gte'
+	LANGUAGE C
+	IMMUTABLE;
+	
+CREATE FUNCTION branch_compare(branch, branch) RETURNS int4
+	as 'MODULE_PATHNAME', 'xmlbranch_compare'
+	LANGUAGE C
+	IMMUTABLE
+	STRICT;
+	
+CREATE FUNCTION doc_contains_branch(doc, branch) RETURNS bool
+	as 'MODULE_PATHNAME', 'xmldoc_contains_branch'
+	LANGUAGE C
+	IMMUTABLE
+	STRICT;
+	
+CREATE FUNCTION ginxmlextract(doc, internal, internal) RETURNS internal
+	as 'MODULE_PATHNAME', 'ginxmlextract'
+	LANGUAGE C
+	IMMUTABLE
+	STRICT;
+	
+CREATE FUNCTION ginqueryxmlextract(branch, internal, int2, internal, internal, internal, internal) RETURNS internal
+	as 'MODULE_PATHNAME', 'ginqueryxmlextract'
+	LANGUAGE C
+	IMMUTABLE
+	STRICT;
+	
+CREATE FUNCTION ginxmlconsistent(internal, int2, branch, int4, internal, internal, internal, internal) RETURNS internal
+	as 'MODULE_PATHNAME', 'ginxmlconsistent'
+	LANGUAGE C
+	IMMUTABLE
+	STRICT;
+
+CREATE OPERATOR = (LEFTARG=branch, RIGHTARG=branch, PROCEDURE=branch_eq);
+CREATE OPERATOR < (LEFTARG=branch, RIGHTARG=branch, PROCEDURE=branch_lt);
+CREATE OPERATOR <= (LEFTARG=branch, RIGHTARG=branch, PROCEDURE=branch_lte);
+CREATE OPERATOR > (LEFTARG=branch, RIGHTARG=branch, PROCEDURE=branch_gt);
+CREATE OPERATOR >= (LEFTARG=branch, RIGHTARG=branch, PROCEDURE=branch_gte);
+CREATE OPERATOR @> (LEFTARG=doc, RIGHTARG=branch, PROCEDURE=doc_contains_branch);
+
+
+CREATE OPERATOR FAMILY xml_ops USING btree;
+
+CREATE OPERATOR CLASS branch_ops DEFAULT FOR TYPE branch USING btree FAMILY xml_ops
+	AS
+	OPERATOR 1 < (branch, branch) FOR SEARCH,
+	OPERATOR 2 <= (branch, branch) FOR SEARCH,
+	OPERATOR 3 = (branch, branch) FOR SEARCH,
+	OPERATOR 4 >= (branch, branch) FOR SEARCH,
+	OPERATOR 5 > (branch, branch) FOR SEARCH,
+	FUNCTION 1 branch_compare (branch, branch),
+	STORAGE branch;
+
+
+CREATE OPERATOR FAMILY xml_ops USING gin;
+
+-- So far we only have cross-type operators, so the default class is this one.
+-- It could change as soon as single-type operators have been introduced
+-- for the XML documents.
+CREATE OPERATOR CLASS branch_ops DEFAULT FOR TYPE doc USING gin FAMILY xml_ops
+	AS
+	OPERATOR 2 @> (doc, branch) FOR SEARCH,
+	FUNCTION 1 branch_compare (branch, branch),
+	FUNCTION 2 ginxmlextract(doc, internal, internal),
+	FUNCTION 3 ginqueryxmlextract(branch, internal, int2, internal, internal, internal, internal),
+	FUNCTION 4 ginxmlconsistent(internal, int2, branch, int4, internal, internal, internal, internal),
+	STORAGE branch;
+
+

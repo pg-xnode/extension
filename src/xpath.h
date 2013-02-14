@@ -513,6 +513,11 @@ extern void dumpLocationPath(XPathHeader xpathHdr, unsigned short pathNr,
 
 /*
  * Element of location path, i.e. location step.
+ *
+ * The structure does not require padding as such and if used without predicate
+ * expression (e.g. in search.c), it's really not padded. Such cases need
+ * to be reconsidered if such an attribute is added here that does require
+ * padding.
  */
 typedef struct XPathElementData
 {
@@ -609,6 +614,7 @@ typedef enum XPathNodeType
  * Alignment must be identical to that of expression because position of node
  * test predicate expression is derived from position of the owning
  * XPathElementData.
+ *
  */
 #define XPATH_ALIGNOF_LOC_STEP	XPATH_ALIGNOF_EXPR
 
