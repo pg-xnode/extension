@@ -605,8 +605,6 @@ select path('local-name(/a/node())', '<a xmlns:ns_1="namespace"><ns_1:b/><c/></a
 select path('/a/b[local-name()="b"]', '<a xmlns:ns_1="namespace"><b/><c/></a>');
 select path('/a/b[local-name()!="b"]', '<a xmlns:ns_1="namespace"><b/><c/></a>');
 
---Special case: name() used relative to '/' base path
-select path('/', '{"name()"}', '<a/>');
 
 -- Nested functions. In addition, result has to be implicitly cast.
 select xml.path('concat(count(/root/a), /root)', '<root><b>50</b></root>');

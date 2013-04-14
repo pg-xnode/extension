@@ -16,7 +16,6 @@ static void prepareLiteral(XPathExprState exprState, XPathExprOperand operand);
 static void evaluateBinaryOperator(XPathExprState exprState, XPathExprOperandValue valueLeft,
 					   XPathExprOperandValue valueRight, XPathExprOperator operator, XPathExprOperandValue result);
 
-static bool considerSubScan(XPathElement xpEl, XMLNodeHdr node, XMLScan xscan, bool subScanJustDone);
 static void addNodeToIgnoreList(XMLNodeHdr node, XMLScan scan);
 
 static void substituteAttributes(XPathExprState exprState, XMLCompNodeHdr element);
@@ -44,437 +43,331 @@ static int	nodePtrComparator(const void *arg1, const void *arg2);
 static void flipOperandValue(XPathExprOperandValue value, XPathExprState exprState);
 
 /*
- * 'xscan' - the scan to be initialized 'xpath' - location path to be used
+ *	'xscan' - the scan to be initialized 'xpath' - location path to be used
  * for this scan
  *
- * 'xpHdr' - header of the 'path set' the 'xpath' is contained in.
- * We may need it if one or more predicates in 'xpath' contain other paths (subpaths) as operands.
+ *	'parent' - parent of the new scan or NULL if there's none.
  *
- * 'scanRoot' - node where the scan starts. This node won't be tested itself, the scan starts
- * one level lower. Typically, this is document node.
+ *	'xpath' - location path to be used for the scan. Must not be freed during
+ *	the scan.
+ *
+ *	'locStepPos' - position in the location path (i.e. particular location step)
+ *	that we're going to start at. 0-based.
+ *
+ * 'xpHdr' - header of the 'path set' the 'xpath' is contained in.
+ * We may need it if one or more predicates in 'xpath' contain other paths
+ * (subpaths) as operands.
+ *
+ * 'contextNode' - the relationship with the nodes found is determined by axe
+ * of the scan. For example, if the axe is XMLSCAN_AXE_CHILD then the context
+ * node is a parent of the resulting nodes.
+ * Not all axes require it to be compound node. That's XMLNodeHdr is used here.
+ *
+ * 'document' - the document we're searching in.
+ *
+ * 'ignoreSelf' - some axes do require the context node to be added to the
+ * node set. However the axe's requirement has to be suppressed at special
+ * circumstances. See comments where TRUE is passed for this parameter.
  */
 void
-initXMLScan(XMLScan xscan, XMLScan parent, XPath xpath, XPathHeader xpHdr, XMLCompNodeHdr scanRoot,
-			xmldoc document, bool checkUniqueness)
+initXMLScan(XMLScan xscan, XMLScan parent, XPath xpath,
+			unsigned short locStepPos, XPathHeader xpHdr,
+			XMLNodeHdr contextNode, xmldoc document, bool ignoreSelf)
 {
-	XMLScanOneLevel firstLevel;
+	XMLScanAxe	axe;
+	XMLNodeKind ndKind;
 
-	xscan->done = false;
+	if (xpath->depth == 0)
+		elog(ERROR, "zero-length path not accepted for XML scan.");
+
+	Assert(xpath->depth <= XPATH_MAX_DEPTH);
+	Assert(locStepPos < xpath->depth);
 
 	xscan->xpath = xpath;
 
+	xscan->locStepPos = locStepPos;
+	xscan->locStep = (XPathElement) ((char *) xpath +xpath->elements[locStepPos]);
 	xscan->xpathHeader = xpHdr;
-	xscan->xpathRoot = 0;
-	if (xscan->xpath->depth > 0)
-	{
-		firstLevel = (XMLScanOneLevel) palloc(xscan->xpath->depth * sizeof(XMLScanOneLevelData));
-		firstLevel->parent = scanRoot;
-		firstLevel->nodeRefPtr = XNODE_FIRST_REF(scanRoot);
-		firstLevel->siblingsLeft = scanRoot->children;
-		firstLevel->contextPosition = 0;
-		firstLevel->contextSizeKnown = false;
-		firstLevel->up = (parent == NULL) ? NULL : XMLSCAN_CURRENT_LEVEL(parent);
-
-		xscan->state = firstLevel;
-	}
-	else
-	{
-		xscan->state = NULL;
-	}
-
-	xscan->depth = 0;
-	xscan->skip = false;
 	xscan->document = document;
 
-	xscan->parent = parent;
+	axe = xscan->locStep->axe;
+	ndKind = contextNode->kind;
 
-	if (checkUniqueness)
+	/*
+	 * Exclude all combinations where no node-set can be generated. Some of
+	 * them are not expected anyway, e.g. (XMLSCAN_AXE_ATTRIBUTES,
+	 * XMLNODE_DOC)
+	 */
+	if ((axe == XMLSCAN_AXE_ATTRIBUTES || axe == XMLSCAN_AXE_CHILD ||
+		 axe == XMLSCAN_AXE_DESCENDANT) &&
+		ndKind != XMLNODE_ELEMENT && ndKind != XMLNODE_DOC)
 	{
+		xscan->empty = true;
+		/* No need to care about parent scan, ignore list, etc. */
+		return;
+	}
+	else
+		xscan->empty = false;
+
+	/* Maintain relationships. */
+	xscan->parent = parent;
+	xscan->subScan = NULL;
+
+	if (parent != NULL)
+	{
+		parent->subScan = xscan;
+
 		/*
-		 * Only top-level scan can have the container, to share it with
-		 * sub-scans.
+		 * All scans reference the ignore list of the top-level scan. Right
+		 * now we don't know whether NULL is at the top.
 		 */
-		if (xscan->parent == NULL)
-		{
-			xscan->ignoreList = (XMLNodeContainer) palloc(sizeof(XMLNodeContainerData));
-			xmlnodeContainerInit(xscan->ignoreList);
-		}
-		else
-		{
-			xscan->ignoreList = xscan->parent->ignoreList;
-		}
+		xscan->ignoreList = parent->ignoreList;
 	}
 	else
 	{
-		xscan->ignoreList = NULL;
+		xscan->ignoreList = (XMLNodeContainer) palloc(sizeof(XMLNodeContainerData));
+		xmlnodeContainerInit(xscan->ignoreList);
 	}
 
+	/*
+	 * If any bit is set here then the next action getNextXMLNode() takes
+	 * after having exhausted possible subscan is to start search for children
+	 * of the current node (and ensure that the same will happen at lower
+	 * levels.)
+	 */
+	xscan->descSearches = 0;
 
-	xscan->subScan = NULL;
+	xscan->contextNode = contextNode;
+	initXMLNodeIterator(&xscan->iterator, (XMLCompNodeHdr) contextNode,
+						axe == XMLSCAN_AXE_ATTRIBUTES);
+
+	/* Will be set as soon as the first node is requested. */
+	xscan->currentNode = NULL;
+
+	xscan->contextPosition = 0;
+	/* The context size is initially unknown. */
+	xscan->contextSize = -1;
+
+	xscan->self = (axe == XMLSCAN_AXE_DESC_OR_SELF && !ignoreSelf);
 }
 
 void
 finalizeXMLScan(XMLScan xscan)
 {
-	if (xscan->state != NULL)
-	{
-		pfree(xscan->state);
-		xscan->state = NULL;
-	}
+	if (xscan->empty)
+		/* Nothing could have been allocated. */
+		return;
+
 	if (xscan->ignoreList != NULL && xscan->parent == NULL)
 	{
 		xmlnodeContainerFree(xscan->ignoreList);
 		pfree(xscan->ignoreList);
 	}
+
 }
 
 /*
- * Find the next matching node. The XML scan itself.
+ * Find the next matching node. This is the XML scan itself.
  *
- * 'xscan' - scan status. It remembers where the last scan ended. If used for consequent call, the function
- * will continue right after that position.
- * If caller changes the document between calls to this function, he is responsible for adjusting the
- * scan status and - if some exist - state of any sub-scan. In addition, 'xscan->document' of the scan and
- * sub-scans has to point to the new (modified) document.
+ * 'xscan' - scan status. It remembers where the scan should continue.
  *
- *
- * Returns a pointer to the matching node. This points to inside 'xscan->document' and therefore
- * must not be pfree'd.
+ * Returns a pointer to matching node. This points to inside 'xscan->document'
+ * and therefore must not be pfree'd.
  */
 XMLNodeHdr
 getNextXMLNode(XMLScan xscan)
 {
-	if (xscan->state == NULL)
+	XMLNodeHdr	result = NULL;
+
+	if (xscan->empty)
+		return NULL;
+
+	if (xscan->subScan != NULL)
 	{
-		elog(ERROR, "XML scan state is not well initialized");
+		XMLScan		subScan = xscan->subScan;
+
+		/* Subscan has to be finished before we proceed with the current. */
+		result = getNextXMLNode(subScan);
+		if (result != NULL)
+			return result;
+
+		/* The subscan is exhausted, cleanup. */
+		finalizeXMLScan(subScan);
+		pfree(subScan);
+		xscan->subScan = NULL;
 	}
 
-	while (true)
+xmlscanRestart:
+	if (xscan->currentNode != NULL && xscan->descSearches != 0)
 	{
-		XMLScanOneLevel scanLevel = XMLSCAN_CURRENT_LEVEL(xscan);
+		XMLScan		subScan;
+		unsigned short locStepPos = xscan->locStepPos;
+		XMLNodeHdr	contextNode;
+		bool		ignoreSelf;
+		XMLScanAxe	axe;
 
-		while (scanLevel->siblingsLeft > 0)
+		subScan = (XMLScan) palloc(sizeof(XMLScanData));
+
+		if (xscan->descSearches & XMLSUBSCAN_STEP_NEXT)
+			locStepPos++;
+
+		axe = xscan->locStep->axe;
+
+		switch (axe)
 		{
-			XPathElement xpEl;
-			XMLCompNodeHdr eh = scanLevel->parent;
-			XMLNodeHdr	currentNode = NULL;
-			XMLNodeKind cKind;
-
-			/*
-			 * Indicates later in the loop whether sub-scan has finished in
-			 * the current iteration.
-			 */
-			bool		subScanDone = false;
-
-			if (scanLevel->nodeRefPtr == NULL)
-			{
-
-				if (scanLevel->siblingsLeft != 1)
-				{
-					elog(ERROR, "undefined state of xml scan");
-				}
-
-				/* Done for the current level. */
-				scanLevel->siblingsLeft--;
+			case XMLSCAN_AXE_CHILD:
+			case XMLSCAN_AXE_DESCENDANT:
+			case XMLSCAN_AXE_DESC_OR_SELF:
+			case XMLSCAN_AXE_ATTRIBUTES:
+				contextNode = xscan->currentNode;
 				break;
-			}
 
-			xpEl = XPATH_CURRENT_LEVEL(xscan);
-
-			if (xscan->subScan != NULL)
-			{
-				XMLNodeHdr	subNode = getNextXMLNode(xscan->subScan);
-
-				/*
-				 * isOnIgnoreList() is not used here on return because the
-				 * check has been performed when returning from the
-				 * getNextXMLNode() above.
-				 *
-				 * addToIgnoreList() is not used bellow for the same reason.
-				 */
-				if (subNode != NULL)
-				{
-					return subNode;
-				}
-				else
-				{
-					finalizeXMLScan(xscan->subScan);
-					pfree(xscan->subScan);
-					xscan->subScan = NULL;
-					xscan->skip = true;
-					subScanDone = true;
-				}
-			}
-
-			currentNode = (XMLNodeHdr) ((char *) eh -
-										readXMLNodeOffset(&scanLevel->nodeRefPtr, XNODE_GET_REF_BWIDTH(eh), false));
-
-			/* CDATA should be treated as text node. */
-			cKind = currentNode->kind == XMLNODE_CDATA ? XMLNODE_TEXT : currentNode->kind;
-
-			if (xscan->skip)
-			{
-				/*
-				 * The current node is already processed, but the possible
-				 * descendant axe hasn't been considered yet.
-				 *
-				 * considerSubScan() is used twice in the loop It would be
-				 * possible to call it just once, at the beginning. But thus
-				 * the descendants would be returned before the element
-				 * itself.
-				 */
-				if (considerSubScan(xpEl, currentNode, xscan, subScanDone))
-				{
-					continue;
-				}
-
-				xscan->skip = false;
-
-				/*
-				 * The current node is processed and no subscan is needed, so
-				 * just move ahead.
-				 */
-				scanLevel->nodeRefPtr = XNODE_NEXT_REF(scanLevel->nodeRefPtr, eh);
-				scanLevel->siblingsLeft--;
-				continue;
-			}
-
-			/*
-			 * Evaluate the node according to its type
-			 */
-			if (cKind == XMLNODE_ELEMENT &&
-				!(XPATH_LAST_LEVEL(xscan) && xscan->xpath->targNdKind != XMLNODE_ELEMENT))
-			{
-				XMLCompNodeHdr currentElement = (XMLCompNodeHdr) currentNode;
-				char	   *childFirst = XNODE_FIRST_REF(currentElement);
-				char	   *name = XNODE_ELEMENT_NAME(currentElement);
-				char	   *nameTest = xpEl->name;
-
-				if (XPATH_LAST_LEVEL(xscan) && xscan->xpath->targNdKind == XMLNODE_NODE &&
-					!isOnIgnoreList(currentNode, xscan))
-				{
-					xscan->skip = true;
-					addNodeToIgnoreList(currentNode, xscan);
-					return currentNode;
-				}
-				if (strcmp(name, nameTest) == 0)
-				{
-					bool		passed = true;
-
-					scanLevel->contextPosition++;
-					if (xpEl->hasPredicate)
-					{
-						XPathExprOperandValueData result;
-						XPathExpression exprOrig;
-						XPathExprState exprState;
-
-						exprOrig = XPATH_PREDICATE_FROM_LOC_STEP(xpEl);
-						exprState = prepareXPathExpression(exprOrig, currentElement,
-								 xscan->document, xscan->xpathHeader, xscan);
-						evaluateXPathExpression(exprState, exprState->expr, 0, &result);
-
-						if (result.isNull)
-						{
-							passed = false;
-						}
-						else
-						{
-							if (result.type == XPATH_VAL_NUMBER)
-							{
-								XPathExprOperandValueData resSigned;
-
-								/*
-								 * The cast is used to get rid of the
-								 * 'negative' flag.
-								 */
-								castXPathExprOperandToNum(exprState, &result, &resSigned, false);
-								if (resSigned.v.num <= 0.0f || resSigned.v.num > XMLNODE_MAX_CHILDREN)
-								{
-									passed = false;
-								}
-								else
-								{
-									int16		posInt2 = DatumGetInt16(DirectFunctionCall1Coll(dtoi2, InvalidOid, Float8GetDatum(resSigned.v.num)));
-
-									passed = (scanLevel->contextPosition == posInt2);
-								}
-							}
-							else
-							{
-								XPathExprOperandValueData resultCast;
-
-								castXPathExprOperandToBool(exprState, &result, &resultCast);
-								passed = resultCast.v.boolean;
-							}
-						}
-						freeExpressionState(exprState);
-					}
-
-					if (!passed)
-					{
-						XMLCompNodeHdr eh = scanLevel->parent;
-
-						scanLevel->nodeRefPtr = XNODE_NEXT_REF(scanLevel->nodeRefPtr, eh);
-						scanLevel->siblingsLeft--;
-						continue;
-					}
-					if (!XPATH_LAST_LEVEL(xscan) && XNODE_HAS_CHILDREN(currentElement))
-					{
-						/*
-						 * Avoid descent to lower levels if all nodes at the
-						 * next level are attributes and attribute is not
-						 * target of the xpath
-						 */
-						if ((currentElement->common.flags & XNODE_EMPTY) &&
-							xscan->xpath->targNdKind != XMLNODE_ATTRIBUTE)
-						{
-
-							XMLCompNodeHdr eh = scanLevel->parent;
-
-							scanLevel->nodeRefPtr = XNODE_NEXT_REF(scanLevel->nodeRefPtr, eh);
-							scanLevel->siblingsLeft--;
-							continue;
-						}
-						else
-						{
-							XMLScanOneLevel nextLevel;
-
-							/*
-							 * Initialize the scan state for the next (deeper)
-							 * level
-							 */
-							xscan->depth++;
-							nextLevel = XMLSCAN_CURRENT_LEVEL(xscan);
-							nextLevel->parent = currentElement;
-							nextLevel->nodeRefPtr = childFirst;
-							nextLevel->siblingsLeft = currentElement->children;
-							nextLevel->contextPosition = 0;
-							nextLevel->contextSizeKnown = false;
-							nextLevel->up = scanLevel;
-							break;
-						}
-					}
-					else if (XPATH_LAST_LEVEL(xscan) && !isOnIgnoreList(currentNode, xscan))
-					{
-						/*
-						 * We're at the end of the xpath.
-						 */
-						xscan->skip = true;
-						/* Return the matching node. */
-						addNodeToIgnoreList(currentNode, xscan);
-						return currentNode;
-					}
-				}
-			}
-			else if (XPATH_LAST_LEVEL(xscan) && !isOnIgnoreList(currentNode, xscan))
-			{
-				/*
-				 * If the 'targNdKind' is XMLNODE_ELEMENT, it means that the
-				 * kind did match with path step above, but the node name did
-				 * not. In such a case we're not interested in the current
-				 * node anymore.
-				 */
-
-				if (cKind == xscan->xpath->targNdKind && xscan->xpath->targNdKind != XMLNODE_ELEMENT)
-				{
-					if (cKind == XMLNODE_TEXT || cKind == XMLNODE_COMMENT)
-					{
-						xscan->skip = true;
-						addNodeToIgnoreList(currentNode, xscan);
-						return currentNode;
-					}
-					else if (cKind == XMLNODE_PI)
-					{
-						char	   *piTarget = (char *) (currentNode + 1);
-						char	   *piTargTest = xpEl->name;
-
-						if (xscan->xpath->piTestValue)
-						{
-							if (strcmp(piTarget, piTargTest) == 0)
-							{
-								xscan->skip = true;
-								addNodeToIgnoreList(currentNode, xscan);
-								return currentNode;
-							}
-						}
-						else
-						{
-							xscan->skip = true;
-							addNodeToIgnoreList(currentNode, xscan);
-							return currentNode;
-						}
-
-					}
-					else if (cKind == XMLNODE_ATTRIBUTE)
-					{
-						if (xscan->xpath->allAttributes)
-						{
-							xscan->skip = true;
-							addNodeToIgnoreList(currentNode, xscan);
-							return currentNode;
-						}
-						else
-						{
-							char	   *attrName = (char *) currentNode + sizeof(XMLNodeHdrData);
-							char	   *attrNameTest = xpEl->name;
-
-							if (strcmp(attrNameTest, attrName) == 0)
-							{
-								xscan->skip = true;
-								addNodeToIgnoreList(currentNode, xscan);
-								return currentNode;
-							}
-						}
-					}
-				}
-				else if (xscan->xpath->targNdKind == XMLNODE_NODE && currentNode->kind != XMLNODE_ATTRIBUTE)
-				{
-					xscan->skip = true;
-					addNodeToIgnoreList(currentNode, xscan);
-					return currentNode;
-				}
-			}
-
-			/*
-			 * No match found. The current path element however might be
-			 * interested in descendants.
-			 */
-			if (considerSubScan(xpEl, currentNode, xscan, subScanDone))
-			{
-				continue;
-			}
-
-			/*
-			 * Whether descendants found or not, go to the next element on the
-			 * current level
-			 */
-			scanLevel->nodeRefPtr = XNODE_NEXT_REF(scanLevel->nodeRefPtr, scanLevel->parent);
-			scanLevel->siblingsLeft--;
+			default:
+				elog(ERROR, "unrecognized xpath axe: %d", axe);
+				break;
 		}
 
 		/*
-		 * If descent to next level has just been prepared (see the 'break'
-		 * statement after initialization of next level), we're not yet at the
-		 * end and the following condition can't be met. Otherwise we're done
-		 * with the current level.
+		 * This is the only case where the context node might not be desired
+		 * even if the axe seems to require it. We're not interested in the
+		 * context node self when re-applying the location step to descendants
+		 * of the original context node.
+		 *
+		 * The point is that each of those descendants must already have been
+		 * returned by the scan of its parent.
+		 *
+		 * The important circumstance is that we're *not* moving to the next
+		 * location step, i.e. we're re-applying the location step at lower
+		 * level.
+		 *
+		 * (Ignore list could handle the problem too, but that smells of brute
+		 * force. It's possible that the ignore list will be replaced by
+		 * something more clever in the future.)
 		 */
-		if (scanLevel->siblingsLeft == 0)
-		{
-			if (xscan->depth == 0)
-			{
-				xscan->done = true;
+		ignoreSelf = (axe == XMLSCAN_AXE_DESC_OR_SELF) &&
+			(xscan->descSearches & XMLSUBSCAN_STEP_NEXT) == 0;
 
-				return NULL;
-			}
-			else
+		initXMLScan(subScan, xscan, xscan->xpath, locStepPos,
+			   xscan->xpathHeader, contextNode, xscan->document, ignoreSelf);
+
+		/*
+		 * XMLSUBSCAN_STEP_NEXT should be reset first,
+		 *
+		 * XMLSUBSCAN_STEP_CURRENT (if set) in the next pass. This means that
+		 * the tail of location path has to be processed before we start
+		 * search for descendants of the current node, see below.
+		 */
+		if (xscan->descSearches & XMLSUBSCAN_STEP_NEXT)
+			xscan->descSearches &= ~XMLSUBSCAN_STEP_NEXT;
+		else if (xscan->descSearches & XMLSUBSCAN_STEP_CURRENT)
+			xscan->descSearches &= ~XMLSUBSCAN_STEP_CURRENT;
+
+		/*
+		 * The first item of the subscan must be found here. If there are
+		 * more, processing of the subscan will continue at the top of this
+		 * function when it's called again.
+		 */
+
+		if ((result = getNextXMLNode(subScan)) != NULL)
+		{
+			return result;
+		}
+		else
+		{
+			/* No descendants. Cleanup before iteration at the current level. */
+			finalizeXMLScan(subScan);
+			pfree(subScan);
+			xscan->subScan = NULL;
+
+			if (xscan->descSearches != 0)
 			{
-				xscan->skip = true;
-				xscan->depth--;
-				continue;
+				Assert(xscan->descSearches == XMLSUBSCAN_STEP_CURRENT);
+				goto xmlscanRestart;
 			}
 		}
 	}
-	/* keep the compiler silent */
+
+	Assert(xscan->descSearches == 0);
+
+	/*
+	 * Proceed at the current level until the next matching node is found (not
+	 * one already on the ignore list).
+	 *
+	 * 'self' must currently be the first node of the node-set. Be careful
+	 * when adding new axes.
+	 */
+	while ((xscan->currentNode =
+			(xscan->self ? xscan->contextNode :
+			 getNextXMLNodeChild(&xscan->iterator))) != NULL)
+	{
+		XMLScanAxe	axe = xscan->locStep->axe;
+
+		if (xscan->self)
+			/* Only once. */
+			xscan->self = false;
+
+		if (performXMLNodeTest(xscan->currentNode, xscan, true))
+		{
+			if (isOnIgnoreList(xscan->currentNode, xscan))
+
+				/*
+				 * Already hit by another combination of descendant searches.
+				 * Such 'competitive' searches are responsible for the whole
+				 * subtree, so we can skip it now.
+				 */
+				continue;
+
+			Assert(xscan->locStepPos < xscan->xpath->depth);
+
+			if ((xscan->locStepPos + 1) == xscan->xpath->depth)
+			{
+				/*
+				 * The last step of the location path matches, so we can
+				 * return the current node. Just don't forget that search for
+				 * descendants may be necessary on the next call.
+				 */
+				if (axe == XMLSCAN_AXE_DESCENDANT ||
+					axe == XMLSCAN_AXE_DESC_OR_SELF)
+					xscan->descSearches |= XMLSUBSCAN_STEP_CURRENT;
+
+				/*
+				 * Only if we return the node from here we have to add it to
+				 * the ignore list. In other cases we've got it from recursive
+				 * call of this function so it comes from here anyway.
+				 */
+				addNodeToIgnoreList(xscan->currentNode, xscan);
+				return xscan->currentNode;
+			}
+			else
+			{
+				/*
+				 * The node matches the location step, but there are some more
+				 * steps to be checked.
+				 */
+				xscan->descSearches |= XMLSUBSCAN_STEP_NEXT;
+
+				/*
+				 * A subscan using the current location step might be
+				 * necessary in addition.
+				 */
+				if (axe == XMLSCAN_AXE_DESCENDANT ||
+					axe == XMLSCAN_AXE_DESC_OR_SELF)
+					xscan->descSearches |= XMLSUBSCAN_STEP_CURRENT;
+				Assert(xscan->subScan == NULL);
+				goto xmlscanRestart;
+			}
+		}
+		else
+		{
+			/* Not a match. Scan for descendants may be necessary yet. */
+			if (axe == XMLSCAN_AXE_DESCENDANT ||
+				axe == XMLSCAN_AXE_DESC_OR_SELF)
+			{
+				xscan->descSearches |= XMLSUBSCAN_STEP_CURRENT;
+				goto xmlscanRestart;
+			}
+		}
+	}
 	return NULL;
 }
 
@@ -500,7 +393,7 @@ prepareXPathExpression(XPathExpression exprOrig, XMLCompNodeHdr ctxElem,
 	state->expr = expr;
 
 	/* Replace attribute names with the values found in the current node.  */
-	if (ctxElem != NULL)
+	if (ctxElem != NULL && ctxElem->common.kind != XMLNODE_DOC)
 	{
 		substituteAttributes(state, ctxElem);
 	}
@@ -759,6 +652,108 @@ freeExpressionState(XPathExprState state)
 		pfree(state->nodeSets);
 	}
 	pfree(state);
+}
+
+/*
+ * Test if 'node' found using 'scan' matches the appropriate XPath location
+ * step. If the node test has predicate, 'usePredicate' tells whether it
+ * must be evaluated too.
+ */
+bool
+performXMLNodeTest(XMLNodeHdr node, XMLScan scan, bool usePredicate)
+{
+	XPathElement locStep = scan->locStep;
+	XMLNodeKind required = locStep->targNdKind;
+
+	if (node->kind == XMLNODE_ATTRIBUTE)
+	{
+		if (required == XMLNODE_ATTRIBUTE)
+		{
+			if (strcmp(locStep->name, "*") != 0 &&
+				strcmp(locStep->name, XNODE_CONTENT(node)) != 0)
+				return false;
+		}
+		else
+			return false;
+	}
+	else if (node->kind == XMLNODE_ELEMENT && node->kind == required)
+	{
+		char	   *name = XNODE_ELEMENT_NAME((XMLCompNodeHdr) node);
+		char	   *nameTest = locStep->name;
+
+		if (strcmp(nameTest, "*") != 0 && strcmp(name, nameTest) != 0)
+			return false;
+	}
+	else if (node->kind != required && required != XMLNODE_NODE)
+		return false;
+
+	if (node->kind == XMLNODE_PI && locStep->piTestValue)
+	{
+		char	   *piTarget,
+				   *targTest;
+
+		piTarget = XNODE_CONTENT(node);
+		targTest = locStep->name;
+		if (strcmp(piTarget, targTest) != 0)
+			return false;
+	}
+
+	scan->contextPosition++;
+
+	/*
+	 * Both node type and name (if there is one) matches. The predicate
+	 * expression needs to decide, unless it's missing.
+	 */
+	if (!locStep->hasPredicate || !usePredicate)
+		return true;
+
+	else
+	{
+		XPathExprOperandValueData result;
+		XPathExpression exprOrig;
+		XPathExprState exprState;
+		bool		predicatePassed;
+
+		/* Evaluate the predicate. */
+		exprOrig = XPATH_PREDICATE_FROM_LOC_STEP(locStep);
+		exprState = prepareXPathExpression(exprOrig, (XMLCompNodeHdr) node,
+									scan->document, scan->xpathHeader, scan);
+		evaluateXPathExpression(exprState, exprState->expr, 0, &result);
+
+		if (result.isNull)
+			predicatePassed = false;
+		else
+		{
+			if (result.type == XPATH_VAL_NUMBER)
+			{
+				XPathExprOperandValueData resSigned;
+
+				/* The cast is used to get rid of the 'negative' flag. */
+				castXPathExprOperandToNum(exprState, &result, &resSigned, false);
+
+				if (resSigned.v.num <= 0.0)
+					predicatePassed = false;
+				else
+				{
+					int16		posInt2 =
+					DatumGetInt16(DirectFunctionCall1Coll(dtoi2,
+														  InvalidOid,
+										   Float8GetDatum(resSigned.v.num)));
+
+					predicatePassed = (scan->contextPosition == posInt2);
+				}
+			}
+			else
+			{
+				XPathExprOperandValueData resultCast;
+
+				castXPathExprOperandToBool(exprState, &result, &resultCast);
+				predicatePassed = resultCast.v.boolean;
+			}
+		}
+		freeExpressionState(exprState);
+		return predicatePassed;
+	}
 }
 
 static void
@@ -1227,14 +1222,14 @@ initScanForSingleXMLNodeKind(XMLScan xscan, XMLCompNodeHdr root, XMLNodeKind kin
 	cursor = (char *) TYPEALIGN(XPATH_ALIGNOF_LOC_STEP, cursor);
 
 	xpEl = (XPathElement) cursor;
-	xpEl->descendant = true;
+	xpEl->axe = XMLSCAN_AXE_DESCENDANT;
 	xpEl->hasPredicate = false;
+	xpEl->targNdKind = kind;
 	xp->depth = 1;
-	xp->targNdKind = kind;
-	xp->allAttributes = false;
 	xp->elements[0] = cursor - (char *) xp;;
 
-	initXMLScan(xscan, NULL, xp, NULL, root, xscan->document, false);
+	initXMLScan(xscan, NULL, xp, 0, NULL, (XMLNodeHdr) root, xscan->document,
+				false);
 }
 
 void
@@ -1242,30 +1237,6 @@ finalizeScanForSingleXMLNodeKind(XMLScan xscan)
 {
 	pfree(xscan->xpath);
 	finalizeXMLScan(xscan);
-}
-
-/*
- * Sub-scans are used to search for descendants recursively.
- * It takes the current node as the root, so it in fact scans children of the current node.
- * If any of those children has children, new sub-scan is initiated, etc.
- */
-static bool
-considerSubScan(XPathElement xpEl, XMLNodeHdr node, XMLScan xscan, bool subScanJustDone)
-{
-	if (xpEl->descendant && node->kind == XMLNODE_ELEMENT && !subScanJustDone)
-	{
-		XMLCompNodeHdr el = (XMLCompNodeHdr) node;
-
-		if (el->children > 0)
-		{
-			xscan->subScan = (XMLScan) palloc(sizeof(XMLScanData));
-			initXMLScan(xscan->subScan, xscan, xscan->xpath, xscan->xpathHeader, el, xscan->document,
-						xscan->ignoreList != NULL);
-			xscan->subScan->xpathRoot = xscan->xpathRoot + xscan->depth;
-			return true;
-		}
-	}
-	return false;
 }
 
 static void
@@ -1484,21 +1455,12 @@ substitutePaths(XPathExpression expression, XPathExprState exprState, XMLCompNod
 									  XPATH_VAR_NODE_SINGLE);
 				opnd->value.v.nodeSet.count = 1;
 			}
-			else if (!subPath->relative && subPath->depth == 1 &&
-					 subPath->descendants == 0 && subPath->targNdKind == XMLNODE_ATTRIBUTE)
-			{
-				/*
-				 * Paths like '/@attr' or '/@*' never point to a valid node.
-				 * Further evaluation makes no sense in such cases.
-				 */
-				opnd->value.isNull = true;
-				opnd->value.v.nodeSet.count = 0;
-			}
 			else
 			{
-				XMLCompNodeHdr parent = (subPath->relative) ? element : (XMLCompNodeHdr) XNODE_ROOT(document);
+				XMLNodeHdr	parent = (subPath->relative) ? (XMLNodeHdr) element : XNODE_ROOT(document);
 
-				initXMLScan(&xscanSub, NULL, subPath, xpHdr, parent, document, subPath->descendants > 0);
+				initXMLScan(&xscanSub, NULL, subPath, 0, xpHdr, parent,
+							document, false);
 				while ((matching = getNextXMLNode(&xscanSub)) != NULL)
 				{
 					XMLNodeHdr *array = NULL;

@@ -390,6 +390,8 @@ xpath_array(PG_FUNCTION_ARGS)
 		}
 		exprBase = getXPathExpressionFromStorage(xpHdrBase);
 		xpathBase = getLocationXPath(exprBase, xpHdrBase, true);
+		if (xpathBase->depth == 0)
+			elog(ERROR, "base path must not return the whole xml document");
 
 		fctx = SRF_FIRSTCALL_INIT();
 		if (get_call_result_type(fcinfo, &resultType, NULL) != TYPEFUNC_SCALAR)
@@ -415,7 +417,8 @@ xpath_array(PG_FUNCTION_ARGS)
 
 		xScanCtx = (XMLScanContext) palloc(sizeof(XMLScanContextData));
 		xScanCtx->baseScan = (XMLScan) palloc(sizeof(XMLScanData));
-		initXMLScan(xScanCtx->baseScan, NULL, xpathBase, xpHdrBase, docRoot, doc, xpathBase->descendants > 0);
+		initXMLScan(xScanCtx->baseScan, NULL, xpathBase, 0, xpHdrBase,
+					(XMLNodeHdr) docRoot, doc, false);
 
 		xScanCtx->columns = *dimv;
 		xScanCtx->colHeaders = (XPathHeader *) palloc(xScanCtx->columns * sizeof(XPathHeader));
@@ -427,6 +430,8 @@ xpath_array(PG_FUNCTION_ARGS)
 		 * value is found for any column xpath.
 		 */
 		xScanCtx->outElmType = InvalidOid;
+
+		xScanCtx->done = false;
 
 		retrieveColumnPaths(xScanCtx, pathsColArr, *dimv);
 
@@ -440,18 +445,7 @@ xpath_array(PG_FUNCTION_ARGS)
 	xScanCtx->colResNulls = NULL;
 	baseScan = xScanCtx->baseScan;
 
-	if (baseScan->xpath->targNdKind == XMLNODE_DOC && !baseScan->done)
-	{
-		ArrayType  *result = getResultArray(xScanCtx, XNODE_ROOT_OFFSET(xScanCtx->baseScan->document));
-
-		baseScan->done = true;
-
-		if (result != NULL)
-		{
-			SRF_RETURN_NEXT(fctx, PointerGetDatum(result));
-		}
-	}
-	if (!baseScan->done)
+	if (!xScanCtx->done)
 	{
 		XMLNodeHdr	baseNode;
 
@@ -473,15 +467,15 @@ xpath_array(PG_FUNCTION_ARGS)
 			}
 			else
 			{
-				baseScan->done = true;
+				xScanCtx->done = true;
 			}
 		}
 		else
 		{
-			baseScan->done = true;
+			xScanCtx->done = true;
 		}
 	}
-	if (baseScan->done)
+	if (xScanCtx->done)
 	{
 		finalizeXMLScan(baseScan);
 		pfree(baseScan);

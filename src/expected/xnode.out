@@ -392,7 +392,7 @@ order by id asc;
     |     attribute: b                                       +
     |     attribute: c                                       +
     |     attribute: f                                       +
-    | attr. test:     @g                                     +
+    | node test:      @g                                     +
     | 
   1 | main expr.: (paths / funcs: 1 / 0, val. type: 3)       +
     |     <path 0>                                           +
@@ -669,7 +669,7 @@ order by id asc;
     |                                                        +
     | node test:      ab                                     +
     | node test:      cd                                     +
-    | attr. test:     @a                                     +
+    | node test:      @a                                     +
     |                                                        +
     |                                                        +
     | <path 1>                                               +
@@ -2046,7 +2046,7 @@ select xml.path_debug_print('/a/@i*/a/@j');
  absolute xpath                                  +
                                                  +
  node test:      a                               +
- attr. test:     @i                              +
+ node test:      @i                              +
                                                  +
                                                  +
  <path 1>                                        +
@@ -2054,7 +2054,7 @@ select xml.path_debug_print('/a/@i*/a/@j');
  absolute xpath                                  +
                                                  +
  node test:      a                               +
- attr. test:     @j                              +
+ node test:      @j                              +
  
 (1 row)
 
@@ -2075,7 +2075,7 @@ select xml.path_debug_print('/a/@**/a/@j');
  absolute xpath                                  +
                                                  +
  node test:      a                               +
- attr. test:     @*                              +
+ node test:      @*                              +
                                                  +
                                                  +
  <path 1>                                        +
@@ -2083,7 +2083,7 @@ select xml.path_debug_print('/a/@**/a/@j');
  absolute xpath                                  +
                                                  +
  node test:      a                               +
- attr. test:     @j                              +
+ node test:      @j                              +
  
 (1 row)
 
@@ -2201,7 +2201,7 @@ select xml.path_debug_print('/root/@i + - 1 + 2');
  absolute xpath                                  +
                                                  +
  node test:      root                            +
- attr. test:     @i                              +
+ node test:      @i                              +
  
 (1 row)
 
@@ -2224,7 +2224,7 @@ select xml.path_debug_print('/root/@i + - (1 + 2)');
  absolute xpath                                  +
                                                  +
  node test:      root                            +
- attr. test:     @i                              +
+ node test:      @i                              +
  
 (1 row)
 
@@ -2819,12 +2819,6 @@ select path('/a/b[local-name()!="b"]', '<a xmlns:ns_1="namespace"><b/><c/></a>')
 ------
  
 (1 row)
-
---Special case: name() used relative to '/' base path
-select path('/', '{"name()"}', '<a/>');
- path 
-------
-(0 rows)
 
 -- Nested functions. In addition, result has to be implicitly cast.
 select xml.path('concat(count(/root/a), /root)', '<root><b>50</b></root>');

@@ -302,6 +302,20 @@ typedef struct XMLNodeContainerData
 typedef struct XMLNodeContainerData *XMLNodeContainer;
 
 
+typedef struct XMLNodeIteratorData
+{
+	XMLCompNodeHdr node;
+	char		bwidth;
+	unsigned short childrenLeft;
+	char	   *childOffPtr;
+
+	/* Is attribute considered a child? */
+	bool		attributes;
+} XMLNodeIteratorData;
+
+typedef struct XMLNodeIteratorData *XMLNodeIterator;
+
+
 #define UTF_MAX_WIDTH		4
 
 typedef struct UTF8Interval

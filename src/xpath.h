@@ -1,4 +1,3 @@
-
 /*
  * Copyright (C) 2012-2013, Antonin Houska
  */
@@ -44,9 +43,6 @@ extern Datum xpath_array(PG_FUNCTION_ARGS);
 
 extern bool validXPathTermChar(char c, unsigned char flags);
 
-#define XPATH_LAST_LEVEL(xsc) ((xsc->depth + 1) == (xsc->xpath->depth - xsc->xpathRoot))
-#define XPATH_CURRENT_LEVEL(xsc)  ((XPathElement) ((char *) xsc->xpath + xsc->xpath->elements[xsc->xpathRoot + xsc->depth]))
-
 /*
  * The primary purpose of 'xpath' type is to avoid repeated parsing of the
  * XPath expression when the same XPath is being used for many rows. A side
@@ -67,27 +63,8 @@ typedef struct XPathData
 {
 	bool		relative;
 	uint8		depth;			/* 'Number of path elements (steps) */
-
-	/*
-	 * How many elements (steps) require search for descendants. It's useful
-	 * to know that location path has 2 or more such elements. In such a case
-	 * some nodes might be reached by multiple scan - subscan combinations and
-	 * therefore uniqueness of nodes returned has to be checked.
-	 */
-	uint8		descendants;
-
 	uint32		size;			/* Size of the whole XPath, including this
 								 * structure */
-	uint8		targNdKind;		/* 'uint8' just for storage, values are listed
-								 * in 'enum XMLNodeKind' */
-
-	/*
-	 * 'true' if the path ends with '@*' Parser only sets the appropriate
-	 * value if 'targNdKind' is XMLNODE_ATTRIBUTE. Otherwise 'allAttributes'
-	 * is not defined.
-	 */
-	bool		allAttributes;
-	bool		piTestValue;
 	XPathOffset elements[1];
 } XPathData;
 
@@ -521,8 +498,13 @@ typedef struct XPathElementData
 	 * after the name.
 	 */
 	bool		hasPredicate;
-	bool		descendant;
-	bool		attrsAll;
+
+	/* uint8 just for storage, XMLNodeKind elsewhere. */
+	uint8		targNdKind;
+	/* Likewise. */
+	uint8		axe;
+
+	bool		piTestValue;
 	char		name[1];
 } XPathElementData;
 
@@ -537,6 +519,8 @@ typedef struct XPathElementData *XPathElement;
  */
 #define XPATH_PREDICATE_FROM_LOC_STEP(s) ((XPathExpression)\
 	TYPEALIGN(XPATH_ALIGNOF_EXPR, (s)->name + strlen((s)->name) + 1))
+
+#define XPATH_LAST_STEP_KIND(xp) (((XPathElement) ((char *) (xp) + (xp)->elements[(xp)->depth - 1]))->targNdKind)
 
 typedef struct XPathParserStateData
 {
@@ -649,60 +633,68 @@ extern void parseLocationPath(XPath *paths, unsigned short *pathCount,
 				  char **xpathSrc, unsigned short *pos,
 				  XMLNodeContainer paramNames);
 
-/*
- * Status of XML tree scan at given level of the tree.
- */
-typedef struct XMLScanOneLevelData
+
+typedef enum XMLScanAxe
 {
-	XMLCompNodeHdr parent;
+	XMLSCAN_AXE_CHILD = 0,
+	XMLSCAN_AXE_DESCENDANT,
+	XMLSCAN_AXE_DESC_OR_SELF,
+	XMLSCAN_AXE_ATTRIBUTES,
+} XMLScanAxe;
 
-	/*
-	 * Where the next (multi-byte) reference will be read from.
-	 */
-	char	   *nodeRefPtr;
-
-	unsigned short int siblingsLeft;
-
-	unsigned short contextPosition;
-
-	unsigned short contextSize;
-	bool		contextSizeKnown;
-
-	struct XMLScanOneLevelData *up;
-} XMLScanOneLevelData;
-
-typedef struct XMLScanOneLevelData *XMLScanOneLevel;
+/*
+ * These values indicate if/how subscan should be started.
+ * See getNextXMLNode() to understand the logic.
+ */
+#define XMLSUBSCAN_STEP_CURRENT		(1 << 0)
+#define XMLSUBSCAN_STEP_NEXT		(1 << 1)
 
 typedef struct XMLScanData
 {
+	/* In some cases it's clear that the scan won't yield any node. */
+	bool		empty;
+
+	/*
+	 * We need to store both 'xpath' and 'xpathDepth' so that we're able to
+	 * initialize a scan at lower level.
+	 */
 	XPath xpath;
 
 	/*
+	 * 0-based position of 'locStep' (see below) in 'xpath'.
+	 */
+	unsigned short locStepPos;
+
+	/*
+	 * This can be derived from the two above, but let's cache it for
+	 * convenience.
+	 */
+	XPathElement locStep;
+
+	/*
 	 * Even if the current 'xpath' expression is known, we need the
-	 * XPathHeader sometimes to get sub-path(s).
+	 * XPathHeader sometimes: to get sub-path(s) when evaluating a predicate
+	 * expression contained in the current location path.
 	 */
 	XPathHeader xpathHeader;
-	unsigned short xpathRoot;
-	XMLScanOneLevel state;
+
+
+	unsigned short contextPosition;
+	int			contextSize;
+	XMLNodeHdr	contextNode;
 
 	/*
-	 * Current depth
+	 * If we're looking for children, this is used to iterate the context
+	 * node. When looking for siblings, we iterate contextNode's parent.
 	 */
-	unsigned short int depth;
+	XMLNodeIteratorData iterator;
+
+	/* Node currently being evaluated. */
+	XMLNodeHdr	currentNode;
+
 
 	/*
-	 * 'true' indicates that we only need to proceed to the next node instead
-	 * of checking the current one. Set this to 'true' when 1. finished
-	 * subtree scan (whether the subtree was scanned in the current scan or in
-	 * a 'subscan'), 2. returning a matching node. When the scan afterwards
-	 * resumes, this flag indicates that the matching node shouldn't be
-	 * checked again.
-	 */
-	bool		skip;
-	bool		done;
-
-	/*
-	 * The document is needed for absolute sub-paths.
+	 * The document is needed to evaluate absolute sub-paths.
 	 */
 	xmldoc		document;
 
@@ -727,11 +719,22 @@ typedef struct XMLScanData
 	 * Direct parent in the scan hierarchy.
 	 */
 	struct XMLScanData *parent;
+
+	/*
+	 * If subscan should be started of the next call to getNextXMLNode() and
+	 * what kind of.
+	 */
+	char		descSearches;
+
+	/*
+	 * If TRUE, then the scan must start with returning the context node.
+	 * (When that happens, this attribute has to be set to FALSE.)
+	 */
+	bool		self;
 } XMLScanData;
 
 typedef struct XMLScanData *XMLScan;
 
-#define XMLSCAN_CURRENT_LEVEL(xscan) ((xscan)->state + (xscan)->depth)
 
 typedef struct XMLScanContextData
 {
@@ -752,15 +755,16 @@ typedef struct XMLScanContextData
 	int16		outElmLen;
 	bool		outElmByVal;
 	char		outElmalign;
+
+	bool		done;
 } XMLScanContextData;
 
 typedef struct XMLScanContextData *XMLScanContext;
 
 extern void initXMLScan(XMLScan xscan, XMLScan parent, XPath xpath,
-			XPathHeader xpHdr, XMLCompNodeHdr scanRoot,
-			xmldoc document, bool checkUniqueness);
+			unsigned short locStepPos, XPathHeader xpHdr,
+			XMLNodeHdr contextNode, xmldoc document, bool ignoreSelf);
 extern void finalizeXMLScan(XMLScan xscan);
-
 extern void initScanForSingleXMLNodeKind(XMLScan xscan, XMLCompNodeHdr root,
 							 XMLNodeKind kind);
 extern void finalizeScanForSingleXMLNodeKind(XMLScan xscan);
@@ -799,6 +803,7 @@ extern void evaluateXPathExpression(XPathExprState exprState,
 						XPathExprOperandValue result);
 
 extern void freeExpressionState(XPathExprState state);
+extern bool performXMLNodeTest(XMLNodeHdr node, XMLScan scan, bool usePredicate);
 
 extern void castXPathExprOperandToBool(XPathExprState exprState,
 						   XPathExprOperandValue valueSrc,

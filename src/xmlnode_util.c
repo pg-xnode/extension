@@ -9,10 +9,6 @@
 static void xmlTreeWalker(XMLTreeWalkerContext *context);
 static unsigned int getNodePadding(char *start, XMLNodeOffset offAbs, XMLNodeHdr node);
 
-#ifdef XNODE_DEBUG
-static void dumpXScanDebug(StringInfo output, XMLScan scan, char *docData, XMLNodeOffset docRootOff);
-#endif
-
 void
 xmlnodeContainerInit(XMLNodeContainer cont)
 {
@@ -876,41 +872,6 @@ xmlTreeWalker(XMLTreeWalkerContext *context)
 	}
 }
 
-#ifdef XNODE_DEBUG
-
-static void
-dumpXScanDebug(StringInfo output, XMLScan scan, char *docData, XMLNodeOffset docRootOff)
-{
-	unsigned short i;
-	XMLScanOneLevel level = scan->state;
-
-	appendStringInfo(output, "xscan [dpth: %u, xpthroot: %u, xpthdpth: %u]\n", scan->depth,
-					 scan->xpathRoot, scan->xpath->depth);
-	for (i = 0; i <= scan->depth; i++)
-	{
-		XMLCompNodeHdr parent = level->parent;
-		char	   *firstRefPtr = XNODE_FIRST_REF(parent);
-		char		bwidth = XNODE_GET_REF_BWIDTH(parent);
-
-		appendStringInfo(output, "level: %u, at: %u, sbl: %u, ", i,
-						 (unsigned int) (((char *) level->nodeRefPtr - firstRefPtr) / bwidth), level->siblingsLeft);
-
-		appendStringInfo(output, "parent[");
-		if (i > 0)
-		{
-			appendStringInfo(output, "%u", (XMLNodeOffset) ((char *) parent - docData));
-		}
-		else
-		{
-			appendStringInfoString(output, scan->parent == NULL ? "document" : "upper scan target");
-		}
-		appendStringInfoString(output, "]\n");
-		level++;
-	}
-}
-#endif
-
-
 /*
  * Convenience function to allow allocation of small chunk where the default
  * initial size seems to be unnecessary.
@@ -926,9 +887,18 @@ xnodeInitStringInfo(StringInfo stringInfo, int len)
 void
 initXMLNodeIterator(XMLNodeIterator iterator, XMLCompNodeHdr node, bool attributes)
 {
-	if (!XNODE_IS_COMPOUND((XMLNodeHdr) node) && node->common.kind != XMLTEMPLATE_ROOT)
-		elog(ERROR, "element, document, document fragment or template expected for iteration, %u received instead",
-			 node->common.kind);
+	if (!XNODE_IS_COMPOUND((XMLNodeHdr) node) &&
+		node->common.kind != XMLTEMPLATE_ROOT)
+	{
+		/*
+		 * Hardly anyone can expect iteration of a simple node to yield any
+		 * result. Yet we should be prepared for it: getNextXMLNode() may try
+		 * while doing exhaustive search for descendants. It's easier to
+		 * handle such cases here and let the XML scan code be rather generic.
+		 */
+		iterator->childrenLeft = 0;
+		return;
+	}
 
 	iterator->node = node;
 	iterator->bwidth = XNODE_GET_REF_BWIDTH(node);
@@ -985,7 +955,6 @@ initXMLNodeIteratorSpecial(XMLNodeIterator iterator, XMLCompNodeHdr node,
  *
  * Node returned by this function may only be used as *read-only*.
  * The data is typically located in shared buffer and any change lead to unforeseen effects.
- *
  */
 XMLNodeHdr
 getNextXMLNodeChild(XMLNodeIterator iterator)
@@ -998,6 +967,7 @@ getNextXMLNodeChild(XMLNodeIterator iterator)
 
 	childOff = readXMLNodeOffset(&iterator->childOffPtr, iterator->bwidth, true);
 	childNode = (XMLNodeHdr) ((char *) iterator->node - childOff);
+	iterator->childrenLeft--;
 
 	/*
 	 * The following does not make sense for special node because that can
@@ -1006,7 +976,6 @@ getNextXMLNodeChild(XMLNodeIterator iterator)
 	 */
 	if (iterator->node->common.kind < XMLTEMPLATE_ROOT)
 	{
-
 		if (childNode->kind == XMLNODE_ATTRIBUTE && !iterator->attributes)
 		{
 			bool		attrOrig;
@@ -1016,13 +985,11 @@ getNextXMLNodeChild(XMLNodeIterator iterator)
 			iterator->attributes = true;
 
 			while (childNode != NULL && childNode->kind == XMLNODE_ATTRIBUTE)
-			{
 				childNode = getNextXMLNodeChild(iterator);
-			}
+
 			iterator->attributes = attrOrig;
 		}
 	}
-	iterator->childrenLeft--;
 	return childNode;
 }
 

@@ -71,19 +71,6 @@ extern bool isXMLNodeDescendant(XMLNodeHdr node, XMLCompNodeHdr treeRoot);
 
 extern void xnodeInitStringInfo(StringInfo stringInfo, int len);
 
-typedef struct XMLNodeIteratorData
-{
-	XMLCompNodeHdr node;
-	char		bwidth;
-	unsigned short childrenLeft;
-	char	   *childOffPtr;
-
-	/* Is attribute considered a child? */
-	bool		attributes;
-} XMLNodeIteratorData;
-
-typedef struct XMLNodeIteratorData *XMLNodeIterator;
-
 extern void initXMLNodeIterator(XMLNodeIterator iterator, XMLCompNodeHdr node,
 					bool attributes);
 extern void initXMLNodeIteratorSpecial(XMLNodeIterator iterator, XMLCompNodeHdr node,

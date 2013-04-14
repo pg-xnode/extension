@@ -11,7 +11,7 @@
 
 static XPathElement parseLocationStep(XPathParserState state, XPath *paths,
 				  unsigned short *pathCount, XMLNodeContainer paramNames,
-				  XPath locPathOut);
+				  XPath locPathOut, bool *doubleSlash);
 static void insertSubexpression(XPathExprOperand operand, XPathExprOperatorStorage *operatorStorage,
 		XPathExpression exprTop, unsigned short blockSize, bool varsShiftAll,
 					char *output, unsigned short *outPos);
@@ -476,7 +476,6 @@ parseLocationPath(XPath *paths, unsigned short *pathCount, char **xpathSrc,
 	unsigned int outSize = sizeof(XPathData);
 	char	   *dest;
 	XPathData	locPathTmp;
-	uint8		descendants = 0;
 
 	if (*pathCount >= XPATH_EXPR_MAX_PATHS)
 		elog(ERROR, "too many location paths in XPath expression");
@@ -497,19 +496,39 @@ parseLocationPath(XPath *paths, unsigned short *pathCount, char **xpathSrc,
 	while (!done)
 	{
 		XPathElement step;
+		bool		descendant = false;
 
-		if (state.depth >= XPATH_MAX_DEPTH)
-		{
-			elog(ERROR, "the maximum depth of location path is %u", XPATH_MAX_DEPTH);
-		}
+		step = parseLocationStep(&state, paths, pathCount, paramNames,
+								 &locPathTmp, &descendant);
 
-		step = parseLocationStep(&state, paths, pathCount, paramNames, &locPathTmp);
 		if (step == NULL && state.depth == 0)
 			/* The path is '/'. */
 			break;
 
 		outSize += MAX_PADDING(XPATH_ALIGNOF_LOC_STEP) + sizeof(XPathElementData)
 			+ strlen(step->name);
+
+		if (step->axe == XMLSCAN_AXE_ATTRIBUTES && descendant)
+		{
+			unsigned int auxStepSize;
+			XPathElement auxStep;
+
+			/*
+			 * For example "/a//@i" is in fact
+			 * "/a/descendant-or-self::node()/attribute::i" That's why an
+			 * extra step has to be added.
+			 */
+			auxStepSize = sizeof(XPathElementData);
+			auxStep = (XPathElement) palloc(auxStepSize);
+			auxStep->targNdKind = XMLNODE_NODE;
+			auxStep->axe = XMLSCAN_AXE_DESC_OR_SELF;
+			auxStep->hasPredicate = false;
+			auxStep->piTestValue = false;
+			auxStep->name[0] = '\0';
+
+			xmlnodePushSinglePtr(&steps, auxStep);
+			outSize += MAX_PADDING(XPATH_ALIGNOF_LOC_STEP) + auxStepSize;
+		}
 
 		if (step->hasPredicate)
 		{
@@ -518,12 +537,12 @@ parseLocationPath(XPath *paths, unsigned short *pathCount, char **xpathSrc,
 			outSize += MAX_PADDING(XPATH_ALIGNOF_EXPR) + predicate->common.size;
 		}
 
-		if (step->descendant)
-			descendants++;
-
 		xmlnodePushSinglePtr(&steps, step);
 
-		if (locPathTmp.targNdKind == XMLNODE_ATTRIBUTE)
+		if (steps.position > XPATH_MAX_DEPTH)
+			elog(ERROR, "the maximum depth of location path is %u", XPATH_MAX_DEPTH);
+
+		if (step->targNdKind == XMLNODE_ATTRIBUTE)
 
 			/*
 			 * If the attribute test has just been parsed, we're done. Slash
@@ -590,13 +609,8 @@ parseLocationPath(XPath *paths, unsigned short *pathCount, char **xpathSrc,
 
 	xmlnodeContainerFree(&steps);
 
-	locPath->targNdKind = locPathTmp.targNdKind;
-	locPath->allAttributes = locPathTmp.allAttributes;
-	locPath->piTestValue = locPathTmp.piTestValue;
-
 	locPath->relative = relative;
 	locPath->depth = stepCount;
-	locPath->descendants = descendants;
 
 	locPath->size = dest - (char *) locPath;
 	paths[*pathCount] = locPath;
@@ -612,58 +626,57 @@ parseLocationPath(XPath *paths, unsigned short *pathCount, char **xpathSrc,
  *
  * 'locPathOut' is used as output for path-level information. We could reserve
  * one item of the 'paths' array but that would make the recursion trickier.
+ *
+ * 'doubleSlash' receives true if the location step starts with '//'. Caller
+ * of this function might need it sometimes, even thought this function does
+ * recognize (and set) the descendant axes in most cases.
+ * The parameter is ignored if NULL is to be returned.
  */
 static XPathElement
 parseLocationStep(XPathParserState state, XPath *paths,
 				  unsigned short *pathCount, XMLNodeContainer paramNames,
-				  XPath locPathOut)
+				  XPath locPathOut, bool *doubleSlash)
 {
 	char	   *name = NULL;
 	unsigned short nameLen = 0;
 	XPathElement locStep;
-	bool		descendant = false;
+	bool		dblSlashLocal = false;
 	XPathExpression predicate = NULL;
 	unsigned int stepSizeMax;
 	bool		attrTest = false;
-	bool		attrsAll = false;
 	bool		isSpecTest = false;
-
-	locPathOut->targNdKind = XMLNODE_ELEMENT;
-	locPathOut->allAttributes = false;
-	locPathOut->piTestValue = false;
+	XMLNodeKind targNodeKind = XMLNODE_ELEMENT;
+	bool		piTestValue = false;
 
 	if (*state->c == XNODE_CHAR_SLASH)
 	{
 		nextChar(state, true);
-		descendant = true;
+		dblSlashLocal = true;
 	}
 
 	if (*state->c == XNODE_CHAR_AT)
 	{
 		attrTest = true;
 		nextChar(state, false);
-		locPathOut->targNdKind = XMLNODE_ATTRIBUTE;
+		targNodeKind = XMLNODE_ATTRIBUTE;
 	}
-	if (attrTest && *state->c == XNODE_CHAR_ASTERISK)
+
+	name = state->c;
+	if (*state->c == XNODE_CHAR_ASTERISK)
 	{
-		attrsAll = true;
+		nameLen = 1;
 		nextChar(state, true);
 	}
-
-	if ((!attrTest || (attrTest && !attrsAll)) && XNODE_VALID_NAME_START(state->c))
+	else if (XNODE_VALID_NAME_START(state->c))
 	{
 		/* Process QName */
-		name = state->c;
-		nameLen = 0;
-		while (XNODE_VALID_NAME_CHAR(state->c) && *state->c != XNODE_CHAR_SLASH
-			   && nameLen < XPATH_ELEMENT_MAX_LEN)
+		while (XNODE_VALID_NAME_CHAR(state->c) && *state->c != XNODE_CHAR_SLASH)
 		{
 			nameLen += state->cWidth;
+			if (nameLen > XPATH_ELEMENT_MAX_LEN)
+				elog(ERROR, "XPath location step too long");
 			nextChar(state, true);
 		}
-
-		if (nameLen > XPATH_ELEMENT_MAX_LEN)
-			elog(ERROR, "XPath location step too long");
 
 		if (*state->c == XNODE_CHAR_LBRKT_RND && !attrTest)
 		{
@@ -690,19 +703,19 @@ parseLocationStep(XPathParserState state, XPath *paths,
 			switch (nodeType)
 			{
 				case XPATH_NODE_TYPE_COMMENT:
-					locPathOut->targNdKind = XMLNODE_COMMENT;
+					targNodeKind = XMLNODE_COMMENT;
 					break;
 
 				case XPATH_NODE_TYPE_TEXT:
-					locPathOut->targNdKind = XMLNODE_TEXT;
+					targNodeKind = XMLNODE_TEXT;
 					break;
 
 				case XPATH_NODE_TYPE_NODE:
-					locPathOut->targNdKind = XMLNODE_NODE;
+					targNodeKind = XMLNODE_NODE;
 					break;
 
 				case XPATH_NODE_TYPE_PI:
-					locPathOut->targNdKind = XMLNODE_PI;
+					targNodeKind = XMLNODE_PI;
 					break;
 
 				default:
@@ -744,7 +757,7 @@ parseLocationStep(XPathParserState state, XPath *paths,
 
 				nextChar(state, false);
 				skipWhiteSpace(state, false);
-				locPathOut->piTestValue = true;
+				piTestValue = true;
 			}
 
 			if (*state->c != XNODE_CHAR_RBRKT_RND)
@@ -753,58 +766,62 @@ parseLocationStep(XPathParserState state, XPath *paths,
 			/* Move past the ')' */
 			nextChar(state, true);
 		}
-		else if (*state->c == XNODE_CHAR_LBRACKET)
-		{
-			/* Predicate expression. */
-			char	   *exprOutput;
-			unsigned short outPos = 0;
+	}
 
-			exprOutput = (char *) palloc(XPATH_EXPR_BUFFER_SIZE);
-			predicate = (XPathExpression) exprOutput;
+	if (*state->c == XNODE_CHAR_LBRACKET)
+	{
+		/* Predicate expression. */
+		char	   *exprOutput;
+		unsigned short outPos = 0;
 
-			/*
-			 * Predicate expression should always be treated in certain
-			 * context so this attribute will not be used. Let's set it just
-			 * so it looks sensible.
-			 */
-			predicate->needsContext = true;
-			checkExpressionBuffer(outPos);
-			parseXPathExpression(predicate, state, XPATH_TERM_RBRKT, NULL,
+		exprOutput = (char *) palloc(XPATH_EXPR_BUFFER_SIZE);
+		predicate = (XPathExpression) exprOutput;
+
+		/*
+		 * Predicate expression should always be treated in certain context so
+		 * this attribute will not be used. Let's set it just so it looks
+		 * sensible.
+		 */
+		predicate->needsContext = true;
+		checkExpressionBuffer(outPos);
+		parseXPathExpression(predicate, state, XPATH_TERM_RBRKT, NULL,
 			exprOutput, &outPos, false, false, paths, pathCount, paramNames);
 
-			/* Move behind the ']' */
-			nextChar(state, true);
-		}
+		/* Move behind the ']' */
+		nextChar(state, true);
 	}
 
-	if (nameLen == 0 && state->depth == 0 && !attrTest && !isSpecTest)
+	if (nameLen == 0 && !isSpecTest)
 	{
-		if (descendant)
-			elog(ERROR, "unrecognized location path '//'");
+		if (dblSlashLocal || state->depth > 0)
+			/* Either '//' or any path ending with '/'. */
+			elog(ERROR, "unrecognized location path");
 		/* The path is just '/'. */
-		locPathOut->targNdKind = XMLNODE_DOC;
 		return NULL;
-	}
-
-	if (nameLen == 0 && !attrsAll && !isSpecTest)
-	{
-		elog(ERROR, "QName expected at position %u of XPath expression",
-			 state->pos);
 	}
 
 	stepSizeMax = sizeof(XPathElementData) + nameLen;
 	if (predicate != NULL)
-	{
 		stepSizeMax += MAX_PADDING(XPATH_ALIGNOF_EXPR) + predicate->common.size;
-	}
 
 	locStep = (XPathElement) palloc(stepSizeMax);
-	locStep->descendant = descendant;
+	locStep->targNdKind = targNodeKind;
+	locStep->piTestValue = piTestValue;
+
+	/*
+	 * The axe can be determined here in most cases. Nevertheless the caller
+	 * may need to do some adjustments - see comments about expansion of
+	 * expressions like "/a//@i"
+	 */
+	if (locStep->targNdKind == XMLNODE_ATTRIBUTE)
+		locStep->axe = XMLSCAN_AXE_ATTRIBUTES;
+	else if (dblSlashLocal)
+		locStep->axe = XMLSCAN_AXE_DESCENDANT;
+	else
+		locStep->axe = XMLSCAN_AXE_CHILD;
 
 	if (nameLen > 0)
-	{
 		memcpy(locStep->name, name, nameLen);
-	}
 	locStep->name[nameLen] = '\0';
 
 	if (predicate != NULL)
@@ -813,13 +830,15 @@ parseLocationStep(XPathParserState state, XPath *paths,
 
 		dest = (char *) XPATH_PREDICATE_FROM_LOC_STEP(locStep);
 		memcpy(dest, predicate, predicate->common.size);
+		pfree(predicate);
 		locStep->hasPredicate = true;
 	}
 	else
 		locStep->hasPredicate = false;
 
-	locPathOut->allAttributes = attrsAll;
 	state->depth++;
+	if (doubleSlash != NULL)
+		*doubleSlash = dblSlashLocal;
 	return locStep;
 }
 
@@ -1752,11 +1771,11 @@ void
 dumpLocationPath(XPathHeader xpathHdr, unsigned short pathNr, StringInfo output, char **paramNames,
 				 bool debug)
 {
-	unsigned short i,
-				last;
+	unsigned short i;
 	XPathOffset o;
-	XPathElement el;
+	XPathElement locStep;
 	XPath		locPath = (XPath) ((char *) xpathHdr + xpathHdr->paths[pathNr]);
+	bool		attrDesc = false;
 
 	if (debug)
 	{
@@ -1774,114 +1793,103 @@ dumpLocationPath(XPathHeader xpathHdr, unsigned short pathNr, StringInfo output,
 	else
 	{
 		if (!locPath->relative)
-		{
 			appendStringInfoChar(output, XNODE_CHAR_SLASH);
-		}
 	}
 	if (locPath->depth == 0)
-	{
 		return;
-	}
-	last = (locPath->targNdKind == XMLNODE_ELEMENT) ? locPath->depth : locPath->depth - 1;
 
-	for (i = 1; i <= last; i++)
+	for (i = 0; i < locPath->depth; i++)
 	{
-		o = locPath->elements[i - 1];
+		o = locPath->elements[i];
 
-		el = (XPathElement) ((char *) locPath + o);
+		locStep = (XPathElement) ((char *) locPath + o);
 
 		if (debug)
 		{
 			appendStringInfoString(output, "\nnode test:\t");
 		}
-		if (!debug && el->descendant)
+		else
 		{
-			appendStringInfoChar(output, XNODE_CHAR_SLASH);
+			if (locStep->axe == XMLSCAN_AXE_DESCENDANT)
+				appendStringInfoChar(output, XNODE_CHAR_SLASH);
+			else if (locStep->axe == XMLSCAN_AXE_DESC_OR_SELF)
+			{
+				/* appendStringInfoString(output, "descendant-or-self::"); */
+
+				/*
+				 * Temporary workaround to recognize shortcut like /a//@i.
+				 */
+				if (locStep->targNdKind == XMLNODE_NODE)
+				{
+					attrDesc = true;
+					continue;
+				}
+			}
 		}
-		appendStringInfoString(output, el->name);
-		if (debug && el->descendant)
+
+		if (locStep->targNdKind == XMLNODE_ELEMENT)
 		{
-			appendStringInfo(output, " (desc.)");
+			appendStringInfoString(output, locStep->name);
 		}
-		if (el->hasPredicate)
+		else if (locStep->targNdKind == XMLNODE_ATTRIBUTE)
 		{
-			XPathExpression pexpr = (XPathExpression) XPATH_PREDICATE_FROM_LOC_STEP(el);
+			/* The temp. workaround for /a//@i, continued. */
+			if (attrDesc)
+				appendStringInfoChar(output, XNODE_CHAR_SLASH);
+
+			appendStringInfo(output, "@%s", locStep->name);
+		}
+		else
+		{
+			switch (locStep->targNdKind)
+			{
+				case XMLNODE_COMMENT:
+					appendStringInfo(output, "%s()", nodeTypes[XPATH_NODE_TYPE_COMMENT]);
+					break;
+
+				case XMLNODE_TEXT:
+					appendStringInfo(output, "%s()", nodeTypes[XPATH_NODE_TYPE_TEXT]);
+					break;
+
+				case XMLNODE_NODE:
+					appendStringInfo(output, "%s()", nodeTypes[XPATH_NODE_TYPE_NODE]);
+					break;
+
+				case XMLNODE_PI:
+					appendStringInfo(output, "%s%c", nodeTypes[XPATH_NODE_TYPE_PI], XNODE_CHAR_LBRKT_RND);
+					locStep = (XPathElement) ((char *) locPath + locPath->elements[locPath->depth - 1]);
+					if (strlen(locStep->name) > 0)
+					{
+						appendStringInfo(output, "\"%s\"", locStep->name);
+					}
+					appendStringInfoChar(output, XNODE_CHAR_RBRKT_RND);
+					break;
+
+				default:
+					elog(ERROR, "invalid node kind: %u", locStep->targNdKind);
+					break;
+			}
+		}
+
+		if (debug)
+		{
+			if (locStep->axe == XMLSCAN_AXE_DESCENDANT)
+				appendStringInfo(output, " (desc.)");
+			if (locStep->axe == XMLSCAN_AXE_DESC_OR_SELF)
+				appendStringInfo(output, " (desc. or self)");
+		}
+
+		if (locStep->hasPredicate)
+		{
+			XPathExpression pexpr = (XPathExpression) XPATH_PREDICATE_FROM_LOC_STEP(locStep);
 
 			dumpXPathExpression(pexpr, xpathHdr, output, false, paramNames, debug);
 		}
-		if (!debug && ((i < last) || (locPath->targNdKind != XMLNODE_ELEMENT)))
-		{
+
+		if (!debug && (((i + 1) < locPath->depth)))
 			appendStringInfoChar(output, XNODE_CHAR_SLASH);
-		}
-	}
 
-	if (locPath->targNdKind != XMLNODE_ELEMENT)
-	{
-		if (debug)
-		{
-			if (locPath->targNdKind == XMLNODE_ATTRIBUTE)
-			{
-				appendStringInfoString(output, "\nattr. test:\t");
-			}
-			else
-			{
-				appendStringInfoString(output, "\nnode test:\t");
-			}
-		}
-
-		o = locPath->elements[i - 1];
-
-		el = (XPathElement) ((char *) locPath + o);
-
-		if (!debug && el->descendant)
-		{
-			appendStringInfoChar(output, XNODE_CHAR_SLASH);
-		}
-
-		switch (locPath->targNdKind)
-		{
-			case XMLNODE_COMMENT:
-				appendStringInfo(output, "%s()", nodeTypes[XPATH_NODE_TYPE_COMMENT]);
-				break;
-
-			case XMLNODE_TEXT:
-				appendStringInfo(output, "%s()", nodeTypes[XPATH_NODE_TYPE_TEXT]);
-				break;
-
-			case XMLNODE_NODE:
-				appendStringInfo(output, "%s()", nodeTypes[XPATH_NODE_TYPE_NODE]);
-				break;
-
-			case XMLNODE_PI:
-				appendStringInfo(output, "%s%c", nodeTypes[XPATH_NODE_TYPE_PI], XNODE_CHAR_LBRKT_RND);
-				el = (XPathElement) ((char *) locPath + locPath->elements[locPath->depth - 1]);
-				if (strlen(el->name) > 0)
-				{
-					appendStringInfo(output, "\"%s\"", el->name);
-				}
-				appendStringInfoChar(output, XNODE_CHAR_RBRKT_RND);
-				break;
-
-			case XMLNODE_ATTRIBUTE:
-				if (locPath->allAttributes)
-				{
-					appendStringInfoString(output, "@*");
-				}
-				else
-				{
-					appendStringInfo(output, "@%s", el->name);
-				}
-				break;
-
-			default:
-				elog(ERROR, "invalid node kind: %u", locPath->targNdKind);
-				break;
-		}
-
-		if (debug && el->descendant)
-		{
-			appendStringInfoString(output, " (desc.)");
-		}
+		attrDesc = false;
 	}
 }
 

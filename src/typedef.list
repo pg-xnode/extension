@@ -28,11 +28,10 @@ XMLParserNodeInfoData
 XMLParserState
 XMLParserStateData
 XMLScan
+XMLScanAxe
 XMLScanContext
 XMLScanContextData
 XMLScanData
-XMLScanOneLevel
-XMLScanOneLevelData
 XMLTemplateHeader
 XMLTemplateHeaderData
 XMLTreeWalkerContext

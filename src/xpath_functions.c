@@ -164,59 +164,59 @@ xpathFalse(XMLScan xscan, XPathExprState exprState, XPathExprOperandValue result
 void
 xpathPosition(XMLScan xscan, XPathExprState exprState, XPathExprOperandValue result)
 {
-	XMLScanOneLevel scanLevel = XMLSCAN_CURRENT_LEVEL(xscan);
-
-	XFUNC_SET_RESULT_NUMBER(result, scanLevel->contextPosition);
+	XFUNC_SET_RESULT_NUMBER(result, xscan->contextPosition);
 }
 
 void
 xpathLast(XMLScan xscan, XPathExprState exprState, XPathExprOperandValue result)
 {
-	XMLScanOneLevel scanLevel = XMLSCAN_CURRENT_LEVEL(xscan);
-
-	if (!scanLevel->contextSizeKnown)
+	/* If the size has not been needed yet, determine the value. */
+	if (xscan->contextSize == -1)
 	{
-		XMLCompNodeHdr parent = scanLevel->parent;
-		char	   *refPtr = scanLevel->nodeRefPtr;
-		unsigned short sblLeft = scanLevel->siblingsLeft;
-		XPathElement xpEl = XPATH_CURRENT_LEVEL(xscan);
-		unsigned short i = 0;
+		XPathElement locStep;
+		XMLNodeIterator iterator;
+		XMLNodeHdr	child;
+		unsigned short contextPosOrig;
 
-		scanLevel->contextSize = scanLevel->contextPosition;
-
-		while (sblLeft > 0)
+		locStep = xscan->locStep;
+		contextPosOrig = xscan->contextPosition;
+		/* Axes are checked because the logic might differ for some axes. */
+		switch (locStep->axe)
 		{
-			XMLNodeOffset nodeOff;
-			XMLNodeHdr	node;
+			case XMLSCAN_AXE_CHILD:
+			case XMLSCAN_AXE_DESCENDANT:
+			case XMLSCAN_AXE_DESC_OR_SELF:
+			case XMLSCAN_AXE_ATTRIBUTES:
 
-			nodeOff = readXMLNodeOffset(&refPtr, XNODE_GET_REF_BWIDTH(parent), true);
+				/*
+				 * The whole trick is to make a copy of the iterator (so that
+				 * the effective iterator is unaffected), advance to the end
+				 * and count. matches.
+				 */
+				iterator = (XMLNodeIterator) palloc(sizeof(XMLNodeIteratorData));
+				memcpy(iterator, &xscan->iterator, sizeof(XMLNodeIteratorData));
 
-			/*
-			 * The first node has to be skipped because its the context node
-			 * for the function.
-			 */
-			if (i > 0)
-			{
-				node = (XMLNodeHdr) ((char *) parent - nodeOff);
-
-				if (node->kind == XMLNODE_ELEMENT)
+				while ((child = getNextXMLNodeChild(iterator)) != NULL)
 				{
-					XMLCompNodeHdr ctxElement = (XMLCompNodeHdr) node;
-
-					if (strcmp(xpEl->name, XNODE_ELEMENT_NAME(ctxElement)) == 0)
-					{
-						scanLevel->contextSize++;
-					}
+					/*
+					 * The test will adjust the context position. Note that we
+					 * don't check predicate here.
+					 */
+					performXMLNodeTest(child, xscan, false);
 				}
-			}
-			sblLeft--;
-			i++;
+
+				pfree(iterator);
+				xscan->contextSize = xscan->contextPosition;
+				/* The original position must be preserved. */
+				xscan->contextPosition = contextPosOrig;
+				break;
+
+			default:
+				elog(ERROR, "last(): unrecognized axe %u", locStep->axe);
+				break;
 		}
-
-		scanLevel->contextSizeKnown = true;
 	}
-
-	XFUNC_SET_RESULT_NUMBER(result, scanLevel->contextSize);
+	XFUNC_SET_RESULT_NUMBER(result, xscan->contextSize);
 }
 
 void
@@ -379,26 +379,15 @@ getEmptyString(void)
 static void
 nameNoArgs(XMLScan xscan, XPathExprState exprState, bool local, XPathExprOperandValue result)
 {
-	if (xscan->state != NULL)
+	if (xscan->currentNode != NULL && xscan->currentNode->kind == XMLNODE_ELEMENT)
 	{
-		XMLScanOneLevel scanLevel = XMLSCAN_CURRENT_LEVEL(xscan);
-		XMLCompNodeHdr eh = scanLevel->parent;
-		XMLNodeOffset ctxNdOffRel = readXMLNodeOffset(&scanLevel->nodeRefPtr,
-											XNODE_GET_REF_BWIDTH(eh), false);
-		XMLCompNodeHdr contextNode = (XMLCompNodeHdr) ((char *) eh - ctxNdOffRel);
-		char	   *elName = XNODE_ELEMENT_NAME(contextNode);
+		char	   *elName = XNODE_ELEMENT_NAME((XMLCompNodeHdr) xscan->currentNode);
 		char	   *colon,
 				   *elNameCopy;
 
-		Assert(contextNode->common.kind == XMLNODE_ELEMENT);
-
 		if (local && ((colon = strchr(elName, XNODE_CHAR_COLON)) != NULL))
-		{
 			elName = colon + 1;
-		}
-
-		elNameCopy = (char *) palloc(strlen(elName) + 1);
-		strcpy(elNameCopy, elName);
+		elNameCopy = pstrdup(elName);
 		XFUNC_SET_RESULT_STRING(result, exprState, elNameCopy);
 	}
 	else

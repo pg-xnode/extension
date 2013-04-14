@@ -56,7 +56,7 @@ xmlnode_add(PG_FUNCTION_ARGS)
 		elog(ERROR, "invalid target path");
 	}
 
-	if (xpath->targNdKind == XMLNODE_ATTRIBUTE)
+	if (XPATH_LAST_STEP_KIND(xpath) == XMLNODE_ATTRIBUTE)
 	{
 		elog(ERROR, "target path for node addition must not point to attribute");
 	}
@@ -67,7 +67,8 @@ xmlnode_add(PG_FUNCTION_ARGS)
 		elog(ERROR, "invalid node type to add: %s", getXMLNodeKindStr(newNode->kind));
 	}
 	docRoot = (XMLCompNodeHdr) XNODE_ROOT(doc);
-	initXMLScan(&xscan, NULL, xpath, xpHdr, docRoot, doc, xpath->descendants > 0);
+	initXMLScan(&xscan, NULL, xpath, 0, xpHdr, (XMLNodeHdr) docRoot, doc,
+				false);
 	result = updateXMLDocument(&xscan, doc, XMLNODE_ACTION_ADD, newNode, XMLADD_MODE(mode));
 	finalizeXMLScan(&xscan);
 	PG_RETURN_POINTER(result);
@@ -105,7 +106,8 @@ xmlnode_remove(PG_FUNCTION_ARGS)
 		elog(ERROR, "invalid target path");
 	}
 	docRoot = (XMLCompNodeHdr) XNODE_ROOT(doc);
-	initXMLScan(&xscan, NULL, xpath, xpHdr, docRoot, doc, false);
+	initXMLScan(&xscan, NULL, xpath, 0, xpHdr, (XMLNodeHdr) docRoot, doc,
+				false);
 
 	/*
 	 * XMLADD_REPLACE is there just to make it compilable. The function
@@ -172,11 +174,9 @@ updateXMLDocument(XMLScan xscan, xmldoc doc, XMLNodeAction action, XMLNodeHdr ne
 
 		/*
 		 * If the next node is in a subtree that we're going to replace/remove
-		 * anyway, then it makes no sense to pay attention to it. Such a case
-		 * can ony happen if the location path uses descendant axe.
+		 * anyway, then it makes no sense to pay attention to it.
 		 */
-		if (xscan->xpath->descendants > 0 &&
-			((action == XMLNODE_ACTION_ADD && addMode == XMLADD_REPLACE) ||
+		if (((action == XMLNODE_ACTION_ADD && addMode == XMLADD_REPLACE) ||
 			 action == XMLNODE_ACTION_REMOVE))
 		{
 			unsigned int j;
@@ -207,7 +207,8 @@ updateXMLDocument(XMLScan xscan, xmldoc doc, XMLNodeAction action, XMLNodeHdr ne
 		{
 			char	   *tree = (char *) VARDATA(xscan->document);
 
-			checkUnresolvedNamespaces(tree, xscan, targNode, addMode, unresolvedNamespaces, unresolvedNmspCount);
+			checkUnresolvedNamespaces(tree, xscan, targNode, addMode,
+								  unresolvedNamespaces, unresolvedNmspCount);
 		}
 
 		/*
@@ -673,38 +674,29 @@ static void
 checkUnresolvedNamespaces(char *tree, XMLScan xscan, XMLNodeHdr targNode, XMLAddMode addMode,
 						  char **unresolved, unsigned int unresolvedCount)
 {
-	XMLScanOneLevel scanLevel;
 	XMLNodeContainerData declarations;
 	unsigned int i,
 				j;
-
-	/*
-	 * Zero-depth target path is not allowed, so the state should always
-	 * exist.
-	 */
-	Assert(xscan->state != NULL);
+	XMLScan		xscanTmp = xscan;
 
 	xmlnodeContainerInit(&declarations);
 
 	/*
 	 * Collect namespace declarations throughout the stack up to the document
-	 * root.
+	 * root. In most cases we need to start at the parent of the targetNode.
 	 */
-	scanLevel = XMLSCAN_CURRENT_LEVEL(xscan);
-	do
+	while ((xscanTmp = xscanTmp->parent) != NULL)
 	{
-		XMLCompNodeHdr parentNode = scanLevel->parent;
+		XMLNodeHdr	node = xscanTmp->currentNode;
 
-		if (parentNode->common.kind == XMLNODE_ELEMENT)
-		{						/* Otherwise it must be XMLNODE_DOC. */
-			collectXMLNamespaceDeclarations(tree, parentNode, NULL, NULL, &declarations, true,
-											NULL, NULL);
-		}
-		scanLevel = scanLevel->up;
-	} while (scanLevel != NULL);
+		if (node->kind == XMLNODE_ELEMENT)
+			/* Otherwise it must be XMLNODE_DOC. */
+			collectXMLNamespaceDeclarations(tree, (XMLCompNodeHdr) node,
+								NULL, NULL, &declarations, true, NULL, NULL);
+	}
 
 	/*
-	 * If we're adding node *into* the target element, then it's namespace
+	 * If we're adding node *into* the target element, then its namespace
 	 * declarations are important too. (If trying to insert into non-element,
 	 * no need to check: error will be raised later.)
 	 */
