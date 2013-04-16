@@ -651,8 +651,12 @@ typedef enum XMLScanAxe
 
 typedef struct XMLScanData
 {
-	/* In some cases it's clear that the scan won't yield any node. */
-	bool		empty;
+	/*
+	 * In some cases it's clear that the scan won't yield any node. Other
+	 * times it may become clear during the scan that no other node can match
+	 * the test / predicate.
+	 */
+	bool		done;
 
 	/*
 	 * We need to store both 'xpath' and 'xpathDepth' so that we're able to

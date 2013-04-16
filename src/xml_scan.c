@@ -102,12 +102,12 @@ initXMLScan(XMLScan xscan, XMLScan parent, XPath xpath,
 		 axe == XMLSCAN_AXE_DESCENDANT) &&
 		ndKind != XMLNODE_ELEMENT && ndKind != XMLNODE_DOC)
 	{
-		xscan->empty = true;
+		xscan->done = true;
 		/* No need to care about parent scan, ignore list, etc. */
 		return;
 	}
 	else
-		xscan->empty = false;
+		xscan->done = false;
 
 	/* Maintain relationships. */
 	xscan->parent = parent;
@@ -154,7 +154,7 @@ initXMLScan(XMLScan xscan, XMLScan parent, XPath xpath,
 void
 finalizeXMLScan(XMLScan xscan)
 {
-	if (xscan->empty)
+	if (xscan->done)
 		/* Nothing could have been allocated. */
 		return;
 
@@ -179,7 +179,7 @@ getNextXMLNode(XMLScan xscan)
 {
 	XMLNodeHdr	result = NULL;
 
-	if (xscan->empty)
+	if (xscan->done)
 		return NULL;
 
 	if (xscan->subScan != NULL)
