@@ -218,6 +218,20 @@ xmlscanRestart:
 			case XMLSCAN_AXE_CHILD:
 			case XMLSCAN_AXE_DESCENDANT:
 			case XMLSCAN_AXE_DESC_OR_SELF:
+
+				/*
+				 * If we're just proceeding to next step after one having
+				 * XMLSCAN_AXE_ATTRIBUTES axe, it may seem that it cannot
+				 * yield any nodes. For example: "/a/@i/b"
+				 *
+				 * However the "b" node test does not necessarily have the
+				 * usual 'child' axe. If its axe is for example 'self', the
+				 * location path still can point to existing node(s).
+				 *
+				 * As the next location step contains the axe kind, it's
+				 * easier to let initXMLScan() decide whether the sub-scan is
+				 * useful or not.
+				 */
 			case XMLSCAN_AXE_ATTRIBUTES:
 				contextNode = xscan->currentNode;
 				break;
@@ -269,9 +283,7 @@ xmlscanRestart:
 		 */
 
 		if ((result = getNextXMLNode(subScan)) != NULL)
-		{
 			return result;
-		}
 		else
 		{
 			/* No descendants. Cleanup before iteration at the current level. */
@@ -325,9 +337,15 @@ xmlscanRestart:
 				 * The last step of the location path matches, so we can
 				 * return the current node. Just don't forget that search for
 				 * descendants may be necessary on the next call.
+				 *
+				 * The search for descendants only makes sense on compound
+				 * node. Unlike the attribute axe above, we can easily decide
+				 * here without allocating a sub-scan and calling
+				 * initXMLScan().
 				 */
-				if (axe == XMLSCAN_AXE_DESCENDANT ||
-					axe == XMLSCAN_AXE_DESC_OR_SELF)
+				if ((axe == XMLSCAN_AXE_DESCENDANT ||
+					 axe == XMLSCAN_AXE_DESC_OR_SELF) &&
+					XNODE_IS_COMPOUND(xscan->currentNode))
 					xscan->descSearches |= XMLSUBSCAN_STEP_CURRENT;
 
 				/*
@@ -350,8 +368,9 @@ xmlscanRestart:
 				 * A subscan using the current location step might be
 				 * necessary in addition.
 				 */
-				if (axe == XMLSCAN_AXE_DESCENDANT ||
-					axe == XMLSCAN_AXE_DESC_OR_SELF)
+				if ((axe == XMLSCAN_AXE_DESCENDANT ||
+					 axe == XMLSCAN_AXE_DESC_OR_SELF) &&
+					XNODE_IS_COMPOUND(xscan->currentNode))
 					xscan->descSearches |= XMLSUBSCAN_STEP_CURRENT;
 				Assert(xscan->subScan == NULL);
 				goto xmlscanRestart;
@@ -360,8 +379,9 @@ xmlscanRestart:
 		else
 		{
 			/* Not a match. Scan for descendants may be necessary yet. */
-			if (axe == XMLSCAN_AXE_DESCENDANT ||
-				axe == XMLSCAN_AXE_DESC_OR_SELF)
+			if ((axe == XMLSCAN_AXE_DESCENDANT ||
+				 axe == XMLSCAN_AXE_DESC_OR_SELF) &&
+				XNODE_IS_COMPOUND(xscan->currentNode))
 			{
 				xscan->descSearches |= XMLSUBSCAN_STEP_CURRENT;
 				goto xmlscanRestart;
