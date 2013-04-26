@@ -10,7 +10,8 @@ namespace.o xmldoc_special.o template.o xnt.o
 EXTENSION = xnode
 DATA = xnode--0.7.2.sql
 
-REGRESS = xnode update xnt
+# The order matters, some tables are used across tests.
+REGRESS = xnode xpath update xnt
 REGRESS_OPTS += --user=postgres
 
 ifndef PG_CONFIG
