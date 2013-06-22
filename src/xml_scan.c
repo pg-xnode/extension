@@ -98,7 +98,7 @@ initXMLScan(XMLScan xscan, XMLScan parent, XPath xpath,
 	 * them are not expected anyway, e.g. (XMLSCAN_AXE_ATTRIBUTES,
 	 * XMLNODE_DOC)
 	 */
-	if ((axe == XMLSCAN_AXE_ATTRIBUTES || axe == XMLSCAN_AXE_CHILD ||
+	if ((axe == XMLSCAN_AXE_ATTRIBUTE || axe == XMLSCAN_AXE_CHILD ||
 		 axe == XMLSCAN_AXE_DESCENDANT) &&
 		ndKind != XMLNODE_ELEMENT && ndKind != XMLNODE_DOC)
 	{
@@ -139,7 +139,7 @@ initXMLScan(XMLScan xscan, XMLScan parent, XPath xpath,
 
 	xscan->contextNode = contextNode;
 	initXMLNodeIterator(&xscan->iterator, (XMLCompNodeHdr) contextNode,
-						axe == XMLSCAN_AXE_ATTRIBUTES);
+						axe == XMLSCAN_AXE_ATTRIBUTE);
 
 	/* Will be set as soon as the first node is requested. */
 	xscan->currentNode = NULL;
@@ -232,7 +232,7 @@ xmlscanRestart:
 				 * easier to let initXMLScan() decide whether the sub-scan is
 				 * useful or not.
 				 */
-			case XMLSCAN_AXE_ATTRIBUTES:
+			case XMLSCAN_AXE_ATTRIBUTE:
 				contextNode = xscan->currentNode;
 				break;
 

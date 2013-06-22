@@ -105,6 +105,13 @@ validXPathTermChar(char c, unsigned char flags)
 	return ((flag & flags) != 0);
 }
 
+const char *xmlScanAxeNames[XML_SCAN_AXES] = {
+	"child",
+	"descendant",
+	"descendant-or-self",
+	"attribute"
+};
+
 /*
  * Function to parse xpath expression.
  *
@@ -508,7 +515,7 @@ parseLocationPath(XPath *paths, unsigned short *pathCount, char **xpathSrc,
 		outSize += MAX_PADDING(XPATH_ALIGNOF_LOC_STEP) + sizeof(XPathElementData)
 			+ strlen(step->name);
 
-		if (step->axe == XMLSCAN_AXE_ATTRIBUTES && descendant)
+		if (step->axe == XMLSCAN_AXE_ATTRIBUTE && descendant)
 		{
 			unsigned int auxStepSize;
 			XPathElement auxStep;
@@ -622,13 +629,13 @@ parseLocationPath(XPath *paths, unsigned short *pathCount, char **xpathSrc,
  * Parse a single location step.
  *
  * Before the function is called, make sure that the initial slash has
- * been processed.
+ * been processed, as well as possible whitespace.
  *
  * 'locPathOut' is used as output for path-level information. We could reserve
  * one item of the 'paths' array but that would make the recursion trickier.
  *
  * 'doubleSlash' receives true if the location step starts with '//'. Caller
- * of this function might need it sometimes, even thought this function does
+ * of this function might need it sometimes, even though this function does
  * recognize (and set) the descendant axes in most cases.
  * The parameter is ignored if NULL is to be returned.
  */
@@ -639,26 +646,32 @@ parseLocationStep(XPathParserState state, XPath *paths,
 {
 	char	   *name = NULL;
 	unsigned short nameLen = 0;
+	unsigned short position = 0;
+	short		lastColonPos = -1;
 	XPathElement locStep;
 	bool		dblSlashLocal = false;
 	XPathExpression predicate = NULL;
 	unsigned int stepSizeMax;
-	bool		attrTest = false;
 	bool		isSpecTest = false;
 	XMLNodeKind targNodeKind = XMLNODE_ELEMENT;
 	bool		piTestValue = false;
+	bool		axisExplicitAllowed = true;
+	int			axisExplicit = -1;
+	char	   *axisName = NULL;
+	unsigned short axisNameLen = 0;
 
 	if (*state->c == XNODE_CHAR_SLASH)
 	{
 		nextChar(state, true);
 		dblSlashLocal = true;
+		axisExplicitAllowed = false;
 	}
 
 	if (*state->c == XNODE_CHAR_AT)
 	{
-		attrTest = true;
 		nextChar(state, false);
 		targNodeKind = XMLNODE_ATTRIBUTE;
+		axisExplicitAllowed = false;
 	}
 
 	name = state->c;
@@ -666,62 +679,162 @@ parseLocationStep(XPathParserState state, XPath *paths,
 	{
 		nameLen = 1;
 		nextChar(state, true);
+		axisExplicitAllowed = false;
 	}
-	else if (XNODE_VALID_NAME_START(state->c))
+	else if (!XNODE_VALID_NAME_START(state->c))
+	{
+		if (dblSlashLocal)
+			elog(ERROR, "// is not valid location path");
+
+		if (doubleSlash != NULL)
+			*doubleSlash = dblSlashLocal;
+
+		return NULL;
+	}
+	else
 	{
 		/* Process QName */
-		while (XNODE_VALID_NAME_CHAR(state->c) && *state->c != XNODE_CHAR_SLASH)
+		while (XNODE_VALID_NAME_CHAR(state->c))
 		{
-			nameLen += state->cWidth;
-			if (nameLen > XPATH_ELEMENT_MAX_LEN)
-				elog(ERROR, "XPath location step too long");
-			nextChar(state, true);
-		}
-
-		if (*state->c == XNODE_CHAR_LBRKT_RND && !attrTest)
-		{
-			/* Special node test? */
-			unsigned int i;
-			unsigned char nodeType = 0;
-
-			for (i = 0; i < XPATH_NODE_TYPES_COUNT; i++)
+			if (*state->c == XNODE_CHAR_COLON)
 			{
-				char	   *nodeTypeStr = nodeTypes[i];
-				unsigned short ntStrLen = strlen(nodeTypeStr);
-
-				if (ntStrLen == nameLen &&
-					strncmp(name, nodeTypeStr, ntStrLen) == 0)
+				if (lastColonPos == -1)
+					/* The first colon so far. */
+					lastColonPos = position;
+				else
 				{
-					nodeType = i;
-					isSpecTest = true;
-					break;
+					if ((position - lastColonPos) == 1)
+					{
+						unsigned short i;
+
+						/* Double colon. */
+						if (!axisExplicitAllowed)
+							elog(ERROR, "explicit specification of axis not allowed here");
+
+						axisName = name;
+						/* nameLen includes the axis name plus the first dot. */
+						axisNameLen = nameLen - 1;
+
+						if (axisNameLen == 0)
+							elog(ERROR, "double colon must be preceded by axis name");
+
+						/* Recognize the axis. */
+						for (i = 0; i < XML_SCAN_AXES; i++)
+						{
+							if ((strlen(xmlScanAxeNames[i]) == axisNameLen) &&
+								strncmp(xmlScanAxeNames[i], axisName, axisNameLen) == 0)
+							{
+								axisExplicit = i;
+								break;
+							}
+						}
+						if (axisExplicit == -1)
+							elog(ERROR, "unrecognized xpath axis '%s'",
+								 pnstrdup(axisName, axisNameLen));
+
+						/*
+						 * TODO Remove this restriction as soon as printing is
+						 * adjusted. So far we only use this axis internally
+						 * for cases like '/a//@i'
+						 */
+						if (axisExplicit == XMLSCAN_AXE_DESC_OR_SELF)
+							elog(ERROR, "xpath axis %s not recognized",
+								 pnstrdup(axisName, axisNameLen));
+
+						nextChar(state, true);
+						break;
+					}
 				}
 			}
-			if (!isSpecTest)
-				elog(ERROR, "unrecognized node test '%s()'", pnstrdup(name, nameLen));
 
-			switch (nodeType)
+			position++;
+			nameLen += state->cWidth;
+
+			if (nameLen > XPATH_ELEMENT_MAX_LEN)
+				elog(ERROR, "XPath location step too long");
+
+			nextChar(state, true);
+		}
+	}
+
+	if (axisName != NULL)
+	{
+		name = state->c;
+		nameLen = 0;
+
+		/* Parse the node test. */
+		if (*state->c == XNODE_CHAR_ASTERISK)
+		{
+			nameLen = 1;
+			nextChar(state, true);
+		}
+		else if (!XNODE_VALID_NAME_START(state->c))
+			elog(ERROR, "unrecognized character at position %u of location path",
+				 state->pos);
+		else
+		{
+			while (XNODE_VALID_NAME_CHAR(state->c))
 			{
-				case XPATH_NODE_TYPE_COMMENT:
-					targNodeKind = XMLNODE_COMMENT;
-					break;
-
-				case XPATH_NODE_TYPE_TEXT:
-					targNodeKind = XMLNODE_TEXT;
-					break;
-
-				case XPATH_NODE_TYPE_NODE:
-					targNodeKind = XMLNODE_NODE;
-					break;
-
-				case XPATH_NODE_TYPE_PI:
-					targNodeKind = XMLNODE_PI;
-					break;
-
-				default:
-					elog(ERROR, "unknown node type %u", nodeType);
-					break;
+				nameLen += state->cWidth;
+				if (nameLen > XPATH_ELEMENT_MAX_LEN)
+					elog(ERROR, "XPath location step too long");
+				nextChar(state, true);
 			}
+		}
+	}
+
+	if (*state->c == XNODE_CHAR_LBRKT_RND)
+	{
+		/* Special node test? */
+		unsigned int i;
+		unsigned char nodeType = 0;
+
+		for (i = 0; i < XPATH_NODE_TYPES_COUNT; i++)
+		{
+			char	   *nodeTypeStr = nodeTypes[i];
+			unsigned short ntStrLen = strlen(nodeTypeStr);
+
+			if (ntStrLen == nameLen &&
+				strncmp(name, nodeTypeStr, ntStrLen) == 0)
+			{
+				nodeType = i;
+				isSpecTest = true;
+				break;
+			}
+		}
+		if (!isSpecTest)
+			elog(ERROR, "unrecognized node test '%s()'", pnstrdup(name, nameLen));
+
+		switch (nodeType)
+		{
+			case XPATH_NODE_TYPE_COMMENT:
+				targNodeKind = XMLNODE_COMMENT;
+				break;
+
+			case XPATH_NODE_TYPE_TEXT:
+				targNodeKind = XMLNODE_TEXT;
+				break;
+
+			case XPATH_NODE_TYPE_NODE:
+				targNodeKind = XMLNODE_NODE;
+				break;
+
+			case XPATH_NODE_TYPE_PI:
+				targNodeKind = XMLNODE_PI;
+				break;
+
+			default:
+				elog(ERROR, "unrecognized node type %u", nodeType);
+				break;
+		}
+
+		/* Get past the '(' character and skip (possible) whitespace. */
+		nextChar(state, false);
+		skipWhiteSpace(state, false);
+
+		if (*state->c != XNODE_CHAR_RBRKT_RND && nodeType == XPATH_NODE_TYPE_PI)
+		{
+			char		qmark;
 
 			/*
 			 * The meaning of name is different for special node test: if
@@ -730,43 +843,35 @@ parseLocationStep(XPathParserState state, XPath *paths,
 			name = NULL;
 			nameLen = 0;
 
-			/* Get past the '(' character and skip (possible) whitespace. */
+			if (*state->c != XNODE_CHAR_APOSTR &&
+				*state->c != XNODE_CHAR_QUOTMARK)
+				elog(ERROR, "string literal (PI target) expected at position %u of the xpath expression",
+					 state->pos);
+
+			qmark = *state->c;
 			nextChar(state, false);
-			skipWhiteSpace(state, false);
-
-			if (*state->c != XNODE_CHAR_RBRKT_RND && nodeType == XPATH_NODE_TYPE_PI)
+			name = state->c;
+			while (*state->c != qmark && nameLen < XPATH_ELEMENT_MAX_LEN)
 			{
-				char		qmark;
-
-				if (*state->c != XNODE_CHAR_APOSTR &&
-					*state->c != XNODE_CHAR_QUOTMARK)
-					elog(ERROR, "string literal (PI target) expected at position %u of the xpath expression",
-						 state->pos);
-
-				qmark = *state->c;
+				nameLen += state->cWidth;
 				nextChar(state, false);
-				name = state->c;
-				while (*state->c != qmark && nameLen < XPATH_ELEMENT_MAX_LEN)
-				{
-					nameLen += state->cWidth;
-					nextChar(state, false);
-				}
-
-				if (nameLen > XPATH_ELEMENT_MAX_LEN)
-					elog(ERROR, "PI target name too long");
-
-				nextChar(state, false);
-				skipWhiteSpace(state, false);
-				piTestValue = true;
 			}
 
-			if (*state->c != XNODE_CHAR_RBRKT_RND)
-				elog(ERROR, "')' expected at position %u of xpath expression", state->pos);
+			if (nameLen > XPATH_ELEMENT_MAX_LEN)
+				elog(ERROR, "PI target name too long");
 
-			/* Move past the ')' */
-			nextChar(state, true);
+			nextChar(state, false);
+			skipWhiteSpace(state, false);
+			piTestValue = true;
 		}
+
+		if (*state->c != XNODE_CHAR_RBRKT_RND)
+			elog(ERROR, "')' expected at position %u of xpath expression", state->pos);
+
+		/* Move past the ')' */
+		nextChar(state, true);
 	}
+
 
 	if (*state->c == XNODE_CHAR_LBRACKET)
 	{
@@ -791,15 +896,6 @@ parseLocationStep(XPathParserState state, XPath *paths,
 		nextChar(state, true);
 	}
 
-	if (nameLen == 0 && !isSpecTest)
-	{
-		if (dblSlashLocal || state->depth > 0)
-			/* Either '//' or any path ending with '/'. */
-			elog(ERROR, "unrecognized location path");
-		/* The path is just '/'. */
-		return NULL;
-	}
-
 	stepSizeMax = sizeof(XPathElementData) + nameLen;
 	if (predicate != NULL)
 		stepSizeMax += MAX_PADDING(XPATH_ALIGNOF_EXPR) + predicate->common.size;
@@ -809,12 +905,15 @@ parseLocationStep(XPathParserState state, XPath *paths,
 	locStep->piTestValue = piTestValue;
 
 	/*
-	 * The axe can be determined here in most cases. Nevertheless the caller
+	 * The axis can be determined here in most cases. Nevertheless the caller
 	 * may need to do some adjustments - see comments about expansion of
 	 * expressions like "/a//@i"
 	 */
-	if (locStep->targNdKind == XMLNODE_ATTRIBUTE)
-		locStep->axe = XMLSCAN_AXE_ATTRIBUTES;
+	if (axisExplicit >= 0)
+		locStep->axe = axisExplicit;
+	else if (locStep->targNdKind == XMLNODE_ATTRIBUTE)
+		/* If double slash at the same time, caller will handle it. */
+		locStep->axe = XMLSCAN_AXE_ATTRIBUTE;
 	else if (dblSlashLocal)
 		locStep->axe = XMLSCAN_AXE_DESCENDANT;
 	else
@@ -1827,17 +1926,18 @@ dumpLocationPath(XPathHeader xpathHdr, unsigned short pathNr, StringInfo output,
 			}
 		}
 
-		if (locStep->targNdKind == XMLNODE_ELEMENT)
-		{
-			appendStringInfoString(output, locStep->name);
-		}
-		else if (locStep->targNdKind == XMLNODE_ATTRIBUTE)
+
+		if (locStep->axe == XMLNODE_ATTRIBUTE)
 		{
 			/* The temp. workaround for /a//@i, continued. */
 			if (attrDesc)
 				appendStringInfoChar(output, XNODE_CHAR_SLASH);
 
 			appendStringInfo(output, "@%s", locStep->name);
+		}
+		else if (locStep->targNdKind == XMLNODE_ELEMENT)
+		{
+			appendStringInfoString(output, locStep->name);
 		}
 		else
 		{

@@ -443,8 +443,33 @@ select path('/a/b[local-name()!="b"]', '<a xmlns:ns_1="namespace"><b/><c/></a>')
 select xml.path('concat(count(/root/a), /root)', '<root><b>50</b></root>');
 select xml.path('concat(count(/root), /root)', '<root><b>50</b></root>');
 
+
+-- Explicit axes.
+
+TRUNCATE paths;
+
+INSERT INTO paths(id, path)
+VALUES	(1, '/a/child::b'),
+	(2, '/a/child::*'),
+	(3, '/a/child::node()'),
+	(4, '/a/attribute::i'),
+	(5, '/a/attribute::*'),
+	(6, '/a/descendant::b'),
+	(7, '/a/descendant::*'),
+	(8, '/a/descendant::node()');
+
+SELECT id, xml.path(path)
+FROM  paths
+ORDER BY id;
+
+SELECT id, xml.path_debug_print(path)
+FROM  paths
+ORDER BY id;
+
+
 -- Cleanup
 
 drop table states;
 drop table paths;
 drop table docs_other;
+

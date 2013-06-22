@@ -2522,6 +2522,143 @@ select xml.path('concat(count(/root), /root)', '<root><b>50</b></root>');
  150
 (1 row)
 
+-- Explicit axes.
+TRUNCATE paths;
+INSERT INTO paths(id, path)
+VALUES	(1, '/a/child::b'),
+	(2, '/a/child::*'),
+	(3, '/a/child::node()'),
+	(4, '/a/attribute::i'),
+	(5, '/a/attribute::*'),
+	(6, '/a/descendant::b'),
+	(7, '/a/descendant::*'),
+	(8, '/a/descendant::node()');
+SELECT id, xml.path(path)
+FROM  paths
+ORDER BY id;
+ id |    path    
+----+------------
+  1 | /a/b
+  2 | /a/*
+  3 | /a/node()
+  4 | /a/@i
+  5 | /a/@*
+  6 | /a//b
+  7 | /a//*
+  8 | /a//node()
+(8 rows)
+
+SELECT id, xml.path_debug_print(path)
+FROM  paths
+ORDER BY id;
+ id |                 path_debug_print                 
+----+--------------------------------------------------
+  1 | main expr.: (paths / funcs: 1 / 0, val. type: 3)+
+    |     <path 0>                                    +
+    |   variables:                                    +
+    |     path: 0                                     +
+    |                                                 +
+    |                                                 +
+    | <path 0>                                        +
+    |                                                 +
+    | absolute xpath                                  +
+    |                                                 +
+    | node test:      a                               +
+    | node test:      b                               +
+    | 
+  2 | main expr.: (paths / funcs: 1 / 0, val. type: 3)+
+    |     <path 0>                                    +
+    |   variables:                                    +
+    |     path: 0                                     +
+    |                                                 +
+    |                                                 +
+    | <path 0>                                        +
+    |                                                 +
+    | absolute xpath                                  +
+    |                                                 +
+    | node test:      a                               +
+    | node test:      *                               +
+    | 
+  3 | main expr.: (paths / funcs: 1 / 0, val. type: 3)+
+    |     <path 0>                                    +
+    |   variables:                                    +
+    |     path: 0                                     +
+    |                                                 +
+    |                                                 +
+    | <path 0>                                        +
+    |                                                 +
+    | absolute xpath                                  +
+    |                                                 +
+    | node test:      a                               +
+    | node test:      node()                          +
+    | 
+  4 | main expr.: (paths / funcs: 1 / 0, val. type: 3)+
+    |     <path 0>                                    +
+    |   variables:                                    +
+    |     path: 0                                     +
+    |                                                 +
+    |                                                 +
+    | <path 0>                                        +
+    |                                                 +
+    | absolute xpath                                  +
+    |                                                 +
+    | node test:      a                               +
+    | node test:      @i                              +
+    | 
+  5 | main expr.: (paths / funcs: 1 / 0, val. type: 3)+
+    |     <path 0>                                    +
+    |   variables:                                    +
+    |     path: 0                                     +
+    |                                                 +
+    |                                                 +
+    | <path 0>                                        +
+    |                                                 +
+    | absolute xpath                                  +
+    |                                                 +
+    | node test:      a                               +
+    | node test:      @*                              +
+    | 
+  6 | main expr.: (paths / funcs: 1 / 0, val. type: 3)+
+    |     <path 0>                                    +
+    |   variables:                                    +
+    |     path: 0                                     +
+    |                                                 +
+    |                                                 +
+    | <path 0>                                        +
+    |                                                 +
+    | absolute xpath                                  +
+    |                                                 +
+    | node test:      a                               +
+    | node test:      b (desc.)                       +
+    | 
+  7 | main expr.: (paths / funcs: 1 / 0, val. type: 3)+
+    |     <path 0>                                    +
+    |   variables:                                    +
+    |     path: 0                                     +
+    |                                                 +
+    |                                                 +
+    | <path 0>                                        +
+    |                                                 +
+    | absolute xpath                                  +
+    |                                                 +
+    | node test:      a                               +
+    | node test:      * (desc.)                       +
+    | 
+  8 | main expr.: (paths / funcs: 1 / 0, val. type: 3)+
+    |     <path 0>                                    +
+    |   variables:                                    +
+    |     path: 0                                     +
+    |                                                 +
+    |                                                 +
+    | <path 0>                                        +
+    |                                                 +
+    | absolute xpath                                  +
+    |                                                 +
+    | node test:      a                               +
+    | node test:      node() (desc.)                  +
+    | 
+(8 rows)
+
 -- Cleanup
 drop table states;
 drop table paths;

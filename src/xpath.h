@@ -634,13 +634,18 @@ extern void parseLocationPath(XPath *paths, unsigned short *pathCount,
 				  XMLNodeContainer paramNames);
 
 
+/* Number of XPath axes to recognize.  */
+#define XML_SCAN_AXES	4
+
 typedef enum XMLScanAxe
 {
 	XMLSCAN_AXE_CHILD = 0,
 	XMLSCAN_AXE_DESCENDANT,
 	XMLSCAN_AXE_DESC_OR_SELF,
-	XMLSCAN_AXE_ATTRIBUTES,
+	XMLSCAN_AXE_ATTRIBUTE,
 } XMLScanAxe;
+
+extern const char *xmlScanAxeNames[XML_SCAN_AXES];
 
 /*
  * These values indicate if/how subscan should be started.

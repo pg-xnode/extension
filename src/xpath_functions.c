@@ -186,7 +186,7 @@ xpathLast(XMLScan xscan, XPathExprState exprState, XPathExprOperandValue result)
 			case XMLSCAN_AXE_CHILD:
 			case XMLSCAN_AXE_DESCENDANT:
 			case XMLSCAN_AXE_DESC_OR_SELF:
-			case XMLSCAN_AXE_ATTRIBUTES:
+			case XMLSCAN_AXE_ATTRIBUTE:
 
 				/*
 				 * The whole trick is to make a copy of the iterator (so that
