@@ -181,12 +181,12 @@ xpathLast(XMLScan xscan, XPathExprState exprState, XPathExprOperandValue result)
 		locStep = xscan->locStep;
 		contextPosOrig = xscan->contextPosition;
 		/* Axes are checked because the logic might differ for some axes. */
-		switch (locStep->axe)
+		switch (locStep->axis)
 		{
-			case XMLSCAN_AXE_CHILD:
-			case XMLSCAN_AXE_DESCENDANT:
-			case XMLSCAN_AXE_DESC_OR_SELF:
-			case XMLSCAN_AXE_ATTRIBUTE:
+			case XPATH_AXIS_CHILD:
+			case XPATH_AXIS_DESCENDANT:
+			case XPATH_AXIS_DESC_OR_SELF:
+			case XPATH_AXIS_ATTRIBUTE:
 
 				/*
 				 * The whole trick is to make a copy of the iterator (so that
@@ -212,7 +212,7 @@ xpathLast(XMLScan xscan, XPathExprState exprState, XPathExprOperandValue result)
 				break;
 
 			default:
-				elog(ERROR, "last(): unrecognized axe %u", locStep->axe);
+				elog(ERROR, "last(): unrecognized axis %u", locStep->axis);
 				break;
 		}
 	}

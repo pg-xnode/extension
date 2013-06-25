@@ -28,7 +28,6 @@ XMLParserNodeInfoData
 XMLParserState
 XMLParserStateData
 XMLScan
-XMLScanAxe
 XMLScanContext
 XMLScanContextData
 XMLScanData
@@ -48,6 +47,7 @@ xnt
 xnttype
 xpath
 XPath
+XPathAxis
 XPathData
 XPathElement
 XPathElementData

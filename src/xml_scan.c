@@ -58,15 +58,15 @@ static void flipOperandValue(XPathExprOperandValue value, XPathExprState exprSta
  * We may need it if one or more predicates in 'xpath' contain other paths
  * (subpaths) as operands.
  *
- * 'contextNode' - the relationship with the nodes found is determined by axe
- * of the scan. For example, if the axe is XMLSCAN_AXE_CHILD then the context
+ * 'contextNode' - the relationship with the nodes found is determined by axis
+ * of the scan. For example, if the axis is XPATH_AXIS_CHILD then the context
  * node is a parent of the resulting nodes.
  * Not all axes require it to be compound node. That's XMLNodeHdr is used here.
  *
  * 'document' - the document we're searching in.
  *
  * 'ignoreSelf' - some axes do require the context node to be added to the
- * node set. However the axe's requirement has to be suppressed at special
+ * node set. However the axis's requirement has to be suppressed at special
  * circumstances. See comments where TRUE is passed for this parameter.
  */
 void
@@ -74,7 +74,7 @@ initXMLScan(XMLScan xscan, XMLScan parent, XPath xpath,
 			unsigned short locStepPos, XPathHeader xpHdr,
 			XMLNodeHdr contextNode, xmldoc document, bool ignoreSelf)
 {
-	XMLScanAxe	axe;
+	XPathAxis	axis;
 	XMLNodeKind ndKind;
 
 	if (xpath->depth == 0)
@@ -90,16 +90,15 @@ initXMLScan(XMLScan xscan, XMLScan parent, XPath xpath,
 	xscan->xpathHeader = xpHdr;
 	xscan->document = document;
 
-	axe = xscan->locStep->axe;
+	axis = xscan->locStep->axis;
 	ndKind = contextNode->kind;
 
 	/*
 	 * Exclude all combinations where no node-set can be generated. Some of
-	 * them are not expected anyway, e.g. (XMLSCAN_AXE_ATTRIBUTES,
-	 * XMLNODE_DOC)
+	 * them are not expected anyway, e.g. (XPATH_AXIS_ATTRIBUTES, XMLNODE_DOC)
 	 */
-	if ((axe == XMLSCAN_AXE_ATTRIBUTE || axe == XMLSCAN_AXE_CHILD ||
-		 axe == XMLSCAN_AXE_DESCENDANT) &&
+	if ((axis == XPATH_AXIS_ATTRIBUTE || axis == XPATH_AXIS_CHILD ||
+		 axis == XPATH_AXIS_DESCENDANT) &&
 		ndKind != XMLNODE_ELEMENT && ndKind != XMLNODE_DOC)
 	{
 		xscan->done = true;
@@ -139,7 +138,7 @@ initXMLScan(XMLScan xscan, XMLScan parent, XPath xpath,
 
 	xscan->contextNode = contextNode;
 	initXMLNodeIterator(&xscan->iterator, (XMLCompNodeHdr) contextNode,
-						axe == XMLSCAN_AXE_ATTRIBUTE);
+						axis == XPATH_AXIS_ATTRIBUTE);
 
 	/* Will be set as soon as the first node is requested. */
 	xscan->currentNode = NULL;
@@ -148,7 +147,7 @@ initXMLScan(XMLScan xscan, XMLScan parent, XPath xpath,
 	/* The context size is initially unknown. */
 	xscan->contextSize = -1;
 
-	xscan->self = (axe == XMLSCAN_AXE_DESC_OR_SELF && !ignoreSelf);
+	xscan->self = (axis == XPATH_AXIS_DESC_OR_SELF && !ignoreSelf);
 }
 
 void
@@ -204,46 +203,46 @@ xmlscanRestart:
 		unsigned short locStepPos = xscan->locStepPos;
 		XMLNodeHdr	contextNode;
 		bool		ignoreSelf;
-		XMLScanAxe	axe;
+		XPathAxis	axis;
 
 		subScan = (XMLScan) palloc(sizeof(XMLScanData));
 
 		if (xscan->descSearches & XMLSUBSCAN_STEP_NEXT)
 			locStepPos++;
 
-		axe = xscan->locStep->axe;
+		axis = xscan->locStep->axis;
 
-		switch (axe)
+		switch (axis)
 		{
-			case XMLSCAN_AXE_CHILD:
-			case XMLSCAN_AXE_DESCENDANT:
-			case XMLSCAN_AXE_DESC_OR_SELF:
+			case XPATH_AXIS_CHILD:
+			case XPATH_AXIS_DESCENDANT:
+			case XPATH_AXIS_DESC_OR_SELF:
 
 				/*
 				 * If we're just proceeding to next step after one having
-				 * XMLSCAN_AXE_ATTRIBUTES axe, it may seem that it cannot
+				 * XPATH_AXIS_ATTRIBUTES axis, it may seem that it cannot
 				 * yield any nodes. For example: "/a/@i/b"
 				 *
 				 * However the "b" node test does not necessarily have the
-				 * usual 'child' axe. If its axe is for example 'self', the
+				 * usual 'child' axis. If its axis is for example 'self', the
 				 * location path still can point to existing node(s).
 				 *
-				 * As the next location step contains the axe kind, it's
+				 * As the next location step contains the axis kind, it's
 				 * easier to let initXMLScan() decide whether the sub-scan is
 				 * useful or not.
 				 */
-			case XMLSCAN_AXE_ATTRIBUTE:
+			case XPATH_AXIS_ATTRIBUTE:
 				contextNode = xscan->currentNode;
 				break;
 
 			default:
-				elog(ERROR, "unrecognized xpath axe: %d", axe);
+				elog(ERROR, "unrecognized xpath axis: %d", axis);
 				break;
 		}
 
 		/*
 		 * This is the only case where the context node might not be desired
-		 * even if the axe seems to require it. We're not interested in the
+		 * even if the axis seems to require it. We're not interested in the
 		 * context node self when re-applying the location step to descendants
 		 * of the original context node.
 		 *
@@ -258,7 +257,7 @@ xmlscanRestart:
 		 * force. It's possible that the ignore list will be replaced by
 		 * something more clever in the future.)
 		 */
-		ignoreSelf = (axe == XMLSCAN_AXE_DESC_OR_SELF) &&
+		ignoreSelf = (axis == XPATH_AXIS_DESC_OR_SELF) &&
 			(xscan->descSearches & XMLSUBSCAN_STEP_NEXT) == 0;
 
 		initXMLScan(subScan, xscan, xscan->xpath, locStepPos,
@@ -312,7 +311,7 @@ xmlscanRestart:
 			(xscan->self ? xscan->contextNode :
 			 getNextXMLNodeChild(&xscan->iterator))) != NULL)
 	{
-		XMLScanAxe	axe = xscan->locStep->axe;
+		XPathAxis	axis = xscan->locStep->axis;
 
 		if (xscan->self)
 			/* Only once. */
@@ -339,12 +338,12 @@ xmlscanRestart:
 				 * descendants may be necessary on the next call.
 				 *
 				 * The search for descendants only makes sense on compound
-				 * node. Unlike the attribute axe above, we can easily decide
+				 * node. Unlike the attribute axis above, we can easily decide
 				 * here without allocating a sub-scan and calling
 				 * initXMLScan().
 				 */
-				if ((axe == XMLSCAN_AXE_DESCENDANT ||
-					 axe == XMLSCAN_AXE_DESC_OR_SELF) &&
+				if ((axis == XPATH_AXIS_DESCENDANT ||
+					 axis == XPATH_AXIS_DESC_OR_SELF) &&
 					XNODE_IS_COMPOUND(xscan->currentNode))
 					xscan->descSearches |= XMLSUBSCAN_STEP_CURRENT;
 
@@ -368,8 +367,8 @@ xmlscanRestart:
 				 * A subscan using the current location step might be
 				 * necessary in addition.
 				 */
-				if ((axe == XMLSCAN_AXE_DESCENDANT ||
-					 axe == XMLSCAN_AXE_DESC_OR_SELF) &&
+				if ((axis == XPATH_AXIS_DESCENDANT ||
+					 axis == XPATH_AXIS_DESC_OR_SELF) &&
 					XNODE_IS_COMPOUND(xscan->currentNode))
 					xscan->descSearches |= XMLSUBSCAN_STEP_CURRENT;
 				Assert(xscan->subScan == NULL);
@@ -379,8 +378,8 @@ xmlscanRestart:
 		else
 		{
 			/* Not a match. Scan for descendants may be necessary yet. */
-			if ((axe == XMLSCAN_AXE_DESCENDANT ||
-				 axe == XMLSCAN_AXE_DESC_OR_SELF) &&
+			if ((axis == XPATH_AXIS_DESCENDANT ||
+				 axis == XPATH_AXIS_DESC_OR_SELF) &&
 				XNODE_IS_COMPOUND(xscan->currentNode))
 			{
 				xscan->descSearches |= XMLSUBSCAN_STEP_CURRENT;
@@ -1242,7 +1241,7 @@ initScanForSingleXMLNodeKind(XMLScan xscan, XMLCompNodeHdr root, XMLNodeKind kin
 	cursor = (char *) TYPEALIGN(XPATH_ALIGNOF_LOC_STEP, cursor);
 
 	xpEl = (XPathElement) cursor;
-	xpEl->axe = XMLSCAN_AXE_DESCENDANT;
+	xpEl->axis = XPATH_AXIS_DESCENDANT;
 	xpEl->hasPredicate = false;
 	xpEl->targNdKind = kind;
 	xp->depth = 1;

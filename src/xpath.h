@@ -502,7 +502,7 @@ typedef struct XPathElementData
 	/* uint8 just for storage, XMLNodeKind elsewhere. */
 	uint8		targNdKind;
 	/* Likewise. */
-	uint8		axe;
+	uint8		axis;
 
 	bool		piTestValue;
 	char		name[1];
@@ -637,15 +637,15 @@ extern void parseLocationPath(XPath *paths, unsigned short *pathCount,
 /* Number of XPath axes to recognize.  */
 #define XML_SCAN_AXES	4
 
-typedef enum XMLScanAxe
+typedef enum XPathAxis
 {
-	XMLSCAN_AXE_CHILD = 0,
-	XMLSCAN_AXE_DESCENDANT,
-	XMLSCAN_AXE_DESC_OR_SELF,
-	XMLSCAN_AXE_ATTRIBUTE,
-} XMLScanAxe;
+	XPATH_AXIS_CHILD = 0,
+	XPATH_AXIS_DESCENDANT,
+	XPATH_AXIS_DESC_OR_SELF,
+	XPATH_AXIS_ATTRIBUTE,
+} XPathAxis;
 
-extern const char *xmlScanAxeNames[XML_SCAN_AXES];
+extern const char *xpathAxisNames[XML_SCAN_AXES];
 
 /*
  * These values indicate if/how subscan should be started.

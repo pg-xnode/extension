@@ -105,7 +105,7 @@ validXPathTermChar(char c, unsigned char flags)
 	return ((flag & flags) != 0);
 }
 
-const char *xmlScanAxeNames[XML_SCAN_AXES] = {
+const char *xpathAxisNames[XML_SCAN_AXES] = {
 	"child",
 	"descendant",
 	"descendant-or-self",
@@ -515,7 +515,7 @@ parseLocationPath(XPath *paths, unsigned short *pathCount, char **xpathSrc,
 		outSize += MAX_PADDING(XPATH_ALIGNOF_LOC_STEP) + sizeof(XPathElementData)
 			+ strlen(step->name);
 
-		if (step->axe == XMLSCAN_AXE_ATTRIBUTE && descendant)
+		if (step->axis == XPATH_AXIS_ATTRIBUTE && descendant)
 		{
 			unsigned int auxStepSize;
 			XPathElement auxStep;
@@ -528,7 +528,7 @@ parseLocationPath(XPath *paths, unsigned short *pathCount, char **xpathSrc,
 			auxStepSize = sizeof(XPathElementData);
 			auxStep = (XPathElement) palloc(auxStepSize);
 			auxStep->targNdKind = XMLNODE_NODE;
-			auxStep->axe = XMLSCAN_AXE_DESC_OR_SELF;
+			auxStep->axis = XPATH_AXIS_DESC_OR_SELF;
 			auxStep->hasPredicate = false;
 			auxStep->piTestValue = false;
 			auxStep->name[0] = '\0';
@@ -721,8 +721,8 @@ parseLocationStep(XPathParserState state, XPath *paths,
 						/* Recognize the axis. */
 						for (i = 0; i < XML_SCAN_AXES; i++)
 						{
-							if ((strlen(xmlScanAxeNames[i]) == axisNameLen) &&
-								strncmp(xmlScanAxeNames[i], axisName, axisNameLen) == 0)
+							if ((strlen(xpathAxisNames[i]) == axisNameLen) &&
+								strncmp(xpathAxisNames[i], axisName, axisNameLen) == 0)
 							{
 								axisExplicit = i;
 								break;
@@ -737,7 +737,7 @@ parseLocationStep(XPathParserState state, XPath *paths,
 						 * adjusted. So far we only use this axis internally
 						 * for cases like '/a//@i'
 						 */
-						if (axisExplicit == XMLSCAN_AXE_DESC_OR_SELF)
+						if (axisExplicit == XPATH_AXIS_DESC_OR_SELF)
 							elog(ERROR, "xpath axis %s not recognized",
 								 pnstrdup(axisName, axisNameLen));
 
@@ -910,14 +910,14 @@ parseLocationStep(XPathParserState state, XPath *paths,
 	 * expressions like "/a//@i"
 	 */
 	if (axisExplicit >= 0)
-		locStep->axe = axisExplicit;
+		locStep->axis = axisExplicit;
 	else if (locStep->targNdKind == XMLNODE_ATTRIBUTE)
 		/* If double slash at the same time, caller will handle it. */
-		locStep->axe = XMLSCAN_AXE_ATTRIBUTE;
+		locStep->axis = XPATH_AXIS_ATTRIBUTE;
 	else if (dblSlashLocal)
-		locStep->axe = XMLSCAN_AXE_DESCENDANT;
+		locStep->axis = XPATH_AXIS_DESCENDANT;
 	else
-		locStep->axe = XMLSCAN_AXE_CHILD;
+		locStep->axis = XPATH_AXIS_CHILD;
 
 	if (nameLen > 0)
 		memcpy(locStep->name, name, nameLen);
@@ -1909,9 +1909,9 @@ dumpLocationPath(XPathHeader xpathHdr, unsigned short pathNr, StringInfo output,
 		}
 		else
 		{
-			if (locStep->axe == XMLSCAN_AXE_DESCENDANT)
+			if (locStep->axis == XPATH_AXIS_DESCENDANT)
 				appendStringInfoChar(output, XNODE_CHAR_SLASH);
-			else if (locStep->axe == XMLSCAN_AXE_DESC_OR_SELF)
+			else if (locStep->axis == XPATH_AXIS_DESC_OR_SELF)
 			{
 				/* appendStringInfoString(output, "descendant-or-self::"); */
 
@@ -1927,7 +1927,7 @@ dumpLocationPath(XPathHeader xpathHdr, unsigned short pathNr, StringInfo output,
 		}
 
 
-		if (locStep->axe == XMLNODE_ATTRIBUTE)
+		if (locStep->axis == XMLNODE_ATTRIBUTE)
 		{
 			/* The temp. workaround for /a//@i, continued. */
 			if (attrDesc)
@@ -1973,9 +1973,9 @@ dumpLocationPath(XPathHeader xpathHdr, unsigned short pathNr, StringInfo output,
 
 		if (debug)
 		{
-			if (locStep->axe == XMLSCAN_AXE_DESCENDANT)
+			if (locStep->axis == XPATH_AXIS_DESCENDANT)
 				appendStringInfo(output, " (desc.)");
-			if (locStep->axe == XMLSCAN_AXE_DESC_OR_SELF)
+			if (locStep->axis == XPATH_AXIS_DESC_OR_SELF)
 				appendStringInfo(output, " (desc. or self)");
 		}
 
