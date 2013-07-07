@@ -659,6 +659,7 @@ parseLocationStep(XPathParserState state, XPath *paths,
 	int			axisExplicit = -1;
 	char	   *axisName = NULL;
 	unsigned short axisNameLen = 0;
+	bool		nodeTestExplicit = false;
 
 	if (*state->c == XNODE_CHAR_SLASH)
 	{
@@ -789,6 +790,8 @@ parseLocationStep(XPathParserState state, XPath *paths,
 		unsigned int i;
 		unsigned char nodeType = 0;
 
+		nodeTestExplicit = true;
+
 		for (i = 0; i < XPATH_NODE_TYPES_COUNT; i++)
 		{
 			char	   *nodeTypeStr = nodeTypes[i];
@@ -910,7 +913,18 @@ parseLocationStep(XPathParserState state, XPath *paths,
 	 * expressions like "/a//@i"
 	 */
 	if (axisExplicit >= 0)
+	{
+		/* The axis is specified explicitly. */
 		locStep->axis = axisExplicit;
+
+		/*
+		 * Attribute axis is special in that it determines type of the target
+		 * node in most cases. (The explicit tests like text(), node() etc.
+		 * are legal, but will yield no result nodes.)
+		 */
+		if (locStep->axis == XMLNODE_ATTRIBUTE && !nodeTestExplicit)
+			locStep->targNdKind = XMLNODE_ATTRIBUTE;
+	}
 	else if (locStep->targNdKind == XMLNODE_ATTRIBUTE)
 		/* If double slash at the same time, caller will handle it. */
 		locStep->axis = XPATH_AXIS_ATTRIBUTE;

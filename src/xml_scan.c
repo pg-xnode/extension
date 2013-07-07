@@ -313,6 +313,15 @@ xmlscanRestart:
 	{
 		XPathAxis	axis = xscan->locStep->axis;
 
+		/*
+		 * If the context node has attributes, they have to be the first
+		 * children. If we see anything else, no other attributes can be
+		 * retrieved.
+		 */
+		if (axis == XPATH_AXIS_ATTRIBUTE &&
+			xscan->currentNode->kind != XMLNODE_ATTRIBUTE)
+			return NULL;
+
 		if (xscan->self)
 			/* Only once. */
 			xscan->self = false;
@@ -692,7 +701,7 @@ performXMLNodeTest(XMLNodeHdr node, XMLScan scan, bool usePredicate)
 				strcmp(locStep->name, XNODE_CONTENT(node)) != 0)
 				return false;
 		}
-		else
+		else if (required != XMLNODE_NODE)
 			return false;
 	}
 	else if (node->kind == XMLNODE_ELEMENT && node->kind == required)

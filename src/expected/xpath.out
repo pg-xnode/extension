@@ -2659,6 +2659,24 @@ ORDER BY id;
     | 
 (8 rows)
 
+SELECT path('/a/attribute::node()', '<a i="1"><b/></a>');
+ path 
+------
+ 1
+(1 row)
+
+SELECT path('/a/attribute::*', '<a i="1"><b/></a>');
+ path 
+------
+ 1
+(1 row)
+
+SELECT path('/a/attribute::text()', '<a i="1"><b/></a>');
+ path 
+------
+ 
+(1 row)
+
 -- Cleanup
 drop table states;
 drop table paths;
