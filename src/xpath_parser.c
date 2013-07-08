@@ -653,13 +653,25 @@ parseLocationStep(XPathParserState state, XPath *paths,
 	XPathExpression predicate = NULL;
 	unsigned int stepSizeMax;
 	bool		isSpecTest = false;
-	XMLNodeKind targNodeKind = XMLNODE_ELEMENT;
+	XMLNodeKind targNodeKind;
 	bool		piTestValue = false;
 	bool		axisExplicitAllowed = true;
 	int			axisExplicit = -1;
 	char	   *axisName = NULL;
 	unsigned short axisNameLen = 0;
 	bool		nodeTestExplicit = false;
+
+	/*
+	 * Element is the target type whenever name is used as a the node test.
+	 * Asterisk is considered a special name test and leads to element as
+	 * well, except for location steps having XPATH_AXIS_ATTRIBUTE axe - such
+	 * point to attributes, see below.
+	 *
+	 * The other case having targNodeKind different from XMLNODE_ELEMENT is an
+	 * explicit node test, e.g. node(), text(), ... These are also handled
+	 * later in this function.
+	 */
+	targNodeKind = XMLNODE_ELEMENT;
 
 	if (*state->c == XNODE_CHAR_SLASH)
 	{
