@@ -471,6 +471,10 @@ SELECT path('/a/attribute::node()', '<a i="1"><b/></a>');
 SELECT path('/a/attribute::*', '<a i="1"><b/></a>');
 SELECT path('/a/attribute::text()', '<a i="1"><b/></a>');
 
+-- Abbreviation is only used for node name test.
+SELECT xml.path('/a/attribute::i');
+SELECT xml.path('/a/attribute::text()');
+
 -- Cleanup
 
 drop table states;
