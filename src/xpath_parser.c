@@ -1904,16 +1904,13 @@ dumpLocationPath(XPathHeader xpathHdr, unsigned short pathNr, StringInfo output,
 
 	if (debug)
 	{
-		appendStringInfo(output, "<path %u>\n\n", pathNr);
+		appendStringInfo(output, "<path %u> ", pathNr);
 		if (locPath->relative)
-		{
-			appendStringInfoString(output, "relative ");
-		}
+			appendStringInfoString(output, "(relative) ");
 		else
-		{
-			appendStringInfoString(output, "absolute ");
-		}
-		appendStringInfoString(output, "xpath\n");
+			appendStringInfoString(output, "(absolute) ");
+
+		appendStringInfoString(output, "\n");
 	}
 	else
 	{
@@ -1929,20 +1926,22 @@ dumpLocationPath(XPathHeader xpathHdr, unsigned short pathNr, StringInfo output,
 
 		locStep = (XPathElement) ((char *) locPath + o);
 
+		/*
+		 * Print out the location step axis.
+		 */
 		if (debug)
-		{
-			appendStringInfoString(output, "\nnode test:\t");
-		}
+			appendStringInfo(output, "\n%s::", xpathAxisNames[locStep->axis]);
 		else
 		{
 			if (locStep->axis == XPATH_AXIS_DESCENDANT)
 				appendStringInfoChar(output, XNODE_CHAR_SLASH);
 			else if (locStep->axis == XPATH_AXIS_DESC_OR_SELF)
 			{
-				/* appendStringInfoString(output, "descendant-or-self::"); */
-
 				/*
-				 * Temporary workaround to recognize shortcut like /a//@i.
+				 * Location path /a//@i is internally expressed as
+				 * /child::a/descendant-or-self::node()/attribute::i
+				 *
+				 * Such a case needs to be recognized here.
 				 */
 				if (locStep->targNdKind == XMLNODE_NODE)
 				{
@@ -1950,21 +1949,30 @@ dumpLocationPath(XPathHeader xpathHdr, unsigned short pathNr, StringInfo output,
 					continue;
 				}
 			}
+			else if (locStep->axis != XPATH_AXIS_CHILD &&
+					 locStep->targNdKind != XMLNODE_ATTRIBUTE)
+				/* There's no abbreviation, the axis name must be printed out. */
+				appendStringInfo(output, "%s::", xpathAxisNames[locStep->axis]);
 		}
 
-
-		if (locStep->axis == XMLNODE_ATTRIBUTE)
+		/*
+		 * Print out the node test.
+		 */
+		if (locStep->targNdKind == XMLNODE_ATTRIBUTE)
 		{
-			/* The temp. workaround for /a//@i, continued. */
-			if (attrDesc)
+			Assert(locStep->axis == XMLNODE_ATTRIBUTE);
+
+			/* The workaround for /a//@i, continued. */
+			if (attrDesc && !debug)
 				appendStringInfoChar(output, XNODE_CHAR_SLASH);
 
-			appendStringInfo(output, "@%s", locStep->name);
-		}
-		else if (locStep->targNdKind == XMLNODE_ELEMENT)
-		{
+			if (!debug)
+				appendStringInfoChar(output, XNODE_CHAR_AT);
+
 			appendStringInfoString(output, locStep->name);
 		}
+		else if (locStep->targNdKind == XMLNODE_ELEMENT)
+			appendStringInfoString(output, locStep->name);
 		else
 		{
 			switch (locStep->targNdKind)
@@ -1995,14 +2003,6 @@ dumpLocationPath(XPathHeader xpathHdr, unsigned short pathNr, StringInfo output,
 					elog(ERROR, "invalid node kind: %u", locStep->targNdKind);
 					break;
 			}
-		}
-
-		if (debug)
-		{
-			if (locStep->axis == XPATH_AXIS_DESCENDANT)
-				appendStringInfo(output, " (desc.)");
-			if (locStep->axis == XPATH_AXIS_DESC_OR_SELF)
-				appendStringInfo(output, " (desc. or self)");
 		}
 
 		if (locStep->hasPredicate)

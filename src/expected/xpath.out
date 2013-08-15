@@ -56,11 +56,9 @@ order by id asc;
     |     path: 0                                            +
     |                                                        +
     |                                                        +
-    | <path 0>                                               +
+    | <path 0> (absolute)                                    +
     |                                                        +
-    | absolute xpath                                         +
-    |                                                        +
-    | node test:      c                                      +
+    | child::c                                               +
     |   predicate expr.: (paths / funcs: 0 / 0, val. type: 0)+
     |     subexpr. implicit: (val. type: 0)                  +
     |       subexpr. implicit: (val. type: 0)                +
@@ -81,7 +79,7 @@ order by id asc;
     |     attribute: b                                       +
     |     attribute: c                                       +
     |     attribute: f                                       +
-    | node test:      @g                                     +
+    | attribute::g                                           +
     | 
   1 | main expr.: (paths / funcs: 1 / 0, val. type: 3)       +
     |     <path 0>                                           +
@@ -89,11 +87,9 @@ order by id asc;
     |     path: 0                                            +
     |                                                        +
     |                                                        +
-    | <path 0>                                               +
+    | <path 0> (absolute)                                    +
     |                                                        +
-    | absolute xpath                                         +
-    |                                                        +
-    | node test:      a                                      +
+    | child::a                                               +
     |   predicate expr.: (paths / funcs: 0 / 0, val. type: 0)+
     |     @a                                                 +
     |     or                                                 +
@@ -121,8 +117,8 @@ order by id asc;
     |     attribute: k                                       +
     |     attribute: l                                       +
     |     attribute: s                                       +
-    | node test:      b                                      +
-    | node test:      text()                                 +
+    | child::b                                               +
+    | child::text()                                          +
     | 
   2 | main expr.: (paths / funcs: 1 / 0, val. type: 3)       +
     |     <path 0>                                           +
@@ -130,11 +126,9 @@ order by id asc;
     |     path: 0                                            +
     |                                                        +
     |                                                        +
-    | <path 0>                                               +
+    | <path 0> (absolute)                                    +
     |                                                        +
-    | absolute xpath                                         +
-    |                                                        +
-    | node test:      state                                  +
+    | child::state                                           +
     |   predicate expr.: (paths / funcs: 0 / 0, val. type: 0)+
     |     @tld                                               +
     |     or                                                 +
@@ -161,11 +155,9 @@ order by id asc;
     |     path: 0                                            +
     |                                                        +
     |                                                        +
-    | <path 0>                                               +
+    | <path 0> (absolute)                                    +
     |                                                        +
-    | absolute xpath                                         +
-    |                                                        +
-    | node test:      state                                  +
+    | child::state                                           +
     |   predicate expr.: (paths / funcs: 0 / 0, val. type: 0)+
     |     subexpr. implicit: (val. type: 0)                  +
     |       @tld                                             +
@@ -193,11 +185,9 @@ order by id asc;
     |     path: 0                                            +
     |                                                        +
     |                                                        +
-    | <path 0>                                               +
+    | <path 0> (absolute)                                    +
     |                                                        +
-    | absolute xpath                                         +
-    |                                                        +
-    | node test:      a                                      +
+    | child::a                                               +
     |   predicate expr.: (paths / funcs: 0 / 0, val. type: 0)+
     |     subexpr. explicit: (val. type: 0)                  +
     |       subexpr. implicit: (val. type: 0)                +
@@ -213,8 +203,8 @@ order by id asc;
     |     attribute: b                                       +
     |     attribute: k                                       +
     |     attribute: l                                       +
-    | node test:      b                                      +
-    | node test:      text()                                 +
+    | child::b                                               +
+    | child::text()                                          +
     | 
   5 | main expr.: (paths / funcs: 1 / 0, val. type: 3)       +
     |     <path 0>                                           +
@@ -222,11 +212,9 @@ order by id asc;
     |     path: 0                                            +
     |                                                        +
     |                                                        +
-    | <path 0>                                               +
+    | <path 0> (absolute)                                    +
     |                                                        +
-    | absolute xpath                                         +
-    |                                                        +
-    | node test:      a                                      +
+    | child::a                                               +
     |   predicate expr.: (paths / funcs: 0 / 0, val. type: 0)+
     |     subexpr. explicit: (val. type: 0)                  +
     |       subexpr. implicit: (val. type: 0)                +
@@ -242,8 +230,8 @@ order by id asc;
     |     attribute: b                                       +
     |     attribute: k                                       +
     |     attribute: l                                       +
-    | node test:      b                                      +
-    | node test:      text()                                 +
+    | child::b                                               +
+    | child::text()                                          +
     | 
   6 | main expr.: (paths / funcs: 1 / 0, val. type: 3)       +
     |     <path 2>                                           +
@@ -251,25 +239,19 @@ order by id asc;
     |     path: 2                                            +
     |                                                        +
     |                                                        +
-    | <path 0>                                               +
+    | <path 0> (relative)                                    +
     |                                                        +
-    | relative xpath                                         +
-    |                                                        +
-    | node test:      i                                      +
+    | child::i                                               +
     |                                                        +
     |                                                        +
-    | <path 1>                                               +
+    | <path 1> (relative)                                    +
     |                                                        +
-    | relative xpath                                         +
-    |                                                        +
-    | node test:      l                                      +
+    | child::l                                               +
     |                                                        +
     |                                                        +
-    | <path 2>                                               +
+    | <path 2> (absolute)                                    +
     |                                                        +
-    | absolute xpath                                         +
-    |                                                        +
-    | node test:      a                                      +
+    | child::a                                               +
     |   predicate expr.: (paths / funcs: 0 / 0, val. type: 0)+
     |     subexpr. explicit: (val. type: 0)                  +
     |       subexpr. implicit: (val. type: 0)                +
@@ -285,7 +267,7 @@ order by id asc;
     |     attribute: cd                                      +
     |     attribute: e                                       +
     |     attribute: k                                       +
-    | node test:      b                                      +
+    | child::b                                               +
     |   predicate expr.: (paths / funcs: 2 / 0, val. type: 0)+
     |     subexpr. implicit: (val. type: 0)                  +
     |       subexpr. explicit: (val. type: 0)                +
@@ -312,7 +294,7 @@ order by id asc;
     |     path: 0                                            +
     |     attribute: k                                       +
     |     path: 1                                            +
-    | node test:      text()                                 +
+    | child::text()                                          +
     | 
   7 | main expr.: (paths / funcs: 1 / 0, val. type: 3)       +
     |     <path 0>                                           +
@@ -320,11 +302,9 @@ order by id asc;
     |     path: 0                                            +
     |                                                        +
     |                                                        +
-    | <path 0>                                               +
+    | <path 0> (absolute)                                    +
     |                                                        +
-    | absolute xpath                                         +
-    |                                                        +
-    | node test:      a                                      +
+    | child::a                                               +
     |   predicate expr.: (paths / funcs: 0 / 0, val. type: 0)+
     |     @a                                                 +
     |     or                                                 +
@@ -343,8 +323,8 @@ order by id asc;
     |     attribute: e                                       +
     |     attribute: k                                       +
     |     attribute: l                                       +
-    | node test:      b                                      +
-    | node test:      text()                                 +
+    | child::b                                               +
+    | child::text()                                          +
     | 
   8 | main expr.: (paths / funcs: 1 / 0, val. type: 3)       +
     |     <path 4>                                           +
@@ -352,27 +332,21 @@ order by id asc;
     |     path: 4                                            +
     |                                                        +
     |                                                        +
-    | <path 0>                                               +
+    | <path 0> (relative)                                    +
     |                                                        +
-    | relative xpath                                         +
-    |                                                        +
-    | node test:      ab                                     +
-    | node test:      cd                                     +
-    | node test:      @a                                     +
+    | child::ab                                              +
+    | child::cd                                              +
+    | attribute::a                                           +
     |                                                        +
     |                                                        +
-    | <path 1>                                               +
+    | <path 1> (relative)                                    +
     |                                                        +
-    | relative xpath                                         +
-    |                                                        +
-    | node test:      b                                      +
+    | child::b                                               +
     |                                                        +
     |                                                        +
-    | <path 2>                                               +
+    | <path 2> (relative)                                    +
     |                                                        +
-    | relative xpath                                         +
-    |                                                        +
-    | node test:      a                                      +
+    | child::a                                               +
     |   predicate expr.: (paths / funcs: 0 / 0, val. type: 0)+
     |     @c                                                 +
     |     and                                                +
@@ -386,12 +360,10 @@ order by id asc;
     |     attribute: c                                       +
     |                                                        +
     |                                                        +
-    | <path 3>                                               +
+    | <path 3> (relative)                                    +
     |                                                        +
-    | relative xpath                                         +
-    |                                                        +
-    | node test:      c                                      +
-    | node test:      a                                      +
+    | child::c                                               +
+    | child::a                                               +
     |   predicate expr.: (paths / funcs: 1 / 0, val. type: 0)+
     |     @a                                                 +
     |     =                                                  +
@@ -404,11 +376,9 @@ order by id asc;
     |     path: 2                                            +
     |                                                        +
     |                                                        +
-    | <path 4>                                               +
+    | <path 4> (absolute)                                    +
     |                                                        +
-    | absolute xpath                                         +
-    |                                                        +
-    | node test:      a                                      +
+    | child::a                                               +
     |   predicate expr.: (paths / funcs: 3 / 0, val. type: 0)+
     |     <path 0>                                           +
     |     !=                                                 +
@@ -429,11 +399,9 @@ order by id asc;
     |     path: 1                                            +
     |                                                        +
     |                                                        +
-    | <path 0>                                               +
+    | <path 0> (relative)                                    +
     |                                                        +
-    | relative xpath                                         +
-    |                                                        +
-    | node test:      a                                      +
+    | child::a                                               +
     |   predicate expr.: (paths / funcs: 0 / 0, val. type: 0)+
     |     @e                                                 +
     |     =                                                  +
@@ -443,11 +411,9 @@ order by id asc;
     |     attribute: f                                       +
     |                                                        +
     |                                                        +
-    | <path 1>                                               +
+    | <path 1> (absolute)                                    +
     |                                                        +
-    | absolute xpath                                         +
-    |                                                        +
-    | node test:      a                                      +
+    | child::a                                               +
     |   predicate expr.: (paths / funcs: 1 / 0, val. type: 0)+
     |     subexpr. implicit: (val. type: 0)                  +
     |       @a                                               +
@@ -470,18 +436,14 @@ order by id asc;
     |     path: 2                                            +
     |                                                        +
     |                                                        +
-    | <path 0>                                               +
+    | <path 0> (relative)                                    +
     |                                                        +
-    | relative xpath                                         +
-    |                                                        +
-    | node test:      f                                      +
+    | child::f                                               +
     |                                                        +
     |                                                        +
-    | <path 1>                                               +
+    | <path 1> (relative)                                    +
     |                                                        +
-    | relative xpath                                         +
-    |                                                        +
-    | node test:      a                                      +
+    | child::a                                               +
     |   predicate expr.: (paths / funcs: 1 / 0, val. type: 0)+
     |     @e                                                 +
     |     =                                                  +
@@ -491,11 +453,9 @@ order by id asc;
     |     path: 0                                            +
     |                                                        +
     |                                                        +
-    | <path 2>                                               +
+    | <path 2> (absolute)                                    +
     |                                                        +
-    | absolute xpath                                         +
-    |                                                        +
-    | node test:      a                                      +
+    | child::a                                               +
     |   predicate expr.: (paths / funcs: 1 / 0, val. type: 0)+
     |     subexpr. implicit: (val. type: 0)                  +
     |       @a                                               +
@@ -518,11 +478,9 @@ order by id asc;
     |     path: 1                                            +
     |                                                        +
     |                                                        +
-    | <path 0>                                               +
+    | <path 0> (relative)                                    +
     |                                                        +
-    | relative xpath                                         +
-    |                                                        +
-    | node test:      a                                      +
+    | child::a                                               +
     |   predicate expr.: (paths / funcs: 0 / 0, val. type: 0)+
     |     @e                                                 +
     |     =                                                  +
@@ -532,11 +490,9 @@ order by id asc;
     |     attribute: f                                       +
     |                                                        +
     |                                                        +
-    | <path 1>                                               +
+    | <path 1> (absolute)                                    +
     |                                                        +
-    | absolute xpath                                         +
-    |                                                        +
-    | node test:      a                                      +
+    | child::a                                               +
     |   predicate expr.: (paths / funcs: 1 / 0, val. type: 0)+
     |     subexpr. implicit: (val. type: 0)                  +
     |       @a                                               +
@@ -559,18 +515,14 @@ order by id asc;
     |     path: 2                                            +
     |                                                        +
     |                                                        +
-    | <path 0>                                               +
+    | <path 0> (relative)                                    +
     |                                                        +
-    | relative xpath                                         +
-    |                                                        +
-    | node test:      f                                      +
+    | child::f                                               +
     |                                                        +
     |                                                        +
-    | <path 1>                                               +
+    | <path 1> (relative)                                    +
     |                                                        +
-    | relative xpath                                         +
-    |                                                        +
-    | node test:      a                                      +
+    | child::a                                               +
     |   predicate expr.: (paths / funcs: 1 / 0, val. type: 0)+
     |     @e                                                 +
     |     =                                                  +
@@ -580,11 +532,9 @@ order by id asc;
     |     path: 0                                            +
     |                                                        +
     |                                                        +
-    | <path 2>                                               +
+    | <path 2> (absolute)                                    +
     |                                                        +
-    | absolute xpath                                         +
-    |                                                        +
-    | node test:      a                                      +
+    | child::a                                               +
     |   predicate expr.: (paths / funcs: 1 / 0, val. type: 0)+
     |     subexpr. implicit: (val. type: 0)                  +
     |       @a                                               +
@@ -607,32 +557,24 @@ order by id asc;
     |     path: 3                                            +
     |                                                        +
     |                                                        +
-    | <path 0>                                               +
+    | <path 0> (absolute)                                    +
     |                                                        +
-    | absolute xpath                                         +
-    |                                                        +
-    | node test:      a                                      +
+    | child::a                                               +
     |                                                        +
     |                                                        +
-    | <path 1>                                               +
+    | <path 1> (absolute)                                    +
     |                                                        +
-    | absolute xpath                                         +
-    |                                                        +
-    | node test:      b (desc.)                              +
+    | descendant::b                                          +
     |                                                        +
     |                                                        +
-    | <path 2>                                               +
+    | <path 2> (relative)                                    +
     |                                                        +
-    | relative xpath                                         +
-    |                                                        +
-    | node test:      c                                      +
+    | child::c                                               +
     |                                                        +
     |                                                        +
-    | <path 3>                                               +
+    | <path 3> (absolute)                                    +
     |                                                        +
-    | absolute xpath                                         +
-    |                                                        +
-    | node test:      root (desc.)                           +
+    | descendant::root                                       +
     |   predicate expr.: (paths / funcs: 3 / 0, val. type: 0)+
     |     subexpr. implicit: (val. type: 0)                  +
     |       <path 0>                                         +
@@ -651,12 +593,10 @@ order by id asc;
     |     path: 0                                            +
     |                                                        +
     |                                                        +
-    | <path 0>                                               +
+    | <path 0> (absolute)                                    +
     |                                                        +
-    | absolute xpath                                         +
-    |                                                        +
-    | node test:      root                                   +
-    | node test:      a                                      +
+    | child::root                                            +
+    | child::a                                               +
     |   predicate expr.: (paths / funcs: 0 / 2, val. type: 0)+
     |     position()                                         +
     |     =                                                  +
@@ -671,26 +611,20 @@ order by id asc;
     |     path: 2                                            +
     |                                                        +
     |                                                        +
-    | <path 0>                                               +
+    | <path 0> (relative)                                    +
     |                                                        +
-    | relative xpath                                         +
-    |                                                        +
-    | node test:      a                                      +
+    | child::a                                               +
     |                                                        +
     |                                                        +
-    | <path 1>                                               +
+    | <path 1> (relative)                                    +
     |                                                        +
-    | relative xpath                                         +
-    |                                                        +
-    | node test:      c                                      +
+    | child::c                                               +
     |                                                        +
     |                                                        +
-    | <path 2>                                               +
+    | <path 2> (absolute)                                    +
     |                                                        +
-    | absolute xpath                                         +
-    |                                                        +
-    | node test:      root                                   +
-    | node test:      b                                      +
+    | child::root                                            +
+    | child::b                                               +
     |   predicate expr.: (paths / funcs: 2 / 2, val. type: 0)+
     |     count(                                             +
     |       <path 0>                                         +
@@ -709,18 +643,14 @@ order by id asc;
     |     path: 1                                            +
     |                                                        +
     |                                                        +
-    | <path 0>                                               +
+    | <path 0> (relative)                                    +
     |                                                        +
-    | relative xpath                                         +
-    |                                                        +
-    | node test:      a                                      +
+    | child::a                                               +
     |                                                        +
     |                                                        +
-    | <path 1>                                               +
+    | <path 1> (absolute)                                    +
     |                                                        +
-    | absolute xpath                                         +
-    |                                                        +
-    | node test:      root                                   +
+    | child::root                                            +
     |   predicate expr.: (paths / funcs: 1 / 1, val. type: 0)+
     |     contains(                                          +
     |       ""                                               +
@@ -1375,11 +1305,9 @@ select xml.path_debug_print('/a[@i > @j]|/b or /c');
      path: 2                                            +
                                                         +
                                                         +
- <path 0>                                               +
+ <path 0> (absolute)                                    +
                                                         +
- absolute xpath                                         +
-                                                        +
- node test:      a                                      +
+ child::a                                               +
    predicate expr.: (paths / funcs: 0 / 0, val. type: 0)+
      @i                                                 +
      >                                                  +
@@ -1389,18 +1317,14 @@ select xml.path_debug_print('/a[@i > @j]|/b or /c');
      attribute: j                                       +
                                                         +
                                                         +
- <path 1>                                               +
+ <path 1> (absolute)                                    +
                                                         +
- absolute xpath                                         +
-                                                        +
- node test:      b                                      +
+ child::b                                               +
                                                         +
                                                         +
- <path 2>                                               +
+ <path 2> (absolute)                                    +
                                                         +
- absolute xpath                                         +
-                                                        +
- node test:      c                                      +
+ child::c                                               +
  
 (1 row)
 
@@ -1420,11 +1344,9 @@ select xml.path_debug_print('(/a[@i > @j]|/b) or /c');
      path: 2                                            +
                                                         +
                                                         +
- <path 0>                                               +
+ <path 0> (absolute)                                    +
                                                         +
- absolute xpath                                         +
-                                                        +
- node test:      a                                      +
+ child::a                                               +
    predicate expr.: (paths / funcs: 0 / 0, val. type: 0)+
      @i                                                 +
      >                                                  +
@@ -1434,18 +1356,14 @@ select xml.path_debug_print('(/a[@i > @j]|/b) or /c');
      attribute: j                                       +
                                                         +
                                                         +
- <path 1>                                               +
+ <path 1> (absolute)                                    +
                                                         +
- absolute xpath                                         +
-                                                        +
- node test:      b                                      +
+ child::b                                               +
                                                         +
                                                         +
- <path 2>                                               +
+ <path 2> (absolute)                                    +
                                                         +
- absolute xpath                                         +
-                                                        +
- node test:      c                                      +
+ child::c                                               +
  
 (1 row)
 
@@ -1466,11 +1384,9 @@ select xml.path_debug_print('((/a[@i > @j]|/b) or /c)');
      path: 2                                            +
                                                         +
                                                         +
- <path 0>                                               +
+ <path 0> (absolute)                                    +
                                                         +
- absolute xpath                                         +
-                                                        +
- node test:      a                                      +
+ child::a                                               +
    predicate expr.: (paths / funcs: 0 / 0, val. type: 0)+
      @i                                                 +
      >                                                  +
@@ -1480,18 +1396,14 @@ select xml.path_debug_print('((/a[@i > @j]|/b) or /c)');
      attribute: j                                       +
                                                         +
                                                         +
- <path 1>                                               +
+ <path 1> (absolute)                                    +
                                                         +
- absolute xpath                                         +
-                                                        +
- node test:      b                                      +
+ child::b                                               +
                                                         +
                                                         +
- <path 2>                                               +
+ <path 2> (absolute)                                    +
                                                         +
- absolute xpath                                         +
-                                                        +
- node test:      c                                      +
+ child::c                                               +
  
 (1 row)
 
@@ -1519,11 +1431,9 @@ select xml.path_debug_print('/root[@i + @j > 0]');
      path: 0                                            +
                                                         +
                                                         +
- <path 0>                                               +
+ <path 0> (absolute)                                    +
                                                         +
- absolute xpath                                         +
-                                                        +
- node test:      root                                   +
+ child::root                                            +
    predicate expr.: (paths / funcs: 0 / 0, val. type: 0)+
      subexpr. implicit: (val. type: 1)                  +
        @i                                               +
@@ -1546,11 +1456,9 @@ select xml.path_debug_print('/root[(@i + @j) > 0]');
      path: 0                                            +
                                                         +
                                                         +
- <path 0>                                               +
+ <path 0> (absolute)                                    +
                                                         +
- absolute xpath                                         +
-                                                        +
- node test:      root                                   +
+ child::root                                            +
    predicate expr.: (paths / funcs: 0 / 0, val. type: 0)+
      subexpr. explicit: (val. type: 1)                  +
        @i                                               +
@@ -1730,20 +1638,16 @@ select xml.path_debug_print('/a/@i*/a/@j');
      path: 1                                     +
                                                  +
                                                  +
- <path 0>                                        +
+ <path 0> (absolute)                             +
                                                  +
- absolute xpath                                  +
-                                                 +
- node test:      a                               +
- node test:      @i                              +
+ child::a                                        +
+ attribute::i                                    +
                                                  +
                                                  +
- <path 1>                                        +
+ <path 1> (absolute)                             +
                                                  +
- absolute xpath                                  +
-                                                 +
- node test:      a                               +
- node test:      @j                              +
+ child::a                                        +
+ attribute::j                                    +
  
 (1 row)
 
@@ -1759,20 +1663,16 @@ select xml.path_debug_print('/a/@**/a/@j');
      path: 1                                     +
                                                  +
                                                  +
- <path 0>                                        +
+ <path 0> (absolute)                             +
                                                  +
- absolute xpath                                  +
-                                                 +
- node test:      a                               +
- node test:      @*                              +
+ child::a                                        +
+ attribute::*                                    +
                                                  +
                                                  +
- <path 1>                                        +
+ <path 1> (absolute)                             +
                                                  +
- absolute xpath                                  +
-                                                 +
- node test:      a                               +
- node test:      @j                              +
+ child::a                                        +
+ attribute::j                                    +
  
 (1 row)
 
@@ -1857,18 +1757,14 @@ select xml.path_debug_print('/root + - boolean(/root)');
      path: 1                                     +
                                                  +
                                                  +
- <path 0>                                        +
+ <path 0> (absolute)                             +
                                                  +
- absolute xpath                                  +
-                                                 +
- node test:      root                            +
+ child::root                                     +
                                                  +
                                                  +
- <path 1>                                        +
+ <path 1> (absolute)                             +
                                                  +
- absolute xpath                                  +
-                                                 +
- node test:      root                            +
+ child::root                                     +
  
 (1 row)
 
@@ -1885,12 +1781,10 @@ select xml.path_debug_print('/root/@i + - 1 + 2');
      path: 0                                     +
                                                  +
                                                  +
- <path 0>                                        +
+ <path 0> (absolute)                             +
                                                  +
- absolute xpath                                  +
-                                                 +
- node test:      root                            +
- node test:      @i                              +
+ child::root                                     +
+ attribute::i                                    +
  
 (1 row)
 
@@ -1908,12 +1802,10 @@ select xml.path_debug_print('/root/@i + - (1 + 2)');
      path: 0                                     +
                                                  +
                                                  +
- <path 0>                                        +
+ <path 0> (absolute)                             +
                                                  +
- absolute xpath                                  +
-                                                 +
- node test:      root                            +
- node test:      @i                              +
+ child::root                                     +
+ attribute::i                                    +
  
 (1 row)
 
@@ -2559,12 +2451,10 @@ ORDER BY id;
     |     path: 0                                     +
     |                                                 +
     |                                                 +
-    | <path 0>                                        +
+    | <path 0> (absolute)                             +
     |                                                 +
-    | absolute xpath                                  +
-    |                                                 +
-    | node test:      a                               +
-    | node test:      b                               +
+    | child::a                                        +
+    | child::b                                        +
     | 
   2 | main expr.: (paths / funcs: 1 / 0, val. type: 3)+
     |     <path 0>                                    +
@@ -2572,12 +2462,10 @@ ORDER BY id;
     |     path: 0                                     +
     |                                                 +
     |                                                 +
-    | <path 0>                                        +
+    | <path 0> (absolute)                             +
     |                                                 +
-    | absolute xpath                                  +
-    |                                                 +
-    | node test:      a                               +
-    | node test:      *                               +
+    | child::a                                        +
+    | child::*                                        +
     | 
   3 | main expr.: (paths / funcs: 1 / 0, val. type: 3)+
     |     <path 0>                                    +
@@ -2585,12 +2473,10 @@ ORDER BY id;
     |     path: 0                                     +
     |                                                 +
     |                                                 +
-    | <path 0>                                        +
+    | <path 0> (absolute)                             +
     |                                                 +
-    | absolute xpath                                  +
-    |                                                 +
-    | node test:      a                               +
-    | node test:      node()                          +
+    | child::a                                        +
+    | child::node()                                   +
     | 
   4 | main expr.: (paths / funcs: 1 / 0, val. type: 3)+
     |     <path 0>                                    +
@@ -2598,12 +2484,10 @@ ORDER BY id;
     |     path: 0                                     +
     |                                                 +
     |                                                 +
-    | <path 0>                                        +
+    | <path 0> (absolute)                             +
     |                                                 +
-    | absolute xpath                                  +
-    |                                                 +
-    | node test:      a                               +
-    | node test:      @i                              +
+    | child::a                                        +
+    | attribute::i                                    +
     | 
   5 | main expr.: (paths / funcs: 1 / 0, val. type: 3)+
     |     <path 0>                                    +
@@ -2611,12 +2495,10 @@ ORDER BY id;
     |     path: 0                                     +
     |                                                 +
     |                                                 +
-    | <path 0>                                        +
+    | <path 0> (absolute)                             +
     |                                                 +
-    | absolute xpath                                  +
-    |                                                 +
-    | node test:      a                               +
-    | node test:      @*                              +
+    | child::a                                        +
+    | attribute::*                                    +
     | 
   6 | main expr.: (paths / funcs: 1 / 0, val. type: 3)+
     |     <path 0>                                    +
@@ -2624,12 +2506,10 @@ ORDER BY id;
     |     path: 0                                     +
     |                                                 +
     |                                                 +
-    | <path 0>                                        +
+    | <path 0> (absolute)                             +
     |                                                 +
-    | absolute xpath                                  +
-    |                                                 +
-    | node test:      a                               +
-    | node test:      b (desc.)                       +
+    | child::a                                        +
+    | descendant::b                                   +
     | 
   7 | main expr.: (paths / funcs: 1 / 0, val. type: 3)+
     |     <path 0>                                    +
@@ -2637,12 +2517,10 @@ ORDER BY id;
     |     path: 0                                     +
     |                                                 +
     |                                                 +
-    | <path 0>                                        +
+    | <path 0> (absolute)                             +
     |                                                 +
-    | absolute xpath                                  +
-    |                                                 +
-    | node test:      a                               +
-    | node test:      * (desc.)                       +
+    | child::a                                        +
+    | descendant::*                                   +
     | 
   8 | main expr.: (paths / funcs: 1 / 0, val. type: 3)+
     |     <path 0>                                    +
@@ -2650,12 +2528,10 @@ ORDER BY id;
     |     path: 0                                     +
     |                                                 +
     |                                                 +
-    | <path 0>                                        +
+    | <path 0> (absolute)                             +
     |                                                 +
-    | absolute xpath                                  +
-    |                                                 +
-    | node test:      a                               +
-    | node test:      node() (desc.)                  +
+    | child::a                                        +
+    | descendant::node()                              +
     | 
 (8 rows)
 
