@@ -2424,12 +2424,14 @@ VALUES	(1, '/a/child::b'),
 	(5, '/a/attribute::*'),
 	(6, '/a/descendant::b'),
 	(7, '/a/descendant::*'),
-	(8, '/a/descendant::node()');
+	(8, '/a/descendant::node()'),
+	(9, '/a/descendant-or-self::b'),
+	(10, '/a/descendant-or-self::node()');
 SELECT id, xml.path(path)
 FROM  paths
 ORDER BY id;
- id |    path    
-----+------------
+ id |             path              
+----+-------------------------------
   1 | /a/b
   2 | /a/*
   3 | /a/node()
@@ -2438,7 +2440,9 @@ ORDER BY id;
   6 | /a//b
   7 | /a//*
   8 | /a//node()
-(8 rows)
+  9 | /a/descendant-or-self::b
+ 10 | /a/descendant-or-self::node()
+(10 rows)
 
 SELECT id, xml.path_debug_print(path)
 FROM  paths
@@ -2533,7 +2537,29 @@ ORDER BY id;
     | child::a                                        +
     | descendant::node()                              +
     | 
-(8 rows)
+  9 | main expr.: (paths / funcs: 1 / 0, val. type: 3)+
+    |     <path 0>                                    +
+    |   variables:                                    +
+    |     path: 0                                     +
+    |                                                 +
+    |                                                 +
+    | <path 0> (absolute)                             +
+    |                                                 +
+    | child::a                                        +
+    | descendant-or-self::b                           +
+    | 
+ 10 | main expr.: (paths / funcs: 1 / 0, val. type: 3)+
+    |     <path 0>                                    +
+    |   variables:                                    +
+    |     path: 0                                     +
+    |                                                 +
+    |                                                 +
+    | <path 0> (absolute)                             +
+    |                                                 +
+    | child::a                                        +
+    | descendant-or-self::node()                      +
+    | 
+(10 rows)
 
 SELECT path('/a/attribute::node()', '<a i="1"><b/></a>');
  path 
@@ -2551,6 +2577,18 @@ SELECT path('/a/attribute::text()', '<a i="1"><b/></a>');
  path 
 ------
  
+(1 row)
+
+SELECT path('/a/descendant::node()', '<a i="1"><b j="2"/></a>');
+    path    
+------------
+ <b j="2"/>
+(1 row)
+
+SELECT path('/a/descendant-or-self::node()', '<a i="1"><b j="2"/></a>');
+               path                
+-----------------------------------
+ <a i="1"><b j="2"/></a><b j="2"/>
 (1 row)
 
 -- Abbreviation is only used for node name test.

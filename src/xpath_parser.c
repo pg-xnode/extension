@@ -745,15 +745,6 @@ parseLocationStep(XPathParserState state, XPath *paths,
 							elog(ERROR, "unrecognized xpath axis '%s'",
 								 pnstrdup(axisName, axisNameLen));
 
-						/*
-						 * TODO Remove this restriction as soon as printing is
-						 * adjusted. So far we only use this axis internally
-						 * for cases like '/a//@i'
-						 */
-						if (axisExplicit == XPATH_AXIS_DESC_OR_SELF)
-							elog(ERROR, "xpath axis %s not recognized",
-								 pnstrdup(axisName, axisNameLen));
-
 						nextChar(state, true);
 						break;
 					}
@@ -1933,24 +1924,31 @@ dumpLocationPath(XPathHeader xpathHdr, unsigned short pathNr, StringInfo output,
 			appendStringInfo(output, "\n%s::", xpathAxisNames[locStep->axis]);
 		else
 		{
-			if (locStep->axis == XPATH_AXIS_DESCENDANT)
-				appendStringInfoChar(output, XNODE_CHAR_SLASH);
-			else if (locStep->axis == XPATH_AXIS_DESC_OR_SELF)
+			if (locStep->axis == XPATH_AXIS_DESC_OR_SELF &&
+				locStep->targNdKind == XMLNODE_NODE &&
+				((i + 1) < locPath->depth))
 			{
-				/*
-				 * Location path /a//@i is internally expressed as
-				 * /child::a/descendant-or-self::node()/attribute::i
-				 *
-				 * Such a case needs to be recognized here.
-				 */
-				if (locStep->targNdKind == XMLNODE_NODE)
+				XPathElement nextStep;
+
+				nextStep = (XPathElement) ((char *) locPath +
+										   locPath->elements[i + 1]);
+
+				if (nextStep->axis == XPATH_AXIS_ATTRIBUTE)
 				{
+					/*
+					 * Location path /a//@i is internally expressed as
+					 * /child::a/descendant-or-self::node()/attribute::i.
+					 */
 					attrDesc = true;
 					continue;
 				}
 			}
-			else if (locStep->axis != XPATH_AXIS_CHILD &&
-					 locStep->targNdKind != XMLNODE_ATTRIBUTE)
+
+			if (locStep->axis == XPATH_AXIS_DESCENDANT)
+				appendStringInfoChar(output, XNODE_CHAR_SLASH);
+			else if ((locStep->axis != XPATH_AXIS_CHILD &&
+					  locStep->targNdKind != XMLNODE_ATTRIBUTE) &&
+					 locStep->axis < XML_SCAN_AXES)
 				/* There's no abbreviation, the axis name must be printed out. */
 				appendStringInfo(output, "%s::", xpathAxisNames[locStep->axis]);
 		}

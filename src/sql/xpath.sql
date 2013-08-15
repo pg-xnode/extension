@@ -456,7 +456,9 @@ VALUES	(1, '/a/child::b'),
 	(5, '/a/attribute::*'),
 	(6, '/a/descendant::b'),
 	(7, '/a/descendant::*'),
-	(8, '/a/descendant::node()');
+	(8, '/a/descendant::node()'),
+	(9, '/a/descendant-or-self::b'),
+	(10, '/a/descendant-or-self::node()');
 
 SELECT id, xml.path(path)
 FROM  paths
@@ -470,6 +472,8 @@ ORDER BY id;
 SELECT path('/a/attribute::node()', '<a i="1"><b/></a>');
 SELECT path('/a/attribute::*', '<a i="1"><b/></a>');
 SELECT path('/a/attribute::text()', '<a i="1"><b/></a>');
+SELECT path('/a/descendant::node()', '<a i="1"><b j="2"/></a>');
+SELECT path('/a/descendant-or-self::node()', '<a i="1"><b j="2"/></a>');
 
 -- Abbreviation is only used for node name test.
 SELECT xml.path('/a/attribute::i');
