@@ -549,15 +549,7 @@ parseLocationPath(XPath *paths, unsigned short *pathCount, char **xpathSrc,
 		if (steps.position > XPATH_MAX_DEPTH)
 			elog(ERROR, "the maximum depth of location path is %u", XPATH_MAX_DEPTH);
 
-		if (step->targNdKind == XMLNODE_ATTRIBUTE)
-
-			/*
-			 * If the attribute test has just been parsed, we're done. Slash
-			 * means error at this moment and will be reported when parser
-			 * tries to continue after the location path.
-			 */
-			done = true;
-		else if (*state.c == XNODE_CHAR_SLASH)
+		if (*state.c == XNODE_CHAR_SLASH)
 			nextChar(&state, false);
 		else
 			done = true;
