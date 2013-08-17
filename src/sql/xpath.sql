@@ -458,7 +458,10 @@ VALUES	(1, '/a/child::b'),
 	(7, '/a/descendant::*'),
 	(8, '/a/descendant::node()'),
 	(9, '/a/descendant-or-self::b'),
-	(10, '/a/descendant-or-self::node()');
+	(10, '/a/descendant-or-self::node()'),
+	-- The following 2 are equivalent
+	(11, '/a//@i/j'),
+	(12, '/a/descendant-or-self::node()/attribute::i/j');
 
 SELECT id, xml.path(path)
 FROM  paths

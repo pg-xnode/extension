@@ -2426,7 +2426,10 @@ VALUES	(1, '/a/child::b'),
 	(7, '/a/descendant::*'),
 	(8, '/a/descendant::node()'),
 	(9, '/a/descendant-or-self::b'),
-	(10, '/a/descendant-or-self::node()');
+	(10, '/a/descendant-or-self::node()'),
+	-- The following 2 are equivalent
+	(11, '/a//@i/j'),
+	(12, '/a/descendant-or-self::node()/attribute::i/j');
 SELECT id, xml.path(path)
 FROM  paths
 ORDER BY id;
@@ -2442,7 +2445,9 @@ ORDER BY id;
   8 | /a//node()
   9 | /a/descendant-or-self::b
  10 | /a/descendant-or-self::node()
-(10 rows)
+ 11 | /a//@i/j
+ 12 | /a//@i/j
+(12 rows)
 
 SELECT id, xml.path_debug_print(path)
 FROM  paths
@@ -2559,7 +2564,33 @@ ORDER BY id;
     | child::a                                        +
     | descendant-or-self::node()                      +
     | 
-(10 rows)
+ 11 | main expr.: (paths / funcs: 1 / 0, val. type: 3)+
+    |     <path 0>                                    +
+    |   variables:                                    +
+    |     path: 0                                     +
+    |                                                 +
+    |                                                 +
+    | <path 0> (absolute)                             +
+    |                                                 +
+    | child::a                                        +
+    | descendant-or-self::node()                      +
+    | attribute::i                                    +
+    | child::j                                        +
+    | 
+ 12 | main expr.: (paths / funcs: 1 / 0, val. type: 3)+
+    |     <path 0>                                    +
+    |   variables:                                    +
+    |     path: 0                                     +
+    |                                                 +
+    |                                                 +
+    | <path 0> (absolute)                             +
+    |                                                 +
+    | child::a                                        +
+    | descendant-or-self::node()                      +
+    | attribute::i                                    +
+    | child::j                                        +
+    | 
+(12 rows)
 
 SELECT path('/a/attribute::node()', '<a i="1"><b/></a>');
  path 
