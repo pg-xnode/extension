@@ -520,7 +520,11 @@ typedef struct XPathElementData *XPathElement;
 #define XPATH_PREDICATE_FROM_LOC_STEP(s) ((XPathExpression)\
 	TYPEALIGN(XPATH_ALIGNOF_EXPR, (s)->name + strlen((s)->name) + 1))
 
+#define XPATH_LOC_STEP(path, stepNr) \
+	((XPathElement) ((char *) (path) + (path)->elements[(stepNr)]))
+
 #define XPATH_LAST_STEP_KIND(xp) (((XPathElement) ((char *) (xp) + (xp)->elements[(xp)->depth - 1]))->targNdKind)
+
 
 typedef struct XPathParserStateData
 {
@@ -635,7 +639,7 @@ extern void parseLocationPath(XPath *paths, unsigned short *pathCount,
 
 
 /* Number of XPath axes to recognize.  */
-#define XML_SCAN_AXES	4
+#define XML_SCAN_AXES	5
 
 typedef enum XPathAxis
 {
@@ -643,6 +647,7 @@ typedef enum XPathAxis
 	XPATH_AXIS_DESCENDANT,
 	XPATH_AXIS_DESC_OR_SELF,
 	XPATH_AXIS_ATTRIBUTE,
+	XPATH_AXIS_SELF
 } XPathAxis;
 
 extern const char *xpathAxisNames[XML_SCAN_AXES];
@@ -730,7 +735,7 @@ typedef struct XMLScanData
 	struct XMLScanData *parent;
 
 	/*
-	 * If subscan should be started of the next call to getNextXMLNode() and
+	 * If subscan should be started on the next call to getNextXMLNode() and
 	 * what kind of.
 	 */
 	char		descSearches;
@@ -772,7 +777,7 @@ typedef struct XMLScanContextData *XMLScanContext;
 
 extern void initXMLScan(XMLScan xscan, XMLScan parent, XPath xpath,
 			unsigned short locStepPos, XPathHeader xpHdr,
-			XMLNodeHdr contextNode, xmldoc document, bool ignoreSelf);
+			XMLNodeHdr contextNode, xmldoc document);
 extern void finalizeXMLScan(XMLScan xscan);
 extern void initScanForSingleXMLNodeKind(XMLScan xscan, XMLCompNodeHdr root,
 							 XMLNodeKind kind);

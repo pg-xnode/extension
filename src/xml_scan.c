@@ -61,18 +61,14 @@ static void flipOperandValue(XPathExprOperandValue value, XPathExprState exprSta
  * 'contextNode' - the relationship with the nodes found is determined by axis
  * of the scan. For example, if the axis is XPATH_AXIS_CHILD then the context
  * node is a parent of the resulting nodes.
- * Not all axes require it to be compound node. That's XMLNodeHdr is used here.
+ * Not all axes require it to be compound node. That's why XMLNodeHdr is used here.
  *
  * 'document' - the document we're searching in.
- *
- * 'ignoreSelf' - some axes do require the context node to be added to the
- * node set. However the axis's requirement has to be suppressed at special
- * circumstances. See comments where TRUE is passed for this parameter.
  */
 void
 initXMLScan(XMLScan xscan, XMLScan parent, XPath xpath,
 			unsigned short locStepPos, XPathHeader xpHdr,
-			XMLNodeHdr contextNode, xmldoc document, bool ignoreSelf)
+			XMLNodeHdr contextNode, xmldoc document)
 {
 	XPathAxis	axis;
 	XMLNodeKind ndKind;
@@ -86,7 +82,7 @@ initXMLScan(XMLScan xscan, XMLScan parent, XPath xpath,
 	xscan->xpath = xpath;
 
 	xscan->locStepPos = locStepPos;
-	xscan->locStep = (XPathElement) ((char *) xpath +xpath->elements[locStepPos]);
+	xscan->locStep = XPATH_LOC_STEP(xpath, locStepPos);
 	xscan->xpathHeader = xpHdr;
 	xscan->document = document;
 
@@ -137,8 +133,11 @@ initXMLScan(XMLScan xscan, XMLScan parent, XPath xpath,
 	xscan->descSearches = 0;
 
 	xscan->contextNode = contextNode;
-	initXMLNodeIterator(&xscan->iterator, (XMLCompNodeHdr) contextNode,
-						axis == XPATH_AXIS_ATTRIBUTE);
+
+	if (axis == XPATH_AXIS_CHILD || axis == XPATH_AXIS_DESCENDANT ||
+		axis == XPATH_AXIS_DESC_OR_SELF || axis == XPATH_AXIS_ATTRIBUTE)
+		initXMLNodeIterator(&xscan->iterator, (XMLCompNodeHdr) contextNode,
+							axis == XPATH_AXIS_ATTRIBUTE);
 
 	/* Will be set as soon as the first node is requested. */
 	xscan->currentNode = NULL;
@@ -147,7 +146,7 @@ initXMLScan(XMLScan xscan, XMLScan parent, XPath xpath,
 	/* The context size is initially unknown. */
 	xscan->contextSize = -1;
 
-	xscan->self = (axis == XPATH_AXIS_DESC_OR_SELF && !ignoreSelf);
+	xscan->self = (axis == XPATH_AXIS_DESC_OR_SELF || axis == XPATH_AXIS_SELF);
 }
 
 void
@@ -203,6 +202,7 @@ xmlscanRestart:
 		unsigned short locStepPos = xscan->locStepPos;
 		XMLNodeHdr	contextNode;
 		bool		ignoreSelf;
+		XPathElement locStep;
 		XPathAxis	axis;
 
 		subScan = (XMLScan) palloc(sizeof(XMLScanData));
@@ -210,7 +210,8 @@ xmlscanRestart:
 		if (xscan->descSearches & XMLSUBSCAN_STEP_NEXT)
 			locStepPos++;
 
-		axis = xscan->locStep->axis;
+		locStep = XPATH_LOC_STEP(xscan->xpath, locStepPos);
+		axis = locStep->axis;
 
 		switch (axis)
 		{
@@ -232,6 +233,8 @@ xmlscanRestart:
 				 * useful or not.
 				 */
 			case XPATH_AXIS_ATTRIBUTE:
+
+			case XPATH_AXIS_SELF:
 				contextNode = xscan->currentNode;
 				break;
 
@@ -239,6 +242,9 @@ xmlscanRestart:
 				elog(ERROR, "unrecognized xpath axis: %d", axis);
 				break;
 		}
+
+		initXMLScan(subScan, xscan, xscan->xpath, locStepPos,
+					xscan->xpathHeader, contextNode, xscan->document);
 
 		/*
 		 * This is the only case where the context node might not be desired
@@ -260,8 +266,8 @@ xmlscanRestart:
 		ignoreSelf = (axis == XPATH_AXIS_DESC_OR_SELF) &&
 			(xscan->descSearches & XMLSUBSCAN_STEP_NEXT) == 0;
 
-		initXMLScan(subScan, xscan, xscan->xpath, locStepPos,
-			   xscan->xpathHeader, contextNode, xscan->document, ignoreSelf);
+		if (subScan->self && ignoreSelf)
+			subScan->self = false;
 
 		/*
 		 * XMLSUBSCAN_STEP_NEXT should be reset first,
@@ -306,12 +312,23 @@ xmlscanRestart:
 	 *
 	 * 'self' must currently be the first node of the node-set. Be careful
 	 * when adding new axes.
+	 *
+	 * xscan->done must be checked because the iterator is not always
+	 * initialized.
 	 */
-	while ((xscan->currentNode =
+	while (!xscan->done &&
+		   (xscan->currentNode =
 			(xscan->self ? xscan->contextNode :
 			 getNextXMLNodeChild(&xscan->iterator))) != NULL)
 	{
 		XPathAxis	axis = xscan->locStep->axis;
+
+		if (axis == XPATH_AXIS_SELF)
+		{
+			Assert(xscan->self);
+			/* The current call to this function must be the last one. */
+			xscan->done = true;
+		}
 
 		/*
 		 * If the context node has attributes, they have to be the first
@@ -367,8 +384,8 @@ xmlscanRestart:
 			else
 			{
 				/*
-				 * The node matches the location step, but there are some more
-				 * steps to be checked.
+				 * The node matches the location step, but there may be some
+				 * more steps to be checked.
 				 */
 				xscan->descSearches |= XMLSUBSCAN_STEP_NEXT;
 
@@ -1256,8 +1273,7 @@ initScanForSingleXMLNodeKind(XMLScan xscan, XMLCompNodeHdr root, XMLNodeKind kin
 	xp->depth = 1;
 	xp->elements[0] = cursor - (char *) xp;;
 
-	initXMLScan(xscan, NULL, xp, 0, NULL, (XMLNodeHdr) root, xscan->document,
-				false);
+	initXMLScan(xscan, NULL, xp, 0, NULL, (XMLNodeHdr) root, xscan->document);
 }
 
 void
@@ -1488,7 +1504,7 @@ substitutePaths(XPathExpression expression, XPathExprState exprState, XMLCompNod
 				XMLNodeHdr	parent = (subPath->relative) ? (XMLNodeHdr) element : XNODE_ROOT(document);
 
 				initXMLScan(&xscanSub, NULL, subPath, 0, xpHdr, parent,
-							document, false);
+							document);
 				while ((matching = getNextXMLNode(&xscanSub)) != NULL)
 				{
 					XMLNodeHdr *array = NULL;

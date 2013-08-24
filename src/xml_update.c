@@ -67,8 +67,7 @@ xmlnode_add(PG_FUNCTION_ARGS)
 		elog(ERROR, "invalid node type to add: %s", getXMLNodeKindStr(newNode->kind));
 	}
 	docRoot = (XMLCompNodeHdr) XNODE_ROOT(doc);
-	initXMLScan(&xscan, NULL, xpath, 0, xpHdr, (XMLNodeHdr) docRoot, doc,
-				false);
+	initXMLScan(&xscan, NULL, xpath, 0, xpHdr, (XMLNodeHdr) docRoot, doc);
 	result = updateXMLDocument(&xscan, doc, XMLNODE_ACTION_ADD, newNode, XMLADD_MODE(mode));
 	finalizeXMLScan(&xscan);
 	PG_RETURN_POINTER(result);
@@ -106,8 +105,7 @@ xmlnode_remove(PG_FUNCTION_ARGS)
 		elog(ERROR, "invalid target path");
 	}
 	docRoot = (XMLCompNodeHdr) XNODE_ROOT(doc);
-	initXMLScan(&xscan, NULL, xpath, 0, xpHdr, (XMLNodeHdr) docRoot, doc,
-				false);
+	initXMLScan(&xscan, NULL, xpath, 0, xpHdr, (XMLNodeHdr) docRoot, doc);
 
 	/*
 	 * XMLADD_REPLACE is there just to make it compilable. The function

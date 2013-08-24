@@ -2429,12 +2429,15 @@ VALUES	(1, '/a/child::b'),
 	(10, '/a/descendant-or-self::node()'),
 	-- The following 2 are equivalent
 	(11, '/a//@i/j'),
-	(12, '/a/descendant-or-self::node()/attribute::i/j');
+	(12, '/a/descendant-or-self::node()/attribute::i/j'),
+	(13, '/a/self::node()/attribute::i/j'),
+	(14, '/a/descendant-or-self::node()/i'),
+	(15, '/a/descendant-or-self::node()//@i');
 SELECT id, xml.path(path)
 FROM  paths
 ORDER BY id;
- id |             path              
-----+-------------------------------
+ id |           path           
+----+--------------------------
   1 | /a/b
   2 | /a/*
   3 | /a/node()
@@ -2444,10 +2447,13 @@ ORDER BY id;
   7 | /a//*
   8 | /a//node()
   9 | /a/descendant-or-self::b
- 10 | /a/descendant-or-self::node()
+ 10 | /a//.
  11 | /a//@i/j
  12 | /a//@i/j
-(12 rows)
+ 13 | /a/./@i/j
+ 14 | /a//./i
+ 15 | /a//.//@i
+(15 rows)
 
 SELECT id, xml.path_debug_print(path)
 FROM  paths
@@ -2590,7 +2596,45 @@ ORDER BY id;
     | attribute::i                                    +
     | child::j                                        +
     | 
-(12 rows)
+ 13 | main expr.: (paths / funcs: 1 / 0, val. type: 3)+
+    |     <path 0>                                    +
+    |   variables:                                    +
+    |     path: 0                                     +
+    |                                                 +
+    |                                                 +
+    | <path 0> (absolute)                             +
+    |                                                 +
+    | child::a                                        +
+    | self::node()                                    +
+    | attribute::i                                    +
+    | child::j                                        +
+    | 
+ 14 | main expr.: (paths / funcs: 1 / 0, val. type: 3)+
+    |     <path 0>                                    +
+    |   variables:                                    +
+    |     path: 0                                     +
+    |                                                 +
+    |                                                 +
+    | <path 0> (absolute)                             +
+    |                                                 +
+    | child::a                                        +
+    | descendant-or-self::node()                      +
+    | child::i                                        +
+    | 
+ 15 | main expr.: (paths / funcs: 1 / 0, val. type: 3)+
+    |     <path 0>                                    +
+    |   variables:                                    +
+    |     path: 0                                     +
+    |                                                 +
+    |                                                 +
+    | <path 0> (absolute)                             +
+    |                                                 +
+    | child::a                                        +
+    | descendant-or-self::node()                      +
+    | descendant-or-self::node()                      +
+    | attribute::i                                    +
+    | 
+(15 rows)
 
 SELECT path('/a/attribute::node()', '<a i="1"><b/></a>');
  path 
@@ -2620,6 +2664,60 @@ SELECT path('/a/descendant-or-self::node()', '<a i="1"><b j="2"/></a>');
                path                
 -----------------------------------
  <a i="1"><b j="2"/></a><b j="2"/>
+(1 row)
+
+SELECT path('/a/self::node()[0]', '<a/>');
+ path 
+------
+ 
+(1 row)
+
+SELECT path('/a/self::node()[1]', '<a/>');
+ path 
+------
+ <a/>
+(1 row)
+
+SELECT path('/a/self::a[0]', '<a/>');
+ path 
+------
+ 
+(1 row)
+
+SELECT path('/a/self::a[1]', '<a/>');
+ path 
+------
+ <a/>
+(1 row)
+
+SELECT path('/a/self::b', '<a/>');
+ path 
+------
+ 
+(1 row)
+
+SELECT path('/a/.', '<a/>');
+ path 
+------
+ <a/>
+(1 row)
+
+SELECT path('/a/@i/self::node()', '<a i="1"/>');
+ path 
+------
+ 1
+(1 row)
+
+SELECT path('/a/@i/.', '<a i="1"/>');
+ path 
+------
+ 1
+(1 row)
+
+SELECT path('/a/@i/self::*', '<a i="1"/>');
+ path 
+------
+ 
 (1 row)
 
 -- Abbreviation is only used for node name test.

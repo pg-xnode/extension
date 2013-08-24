@@ -418,7 +418,7 @@ xpath_array(PG_FUNCTION_ARGS)
 		xScanCtx = (XMLScanContext) palloc(sizeof(XMLScanContextData));
 		xScanCtx->baseScan = (XMLScan) palloc(sizeof(XMLScanData));
 		initXMLScan(xScanCtx->baseScan, NULL, xpathBase, 0, xpHdrBase,
-					(XMLNodeHdr) docRoot, doc, false);
+					(XMLNodeHdr) docRoot, doc);
 
 		xScanCtx->columns = *dimv;
 		xScanCtx->colHeaders = (XPathHeader *) palloc(xScanCtx->columns * sizeof(XPathHeader));

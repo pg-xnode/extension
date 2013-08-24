@@ -109,7 +109,8 @@ const char *xpathAxisNames[XML_SCAN_AXES] = {
 	"child",
 	"descendant",
 	"descendant-or-self",
-	"attribute"
+	"attribute",
+	"self"
 };
 
 /*
@@ -508,9 +509,14 @@ parseLocationPath(XPath *paths, unsigned short *pathCount, char **xpathSrc,
 		step = parseLocationStep(&state, paths, pathCount, paramNames,
 								 &locPathTmp, &descendant);
 
-		if (step == NULL && state.depth == 0)
-			/* The path is '/'. */
-			break;
+		if (step == NULL)
+		{
+			if (state.depth == 0)
+				/* The path is '/'. */
+				break;
+			else
+				elog(ERROR, "unrecognized xpath expression");
+		}
 
 		outSize += MAX_PADDING(XPATH_ALIGNOF_LOC_STEP) + sizeof(XPathElementData)
 			+ strlen(step->name);
@@ -642,6 +648,7 @@ parseLocationStep(XPathParserState state, XPath *paths,
 	short		lastColonPos = -1;
 	XPathElement locStep;
 	bool		dblSlashLocal = false;
+	bool		dot = false;
 	XPathExpression predicate = NULL;
 	unsigned int stepSizeMax;
 	bool		isSpecTest = false;
@@ -672,31 +679,43 @@ parseLocationStep(XPathParserState state, XPath *paths,
 		axisExplicitAllowed = false;
 	}
 
+	if (*state->c == XNODE_CHAR_DOT)
+	{
+		dot = true;
+		nextChar(state, true);
+		targNodeKind = XMLNODE_NODE;
+		axisExplicitAllowed = false;
+	}
+
 	if (*state->c == XNODE_CHAR_AT)
 	{
+		if (dot)
+			elog(ERROR, "@ not allowed at position %u of location path",
+				 state->pos);
+
 		nextChar(state, false);
 		targNodeKind = XMLNODE_ATTRIBUTE;
 		axisExplicitAllowed = false;
 	}
 
 	name = state->c;
-	if (*state->c == XNODE_CHAR_ASTERISK)
+	if (*state->c == XNODE_CHAR_ASTERISK && !dot)
 	{
 		nameLen = 1;
 		nextChar(state, true);
 		axisExplicitAllowed = false;
 	}
-	else if (!XNODE_VALID_NAME_START(state->c))
+	else if (!XNODE_VALID_NAME_START(state->c) && !dot)
 	{
 		if (dblSlashLocal)
-			elog(ERROR, "// is not valid location path");
+			elog(ERROR, "unrecognized location path - QName expected");
 
 		if (doubleSlash != NULL)
 			*doubleSlash = dblSlashLocal;
 
 		return NULL;
 	}
-	else
+	else if (!dot)
 	{
 		/* Process QName */
 		while (XNODE_VALID_NAME_CHAR(state->c))
@@ -755,6 +774,8 @@ parseLocationStep(XPathParserState state, XPath *paths,
 
 	if (axisName != NULL)
 	{
+		Assert(!dot);
+
 		name = state->c;
 		nameLen = 0;
 
@@ -779,7 +800,7 @@ parseLocationStep(XPathParserState state, XPath *paths,
 		}
 	}
 
-	if (*state->c == XNODE_CHAR_LBRKT_RND)
+	if (*state->c == XNODE_CHAR_LBRKT_RND && !dot)
 	{
 		/* Special node test? */
 		unsigned int i;
@@ -871,7 +892,7 @@ parseLocationStep(XPathParserState state, XPath *paths,
 	}
 
 
-	if (*state->c == XNODE_CHAR_LBRACKET)
+	if (*state->c == XNODE_CHAR_LBRACKET && !dot)
 	{
 		/* Predicate expression. */
 		char	   *exprOutput;
@@ -907,7 +928,9 @@ parseLocationStep(XPathParserState state, XPath *paths,
 	 * may need to do some adjustments - see comments about expansion of
 	 * expressions like "/a//@i"
 	 */
-	if (axisExplicit >= 0)
+	if (dot)
+		locStep->axis = dblSlashLocal ? XPATH_AXIS_DESC_OR_SELF : XPATH_AXIS_SELF;
+	else if (axisExplicit >= 0)
 	{
 		/* The axis is specified explicitly. */
 		locStep->axis = axisExplicit;
@@ -1905,8 +1928,9 @@ dumpLocationPath(XPathHeader xpathHdr, unsigned short pathNr, StringInfo output,
 
 	for (i = 0; i < locPath->depth; i++)
 	{
-		o = locPath->elements[i];
+		bool		dot = false;
 
+		o = locPath->elements[i];
 		locStep = (XPathElement) ((char *) locPath + o);
 
 		/*
@@ -1916,27 +1940,40 @@ dumpLocationPath(XPathHeader xpathHdr, unsigned short pathNr, StringInfo output,
 			appendStringInfo(output, "\n%s::", xpathAxisNames[locStep->axis]);
 		else
 		{
-			if (locStep->axis == XPATH_AXIS_DESC_OR_SELF &&
-				locStep->targNdKind == XMLNODE_NODE &&
-				((i + 1) < locPath->depth))
+			/* A special case to be abbreviated? */
+			if ((locStep->axis == XPATH_AXIS_SELF ||
+				 locStep->axis == XPATH_AXIS_DESC_OR_SELF) &&
+				locStep->targNdKind == XMLNODE_NODE)
 			{
-				XPathElement nextStep;
-
-				nextStep = (XPathElement) ((char *) locPath +
-										   locPath->elements[i + 1]);
-
-				if (nextStep->axis == XPATH_AXIS_ATTRIBUTE)
+				if ((locStep->axis == XPATH_AXIS_DESC_OR_SELF) &&
+					((i + 1) < locPath->depth))
 				{
-					/*
-					 * Location path /a//@i is internally expressed as
-					 * /child::a/descendant-or-self::node()/attribute::i.
-					 */
-					attrDesc = true;
-					continue;
+					XPathElement nextStep;
+
+					nextStep = (XPathElement) ((char *) locPath +
+											   locPath->elements[i + 1]);
+
+					if (nextStep->axis == XPATH_AXIS_ATTRIBUTE)
+					{
+						/*
+						 * Location path /a//@i is internally expressed as
+						 * /child::a/descendant-or-self::node()/attribute::i.
+						 */
+						attrDesc = true;
+						continue;
+					}
 				}
+
+				/* Abbreviate to "/." or "//." */
+				dot = true;
 			}
 
-			if (locStep->axis == XPATH_AXIS_DESCENDANT)
+			if (dot)
+			{
+				if (locStep->axis == XPATH_AXIS_DESC_OR_SELF)
+					appendStringInfoChar(output, XNODE_CHAR_SLASH);
+			}
+			else if (locStep->axis == XPATH_AXIS_DESCENDANT)
 				appendStringInfoChar(output, XNODE_CHAR_SLASH);
 			else if ((locStep->axis != XPATH_AXIS_CHILD &&
 					  locStep->targNdKind != XMLNODE_ATTRIBUTE) &&
@@ -1948,7 +1985,11 @@ dumpLocationPath(XPathHeader xpathHdr, unsigned short pathNr, StringInfo output,
 		/*
 		 * Print out the node test.
 		 */
-		if (locStep->targNdKind == XMLNODE_ATTRIBUTE)
+		if (dot && !debug)
+		{
+			appendStringInfoChar(output, XNODE_CHAR_DOT);
+		}
+		else if (locStep->targNdKind == XMLNODE_ATTRIBUTE)
 		{
 			Assert(locStep->axis == XMLNODE_ATTRIBUTE);
 
